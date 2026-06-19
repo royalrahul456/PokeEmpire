@@ -67,5 +67,5 @@ class GroupSetting(Base):
 
     chat_id = Column(BigInteger, primary_key=True)  # Group Chat ID
     message_counter = Column(Integer, default=0, nullable=False)
-    spawn_threshold = Column(Integer, default=3, nullable=False)  # Threshold (3-5)
+    spawn_threshold = Column(Integer, default=100, nullable=False)  # Threshold (30-300)
     enabled = Column(Boolean, default=True, nullable=False)

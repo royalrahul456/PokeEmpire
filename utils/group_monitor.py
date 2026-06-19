@@ -40,23 +40,25 @@ class GroupActivityMiddleware(BaseMiddleware):
             setting = GroupSetting(
                 chat_id=chat.id,
                 message_counter=0,
-                spawn_threshold=random.randint(3, 5),
+                spawn_threshold=random.randint(50, 100),
                 enabled=True
             )
             db.add(setting)
             await db.commit()
 
         if setting.enabled:
+            # Auto-migrate/update old small thresholds to a valid range on the fly
+            if setting.spawn_threshold < 30:
+                setting.spawn_threshold = random.randint(50, 100)
+
             setting.message_counter += 1
             if setting.message_counter >= setting.spawn_threshold:
                 bot = data.get("bot")
                 # Trigger wild spawn
                 await SpawnService.trigger_spawn(db, chat.id, bot)
                 
-                # Reset counter and generate a new random threshold if it is default
+                # Reset counter
                 setting.message_counter = 0
-                if setting.spawn_threshold <= 5:
-                    setting.spawn_threshold = random.randint(3, 5)
                 
             await db.commit()
 

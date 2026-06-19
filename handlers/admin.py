@@ -84,7 +84,7 @@ async def cmd_toggle_spawns(message: Message, db: AsyncSession):
         setting = GroupSetting(
             chat_id=chat_id,
             message_counter=0,
-            spawn_threshold=3,
+            spawn_threshold=100,
             enabled=False  # Toggle turns off if creating new
         )
         db.add(setting)
@@ -173,7 +173,7 @@ async def cmd_spawn_setting(message: Message, db: AsyncSession):
         setting = GroupSetting(
             chat_id=chat_id,
             message_counter=0,
-            spawn_threshold=random.randint(3, 5),
+            spawn_threshold=random.randint(50, 100),
             enabled=True
         )
         db.add(setting)

@@ -2,9 +2,10 @@ import random
 import traceback
 from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
+import config
 from database.models import User, Pokemon, UserPokemon, ActiveSpawn
 from utils.formatters import get_progress_bar, get_rarity_emoji
 
@@ -157,5 +158,57 @@ async def cmd_catch(message: Message, db: AsyncSession):
             f"❌ **Catch failed!** A database error occurred.\n"
             f"Please try again. If this keeps happening, contact the bot owner."
         )
+
+@router.callback_query(F.data == "spawn_hint")
+async def cb_spawn_hint(callback: CallbackQuery, db: AsyncSession):
+    user_id = callback.from_user.id
+    chat_id = callback.message.chat.id
+
+    # 1. Fetch active spawn for this chat
+    spawn_stmt = select(ActiveSpawn).where(ActiveSpawn.chat_id == chat_id)
+    spawn_res = await db.execute(spawn_stmt)
+    spawn = spawn_res.scalar_one_or_none()
+
+    if not spawn:
+        await callback.answer("⚠️ There is no active wild Pokémon to get a hint for!", show_alert=True)
+        return
+
+    # 2. Fetch Pokémon details
+    poke_stmt = select(Pokemon).where(Pokemon.id == spawn.pokemon_id)
+    poke_res = await db.execute(poke_stmt)
+    pokemon = poke_res.scalar_one()
+    pokemon_name = pokemon.name.title()
+
+    # 3. Check if user is owner
+    is_owner = user_id in config.ADMIN_IDS
+
+    if is_owner:
+        # Owner gets it for free!
+        await callback.answer(f"💡 [ADMIN HINT] The Pokémon is: {pokemon_name}", show_alert=True)
+        return
+
+    # 4. If not owner, check user's coins balance
+    user_stmt = select(User).where(User.id == user_id)
+    user_res = await db.execute(user_stmt)
+    user = user_res.scalar_one_or_none()
+
+    # If user is not registered in database yet (e.g. brand new user)
+    if not user:
+        await callback.answer("❌ You must register first by typing /start or catching a Pokémon!", show_alert=True)
+        return
+
+    if user.coins < 2000:
+        await callback.answer(f"❌ You need 2,000 coins to buy a hint! You currently have {user.coins} coins.", show_alert=True)
+        return
+
+    # 5. Deduct coins and reveal hint
+    try:
+        user.coins -= 2000
+        await db.commit()
+        await callback.answer(f"💡 Hint purchased for 2,000 coins!\nThe Pokémon is: {pokemon_name}", show_alert=True)
+    except Exception as e:
+        await db.rollback()
+        print(f"[HINT ERROR] user={user_id} error={e}")
+        await callback.answer("❌ An error occurred while purchasing the hint. Please try again.", show_alert=True)
 
 

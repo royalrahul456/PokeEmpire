@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from database.models import Pokemon, ActiveSpawn
 from aiogram import Bot
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 RARITY_PROBABILITIES = {
     "Common": 70,
@@ -67,12 +68,17 @@ class SpawnService:
             f"───────────────"
         )
 
+        hint_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔍 Hint (2,000 coins)", callback_data="spawn_hint")]
+        ])
+
         # 7. Post spawn photo to the chat
         try:
             msg = await bot.send_photo(
                 chat_id=chat_id,
                 photo=selected_pokemon.image_url,
                 caption=caption,
+                reply_markup=hint_keyboard,
                 parse_mode="Markdown"
             )
             # Update the active spawn record with the message ID
@@ -90,7 +96,7 @@ class SpawnService:
                     f"👉 `/catch <name>` to catch it!\n"
                     f"───────────────"
                 )
-                await bot.send_message(chat_id=chat_id, text=fallback, parse_mode="Markdown")
+                await bot.send_message(chat_id=chat_id, text=fallback, reply_markup=hint_keyboard, parse_mode="Markdown")
             except Exception:
                 pass
         return True

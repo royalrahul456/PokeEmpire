@@ -871,7 +871,7 @@ async def on_new_chat_members(message: Message):
             f"The first player to guess their name and use `/catch <name>` catches them!\n\n"
             f"⚙️ **Default Settings**:\n"
             f"• Spawns are **Enabled**.\n"
-            f"• Spawn interval is initialized randomly (every 3-5 messages).\n\n"
+            f"• Spawn interval is initialized randomly (every 50-100 messages).\n\n"
             f"🛡️ **Admin Group Commands**:\n"
             f"• `/setspawn <threshold>` - Configure group spawn message threshold.\n"
             f"• `/toggle_spawns` - Enable/Disable spawns in this group.\n"

@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import declarative_base
-from sqlalchemy import select
+from sqlalchemy import select, text
 from config import DATABASE_URL
 
 # Configure the SQLite Async Engine
@@ -103,6 +103,16 @@ async def init_db():
                     )
                     session.add(db_poke)
             await session.commit()
+
+    # Fix PostgreSQL sequences that may be out of sync after migration from SQLite
+    # This prevents UniqueViolationError on user_pokemon.id
+    if "postgresql" in DATABASE_URL:
+        async with engine.begin() as conn:
+            await conn.execute(text(
+                "SELECT setval('user_pokemon_id_seq', "
+                "COALESCE((SELECT MAX(id) FROM user_pokemon), 0) + 1, false)"
+            ))
+            print("✅ PostgreSQL sequences reset successfully")
 
 async def get_db():
     """Dependency helper to retrieve an active database session."""

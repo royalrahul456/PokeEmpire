@@ -41,6 +41,9 @@ async def cmd_catch(message: Message, db: AsyncSession):
     poke_stmt = select(Pokemon).where(Pokemon.id == spawn.pokemon_id)
     poke_res = await db.execute(poke_stmt)
     pokemon = poke_res.scalar_one()
+    pokemon_name = pokemon.name  # Save as plain string before any try/rollback
+    pokemon_id = pokemon.id
+    pokemon_rarity = pokemon.rarity
 
     # 3. Check guess correctness
     actual_name = pokemon.name.lower()
@@ -147,7 +150,8 @@ async def cmd_catch(message: Message, db: AsyncSession):
         # Rollback broken transaction before any further DB operations
         await db.rollback()
         # Log full error to Render logs for diagnosis
-        print(f"[CATCH ERROR] user={user_id} chat={chat_id} pokemon={pokemon.name} error_type={type(e).__name__}: {e}")
+        # Use pre-saved pokemon_name (not pokemon.name) to avoid MissingGreenlet error after rollback
+        print(f"[CATCH ERROR] user={user_id} chat={chat_id} pokemon={pokemon_name} error_type={type(e).__name__}: {e}")
         traceback.print_exc()
         await message.answer(
             f"❌ **Catch failed!** A database error occurred.\n"

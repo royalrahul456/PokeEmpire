@@ -45,6 +45,37 @@ class DbSessionMiddleware:
             data["db"] = session
             return await handler(event, data)
 
+async def start_dummy_server():
+    import os
+    port = int(os.getenv("PORT", "8000"))
+    
+    async def handle_client(reader, writer):
+        try:
+            await reader.read(1024)
+        except Exception:
+            pass
+        response = (
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/plain\r\n"
+            "Content-Length: 2\r\n"
+            "Connection: close\r\n\r\n"
+            "OK"
+        )
+        try:
+            writer.write(response.encode("utf-8"))
+            await writer.drain()
+            writer.close()
+            await writer.wait_closed()
+        except Exception:
+            pass
+        
+    try:
+        server = await asyncio.start_server(handle_client, "0.0.0.0", port)
+        logger.info(f"Dummy HTTP server started on port {port} for health checks")
+        asyncio.create_task(server.serve_forever())
+    except Exception as e:
+        logger.error(f"Failed to start dummy HTTP server: {e}")
+
 async def main():
     logger.info("Initializing PokeEmpire Spawn Bot engine...")
 
@@ -91,6 +122,10 @@ async def main():
     dp.include_router(trade.router)
 
     logger.info("Bot handlers and routers registered.")
+    
+    # Start a dummy HTTP server in the background for Render health checks
+    await start_dummy_server()
+
     
     # Start polling updates with proxy failure resilience
     try:

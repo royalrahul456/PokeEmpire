@@ -33,6 +33,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+def check_and_copy_sqlite_db():
+    import os
+    import shutil
+    dest_dir = "/app/data_volume"
+    dest_path = os.path.join(dest_dir, "pokeempire.db")
+    src_path = "/app/pokeempire.db"
+
+    if os.path.exists(dest_dir) and not os.path.exists(dest_path):
+        if os.path.exists(src_path):
+            logger.info("Migrating existing pokeempire.db to Render Persistent Disk...")
+            try:
+                shutil.copy2(src_path, dest_path)
+                logger.info("Database migrated to persistent storage successfully!")
+            except Exception as e:
+                logger.error(f"Failed to migrate database to persistent storage: {e}")
+        else:
+            logger.info("No source database found in code directory. A new database will be initialized.")
+
 class DbSessionMiddleware:
     """aiogram Middleware that opens a SQLAlchemy async session for each update."""
     async def __call__(
@@ -77,7 +95,11 @@ async def start_dummy_server():
         logger.error(f"Failed to start dummy HTTP server: {e}")
 
 async def main():
+    # Run database migration check before initializing connection
+    check_and_copy_sqlite_db()
+
     logger.info("Initializing PokeEmpire Spawn Bot engine...")
+
 
     # Initialize Database tables and seeds
     await init_db()

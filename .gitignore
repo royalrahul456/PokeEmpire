@@ -2,9 +2,9 @@
 .env
 
 # Databases & local state
-*.db
-*.sqlite
-*.sqlite3
+# *.db
+# *.sqlite
+# *.sqlite3
 
 # Python cache & compiler output
 __pycache__/

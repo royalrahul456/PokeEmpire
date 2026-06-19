@@ -165,6 +165,7 @@ async def cb_dm_profile(callback: CallbackQuery, db: AsyncSession):
 
     # Formatted coins
     formatted_coins = f"{user.coins:,}"
+    user_nickname = user.nickname if (user and user.nickname) else (callback.from_user.first_name or "Trainer")
 
     # Calculate global rank position based on catches
     rank_stmt = (
@@ -182,7 +183,7 @@ async def cb_dm_profile(callback: CallbackQuery, db: AsyncSession):
 
     profile_card = (
         f"╭──「 🏆 Trainer Profile 」\n"
-        f"├─➩ 🏓 User: {escape_md(user.nickname)}\n"
+        f"├─➩ 🏓 User: {escape_md(user_nickname)}\n"
         f"├─➩ 🆔 ID: `{user.id}`\n"
         f"├─➩ 💰 Balance: `{formatted_coins} coins`\n"
         f"├─➩ ⚡ Pokémon: {unique_caught} (Total Catches: {total_caught})\n"

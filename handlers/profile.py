@@ -4,6 +4,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, distinct, desc
+from sqlalchemy.orm import joinedload
 from database.models import User, UserPokemon, Pokemon
 from utils.formatters import get_hp_bar, get_progress_bar, get_rarity_emoji, escape_md
 
@@ -59,6 +60,7 @@ async def cmd_profile(message: Message, db: AsyncSession):
 
     # Formatted coins
     formatted_coins = f"{user.coins:,}"
+    user_nickname = user.nickname if (user and user.nickname) else (message.from_user.first_name or "Trainer")
 
     # Calculate global rank position based on catches
     rank_stmt = (
@@ -76,7 +78,7 @@ async def cmd_profile(message: Message, db: AsyncSession):
 
     profile_card = (
         f"╭──「 🏆 Trainer Profile 」\n"
-        f"├─➩ 🏓 User: {escape_md(user.nickname)}\n"
+        f"├─➩ 🏓 User: {escape_md(user_nickname)}\n"
         f"├─➩ 🆔 ID: `{user.id}`\n"
         f"├─➩ 💰 Balance: `{formatted_coins} coins`\n"
         f"├─➩ ⚡ Pokémon: {unique_caught} (Total Catches: {total_caught})\n"
@@ -181,7 +183,7 @@ async def cmd_pokedex(message: Message, db: AsyncSession):
     u_stmt = select(User).where(User.id == user_id)
     u_res = await db.execute(u_stmt)
     user = u_res.scalar_one_or_none()
-    nickname = user.nickname if user else message.from_user.first_name
+    nickname = user.nickname if (user and user.nickname) else (message.from_user.first_name or "Trainer")
 
     if caught_count == 0:
         await message.answer(
@@ -407,18 +409,18 @@ async def cmd_fav(message: Message, db: AsyncSession):
     up_id = int(parts[1])
     
     # Verify user owns this UserPokemon
-    stmt = select(UserPokemon, Pokemon).join(Pokemon).where(
+    stmt = select(UserPokemon).options(joinedload(UserPokemon.pokemon)).where(
         UserPokemon.id == up_id,
         UserPokemon.user_id == user_id
     )
     res = await db.execute(stmt)
-    pair = res.first()
+    up = res.scalar_one_or_none()
     
-    if not pair:
+    if not up:
         await message.answer("❌ You don't own a Pokémon with that inventory ID in your collection!")
         return
         
-    up, p = pair
+    p = up.pokemon
     from utils.favorite import set_favorite_id
     set_favorite_id(user_id, up_id)
     

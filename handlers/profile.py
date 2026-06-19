@@ -3,7 +3,7 @@ from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, distinct, desc
+from sqlalchemy import select, func, distinct, desc, case
 from sqlalchemy.orm import joinedload
 from database.models import User, UserPokemon, Pokemon
 from utils.formatters import get_hp_bar, get_progress_bar, get_rarity_emoji, escape_md
@@ -100,64 +100,13 @@ async def cmd_profile(message: Message, db: AsyncSession):
     await message.answer(profile_card, parse_mode="Markdown")
 
 @router.message(Command("pokemon"))
-async def cmd_pokemon_list(message: Message, db: AsyncSession):
-    user_id = message.from_user.id
-
-    # Parse page number
-    parts = message.text.split()
-    page = 1
-    if len(parts) > 1 and parts[1].isdigit():
-        page = int(parts[1])
-
-    # Check registration
-    u_stmt = select(User).where(User.id == user_id)
-    u_res = await db.execute(u_stmt)
-    user = u_res.scalar_one_or_none()
-    if not user:
-        await message.answer("⚠️ You haven't caught any Pokémon yet.")
-        return
-
-    # Count total caught
-    count_stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == user_id)
-    count_res = await db.execute(count_stmt)
-    total = count_res.scalar() or 0
-
-    if total == 0:
-        await message.answer("⚠️ Your bag is empty! Catch some Pokémon first.")
-        return
-
-    per_page = 10
-    max_page = (total + per_page - 1) // per_page
-    if page < 1: page = 1
-    if page > max_page: page = max_page
-
-    offset = (page - 1) * per_page
-
-    # Query owned Pokémon
-    stmt = select(UserPokemon, Pokemon).join(Pokemon).where(
-        UserPokemon.user_id == user_id
-    ).order_by(UserPokemon.caught_at.desc()).offset(offset).limit(per_page)
-    res = await db.execute(stmt)
-    pairs = res.all()
-
-    text = (
-        f"🎒 **POKÉMON BAG** 🎒\n"
-        f"Page {page} of {max_page} | Total: **{total} caught**\n"
-        f"───────────────\n\n"
+async def cmd_pokemon_list(message: Message):
+    await message.answer(
+        "🎒 **The Pokémon Bag is now retired!**\n"
+        "All collections are managed directly via your Pokédex.\n\n"
+        "👉 Use `/pokedex` to view your collection checklist and progress!\n"
+        "👉 Use `/fav <pokedex_id>` to set a Pokédex cover favorite."
     )
-
-    for idx, (up, p) in enumerate(pairs):
-        num = offset + idx + 1
-        shiny_tag = "✨ " if up.is_shiny else ""
-        r_emoji = get_rarity_emoji(p.rarity)
-        name_display = f"\"{up.nickname}\"" if up.nickname else p.name.title()
-        text += f"**{num}.** {r_emoji} {shiny_tag}**{escape_md(name_display)}** `(Lvl {up.level}, ID: {up.id})`\n"
-
-    text += "\n───────────────"
-    if max_page > 1:
-        text += f"\n👉 Use `/pokemon <page>` to view other pages."
-
-    await message.answer(text, parse_mode="Markdown")
 
 @router.message(Command("pokedex"))
 async def cmd_pokedex(message: Message, db: AsyncSession):
@@ -206,7 +155,7 @@ async def cmd_pokedex(message: Message, db: AsyncSession):
         select(
             Pokemon,
             func.count(UserPokemon.id).label("total_caught"),
-            func.max(UserPokemon.is_shiny).label("has_shiny")
+            func.max(case((UserPokemon.is_shiny == True, 1), else_=0)).label("has_shiny")
         )
         .join(UserPokemon)
         .where(UserPokemon.user_id == user_id)
@@ -237,7 +186,7 @@ async def cmd_pokedex(message: Message, db: AsyncSession):
     fav_id = get_favorite_id(user_id)
     cover_image = None
     if fav_id:
-        fav_stmt = select(Pokemon.image_url).join(UserPokemon, UserPokemon.pokemon_id == Pokemon.id).where(UserPokemon.id == fav_id, UserPokemon.user_id == user_id)
+        fav_stmt = select(Pokemon.image_url).join(UserPokemon, UserPokemon.pokemon_id == Pokemon.id).where(Pokemon.id == fav_id, UserPokemon.user_id == user_id)
         fav_res = await db.execute(fav_stmt)
         cover_image = fav_res.scalar_one_or_none()
     
@@ -403,29 +352,38 @@ async def cmd_fav(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     parts = message.text.split()
     if len(parts) < 2 or not parts[1].isdigit():
-        await message.answer("⚠️ Format: `/fav <inventory_id>`\n(e.g., `/fav 14` from your `/pokemon` list)")
+        await message.answer("⚠️ Format: `/fav <pokedex_id>`\n(e.g., `/fav 251` to set Celebi as your favorite)")
         return
     
-    up_id = int(parts[1])
+    pokedex_id = int(parts[1])
     
-    # Verify user owns this UserPokemon
+    # Verify user owns at least one Pokémon of this species
     stmt = select(UserPokemon).options(joinedload(UserPokemon.pokemon)).where(
-        UserPokemon.id == up_id,
+        UserPokemon.pokemon_id == pokedex_id,
         UserPokemon.user_id == user_id
-    )
+    ).limit(1)
     res = await db.execute(stmt)
-    up = res.scalar_one_or_none()
+    up = res.scalar()
     
     if not up:
-        await message.answer("❌ You don't own a Pokémon with that inventory ID in your collection!")
+        await message.answer("❌ You don't own a Pokémon with that Pokédex ID in your collection!")
         return
         
     p = up.pokemon
     from utils.favorite import set_favorite_id
-    set_favorite_id(user_id, up_id)
+    set_favorite_id(user_id, pokedex_id)
     
-    shiny_tag = "✨ Shiny " if up.is_shiny else ""
-    await message.answer(f"⭐ **{shiny_tag}{p.name.title()}** (ID: {up_id}) has been set as your Pokédex cover favorite!")
+    # Check if they own any shiny version of this species
+    shiny_stmt = select(UserPokemon.is_shiny).where(
+        UserPokemon.pokemon_id == pokedex_id,
+        UserPokemon.user_id == user_id,
+        UserPokemon.is_shiny == True
+    ).limit(1)
+    shiny_res = await db.execute(shiny_stmt)
+    has_shiny = shiny_res.scalar() is not None
+    
+    shiny_tag = "✨ Shiny " if has_shiny else ""
+    await message.answer(f"⭐ **{shiny_tag}{p.name.title()}** (Pokédex ID: #{pokedex_id:03d}) has been set as your Pokédex cover favorite!")
 
 @router.message(Command("unfav"))
 async def cmd_unfav(message: Message):
@@ -494,7 +452,6 @@ async def cmd_search(message: Message, db: AsyncSession):
             f"⭐ Rarity: `{pokemon.rarity}`\n"
             f"🧬 Total Caught: `{len(user_catches)} caught`\n\n"
             f"🏆 **Your Best Pokémon**:\n"
-            f"• Inventory ID: `{best_up.id}`\n"
             f"• Level: `Lvl {best_up.level}`\n"
             f"• IV Quality: `{best_iv_pct}%` (HP: {best_up.iv_hp}, ATK: {best_up.iv_atk}, DEF: {best_up.iv_def}, SPD: {best_up.iv_spd})\n"
             f"• Shiny: `{shiny_label}`\n"

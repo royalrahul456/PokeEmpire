@@ -580,3 +580,102 @@ async def cmd_remove_admin(message: Message, db: AsyncSession):
     )
     await message.answer(text, parse_mode="Markdown")
 
+@router.message(Command("spawn"))
+async def cmd_spawn(message: Message, db: AsyncSession):
+    # Enforce admin authorization
+    if not await is_user_admin(message):
+        await message.answer("❌ Denied. Only group administrators or bot owners can trigger a spawn.")
+        return
+
+    # Trigger a wild encounter spawn in this chat
+    from services.spawn_service import SpawnService
+    
+    success = await SpawnService.trigger_spawn(db, message.chat.id, message.bot)
+    if not success:
+        await message.answer("❌ Failed to spawn Pokémon. Ensure the database contains Pokémon species.")
+
+@router.message(Command("spawnchance"))
+async def cmd_spawn_chance(message: Message):
+    # Only owner can configure
+    if message.from_user.id not in config.ADMIN_IDS:
+        await message.answer("❌ Denied. Only the bot owner can configure global spawn chances.")
+        return
+
+    parts = message.text.split()
+    from services.spawn_service import load_spawn_settings, save_spawn_settings
+    settings = load_spawn_settings()
+
+    if len(parts) < 2:
+        # Show current settings
+        leg_only = "✅ Enabled (Legendary Only)" if settings.get("legendary_only_groups", True) else "❌ Disabled (Custom Chances)"
+        probs = settings.get("group_rarity_probabilities", {})
+        text = (
+            "⚙️ **GROUP SPAWN CHANCES (OWNER ONLY)** ⚙️\n"
+            "───────────────\n"
+            f"👑 **Legendary-Only Spawns in Groups**: `{leg_only}`\n\n"
+            "📈 **Custom Group Rarity Probabilities**:\n"
+            f"• Common: `{probs.get('Common', 70)}%`\n"
+            f"• Rare: `{probs.get('Rare', 20)}%`\n"
+            f"• Epic: `{probs.get('Epic', 7)}%`\n"
+            f"• Legendary: `{probs.get('Legendary', 2)}%`\n"
+            f"• Mythical: `{probs.get('Mythical', 1)}%`\n"
+            "───────────────\n"
+            "💡 **Commands to Configure**:\n"
+            "👉 `/spawnchance legendary` - Enable Legendary-only spawns in groups\n"
+            "👉 `/spawnchance default` - Reset to standard rates & disable Legendary-only\n"
+            "👉 `/spawnchance <common> <rare> <epic> <legendary> <mythical>` - Set custom weights"
+        )
+        await message.answer(text, parse_mode="Markdown")
+        return
+
+    arg = parts[1].lower()
+    if arg == "legendary":
+        settings["legendary_only_groups"] = True
+        save_spawn_settings(settings)
+        await message.answer("✅ **Spawns in group chats are now restricted to Legendary rarity only.**")
+    elif arg == "default":
+        settings["legendary_only_groups"] = False
+        settings["group_rarity_probabilities"] = {
+            "Common": 70,
+            "Rare": 20,
+            "Epic": 7,
+            "Legendary": 2,
+            "Mythical": 1
+        }
+        save_spawn_settings(settings)
+        await message.answer("✅ **Reset group spawn chances to default rates (70% C, 20% R, 7% E, 2% L, 1% M) and disabled Legendary-only restriction.**")
+    else:
+        # Check for 5 integer weights
+        if len(parts) < 6:
+            await message.answer("⚠️ Format: `/spawnchance <common> <rare> <epic> <legendary> <mythical>` (e.g. `/spawnchance 50 30 15 4 1`)")
+            return
+        
+        try:
+            weights = [int(p) for p in parts[1:6]]
+            if any(w < 0 for w in weights) or sum(weights) == 0:
+                raise ValueError()
+        except ValueError:
+            await message.answer("❌ Error: All weights must be non-negative integers, and the sum must be greater than zero.")
+            return
+
+        settings["legendary_only_groups"] = False
+        settings["group_rarity_probabilities"] = {
+            "Common": weights[0],
+            "Rare": weights[1],
+            "Epic": weights[2],
+            "Legendary": weights[3],
+            "Mythical": weights[4]
+        }
+        save_spawn_settings(settings)
+
+        await message.answer(
+            "✅ **Group spawn chances configured!**\n"
+            "Legendary-only restriction has been disabled.\n"
+            "**New custom weights**:\n"
+            f"• Common: `{weights[0]}`\n"
+            f"• Rare: `{weights[1]}`\n"
+            f"• Epic: `{weights[2]}`\n"
+            f"• Legendary: `{weights[3]}`\n"
+            f"• Mythical: `{weights[4]}`"
+        )
+

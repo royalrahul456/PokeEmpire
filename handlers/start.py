@@ -3,7 +3,7 @@ from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, distinct
+from sqlalchemy import select, func, distinct, case
 from database.models import User, Pokemon, UserPokemon
 from keyboards.inline import get_dm_menu_keyboard, get_bag_pagination_keyboard, get_back_to_hub_keyboard, get_dex_pagination_keyboard
 from utils.formatters import get_hp_bar, get_progress_bar, get_rarity_emoji, escape_md
@@ -258,7 +258,7 @@ async def cb_dm_dex(callback: CallbackQuery, db: AsyncSession):
     u_stmt = select(User).where(User.id == user_id)
     u_res = await db.execute(u_stmt)
     user = u_res.scalar_one_or_none()
-    nickname = user.nickname if user else callback.from_user.first_name
+    nickname = user.nickname if (user and user.nickname) else (callback.from_user.first_name or "Trainer")
 
     if caught_count == 0:
         text = (
@@ -283,7 +283,7 @@ async def cb_dm_dex(callback: CallbackQuery, db: AsyncSession):
         select(
             Pokemon,
             func.count(UserPokemon.id).label("total_caught"),
-            func.max(UserPokemon.is_shiny).label("has_shiny")
+            func.max(case((UserPokemon.is_shiny == True, 1), else_=0)).label("has_shiny")
         )
         .join(UserPokemon)
         .where(UserPokemon.user_id == user_id)
@@ -314,7 +314,7 @@ async def cb_dm_dex(callback: CallbackQuery, db: AsyncSession):
     fav_id = get_favorite_id(user_id)
     cover_image = None
     if fav_id:
-        fav_stmt = select(Pokemon.image_url).join(UserPokemon, UserPokemon.pokemon_id == Pokemon.id).where(UserPokemon.id == fav_id, UserPokemon.user_id == user_id)
+        fav_stmt = select(Pokemon.image_url).join(UserPokemon, UserPokemon.pokemon_id == Pokemon.id).where(Pokemon.id == fav_id, UserPokemon.user_id == user_id)
         fav_res = await db.execute(fav_stmt)
         cover_image = fav_res.scalar_one_or_none()
     
@@ -360,335 +360,35 @@ async def cb_dm_dex(callback: CallbackQuery, db: AsyncSession):
 
 @router.callback_query(F.data.startswith("dm_bag_"))
 async def cb_dm_bag(callback: CallbackQuery, db: AsyncSession):
-    user_id = callback.from_user.id
-    
-    # Parse page number
-    try:
-        page = int(callback.data.split("_")[2])
-    except (IndexError, ValueError):
-        page = 1
-
-    # Count total caught
-    count_stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == user_id)
-    count_res = await db.execute(count_stmt)
-    total = count_res.scalar() or 0
-
-    if total == 0:
-        text = (
-            "🎒 **POKÉMON BAG** 🎒\n"
-            "───────────────\n\n"
-            "⚠️ Your bag is empty! Catch some Pokémon in a group chat first."
-        )
-        await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
-        await callback.answer()
-        return
-
-    per_page = 10
-    max_page = (total + per_page - 1) // per_page
-    if page < 1: page = 1
-    if page > max_page: page = max_page
-
-    offset = (page - 1) * per_page
-
-    # Query owned Pokémon
-    stmt = select(UserPokemon, Pokemon).join(Pokemon).where(
-        UserPokemon.user_id == user_id
-    ).order_by(UserPokemon.caught_at.desc()).offset(offset).limit(per_page)
-    res = await db.execute(stmt)
-    pairs = res.all()
-
     text = (
-        f"🎒 **POKÉMON BAG** 🎒\n"
-        f"Page {page} of {max_page} | Total: **{total} caught**\n"
-        f"───────────────\n\n"
+        "🎒 **The Pokémon Bag is now retired!**\n"
+        "All collections are managed directly via your Pokédex.\n\n"
+        "👉 Use `/pokedex` to view your collection checklist and progress!"
     )
-
-    for idx, (up, p) in enumerate(pairs):
-        num = idx + 1  # numbering local to page
-        shiny_tag = "✨ " if up.is_shiny else ""
-        r_emoji = get_rarity_emoji(p.rarity)
-        name_display = f"\"{escape_md(up.nickname)}\"" if up.nickname else escape_md(p.name.title())
-        text += f"**{num}.** {r_emoji} {shiny_tag}**{name_display}** `(Lvl {up.level}, ID: {up.id})`\n"
-
-    text += "\n───────────────\n*Select a number below to inspect details:* "
-
-    builder = InlineKeyboardBuilder()
-    
-    # Navigation row
-    nav_buttons = []
-    if page > 1:
-        nav_buttons.append(InlineKeyboardButton(text="◀️ Prev", callback_data=f"dm_bag_{page-1}"))
-    if page < max_page:
-        nav_buttons.append(InlineKeyboardButton(text="Next ➡️", callback_data=f"dm_bag_{page+1}"))
-    if nav_buttons:
-        builder.row(*nav_buttons)
-
-    # Detail selection buttons row(s)
-    detail_row = []
-    for idx, (up, p) in enumerate(pairs):
-        num = idx + 1
-        detail_row.append(InlineKeyboardButton(text=str(num), callback_data=f"dm_detail_{up.id}_{page}"))
-    
-    for i in range(0, len(detail_row), 5):
-        builder.row(*detail_row[i:i+5])
-
-    builder.row(InlineKeyboardButton(text="🔙 Back to Hub Menu", callback_data="dm_home"))
-
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
     await callback.answer()
-
-def get_base_stats(rarity: str) -> dict:
-    if rarity == "Common":
-        return {"hp": 45, "atk": 49, "def": 49, "spd": 45}
-    elif rarity == "Rare":
-        return {"hp": 60, "atk": 65, "def": 65, "spd": 60}
-    elif rarity == "Epic":
-        return {"hp": 80, "atk": 85, "def": 80, "spd": 80}
-    elif rarity == "Legendary":
-        return {"hp": 100, "atk": 110, "def": 100, "spd": 100}
-    elif rarity == "Mythical":
-        return {"hp": 100, "atk": 100, "def": 100, "spd": 100}
-    return {"hp": 50, "atk": 50, "def": 50, "spd": 50}
 
 @router.callback_query(F.data.startswith("dm_detail_"))
 async def cb_dm_detail(callback: CallbackQuery, db: AsyncSession):
-    parts = callback.data.split("_")
-    up_id = int(parts[2])
-    page = int(parts[3])
-
-    # Fetch UserPokemon
-    stmt = select(UserPokemon, Pokemon).join(Pokemon).where(UserPokemon.id == up_id)
-    res = await db.execute(stmt)
-    pair = res.first()
-
-    if not pair:
-        await callback.answer("❌ Pokémon not found.", show_alert=True)
-        return
-
-    up, p = pair
-    base = get_base_stats(p.rarity)
-    
-    # Calculate stats at level
-    level = up.level
-    hp_max = ((2 * base["hp"] + up.iv_hp) * level) // 100 + level + 10
-    atk = ((2 * base["atk"] + up.iv_atk) * level) // 100 + 5
-    def_stat = ((2 * base["def"] + up.iv_def) * level) // 100 + 5
-    spd = ((2 * base["spd"] + up.iv_spd) * level) // 100 + 5
-
-    iv_total = up.iv_hp + up.iv_atk + up.iv_def + up.iv_spd
-    iv_pct = int((iv_total / 124) * 100)
-
-    xp_needed = level * 100
-    xp_bar = get_progress_bar(up.xp, xp_needed, 10, fill_char="█", empty_char="░")
-
-    # Generate small progress bars for IVs
-    iv_hp_bar = get_progress_bar(up.iv_hp, 31, 5, fill_char="▰", empty_char="▱")
-    iv_atk_bar = get_progress_bar(up.iv_atk, 31, 5, fill_char="▰", empty_char="▱")
-    iv_def_bar = get_progress_bar(up.iv_def, 31, 5, fill_char="▰", empty_char="▱")
-    iv_spd_bar = get_progress_bar(up.iv_spd, 31, 5, fill_char="▰", empty_char="▱")
-
-    shiny_tag = "✨ Shiny " if up.is_shiny else ""
-    name_display = escape_md(up.nickname) if up.nickname else escape_md(p.name.title())
-    orig_name_display = f" ({escape_md(p.name.title())})" if up.nickname else ""
-    r_emoji = get_rarity_emoji(p.rarity)
-
     text = (
-        f"[​]({p.image_url})"
-        f"⭐ **POKÉMON DETAILS** ⭐\n"
-        f"───────────────\n\n"
-        f"• ID: `{up.id}`\n"
-        f"• Name: {r_emoji} {shiny_tag}**{name_display}**{orig_name_display}\n"
-        f"• Level: `Lvl {level}`\n"
-        f"• Rarity: `{p.rarity}`\n"
-        f"• IV Quality: **{iv_pct}%**\n\n"
-        f"📈 **Experience**:\n"
-        f"`[{xp_bar}]` **{up.xp}/{xp_needed} XP**\n\n"
-        f"📊 **Combat Stats & IVs**:\n"
-        f"• ❤️ HP: **{hp_max}** `({iv_hp_bar} +{up.iv_hp})`\n"
-        f"• ⚔️ ATK: **{atk}** `({iv_atk_bar} +{up.iv_atk})`\n"
-        f"• 🛡️ DEF: **{def_stat}** `({iv_def_bar} +{up.iv_def})`\n"
-        f"• ⚡ SPD: **{spd}** `({iv_spd_bar} +{up.iv_spd})`\n"
-        f"───────────────"
+        "🎒 **The Pokémon Bag is now retired!**\n"
+        "All collections are managed directly via your Pokédex.\n\n"
+        "👉 Use `/pokedex` to view your collection checklist and progress!"
     )
-
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="🏷️ Rename", callback_data=f"dm_rename_{up_id}_{page}"),
-        InlineKeyboardButton(text="💸 Release", callback_data=f"dm_release_{up_id}_{page}")
-    )
-    builder.row(
-        InlineKeyboardButton(text="⚔️ Train (Battle)", callback_data=f"dm_train_{up_id}_{page}")
-    )
-    builder.row(
-        InlineKeyboardButton(text="🎒 Back to Bag", callback_data=f"dm_bag_{page}")
-    )
-
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
     await callback.answer()
-
-active_renames = {}
 
 @router.callback_query(F.data.startswith("dm_rename_"))
 async def cb_dm_rename(callback: CallbackQuery):
-    parts = callback.data.split("_")
-    up_id = int(parts[2])
-    page = int(parts[3])
-    user_id = callback.from_user.id
-
-    active_renames[user_id] = {"up_id": up_id, "page": page}
-
-    text = (
-        f"🏷️ **RENAME POKÉMON** 🏷️\n"
-        f"───────────────\n\n"
-        f"Please enter the new nickname in your next message (maximum 15 characters)."
-    )
-    
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="❌ Cancel", callback_data=f"dm_detail_{up_id}_{page}"))
-    
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
-    await callback.answer()
+    await callback.answer("❌ Rename is disabled (Pokémon Bag is retired).", show_alert=True)
 
 @router.callback_query(F.data.startswith("dm_release_"))
 async def cb_dm_release(callback: CallbackQuery, db: AsyncSession):
-    parts = callback.data.split("_")
-    up_id = int(parts[2])
-    page = int(parts[3])
-    user_id = callback.from_user.id
-
-    # Fetch UserPokemon
-    stmt = select(UserPokemon, Pokemon).join(Pokemon).where(UserPokemon.id == up_id)
-    res = await db.execute(stmt)
-    pair = res.first()
-
-    if not pair:
-        await callback.answer("❌ Pokémon already released.", show_alert=True)
-        return
-
-    up, p = pair
-
-    # Calculate release coins
-    base_release = {
-        "Common": 100,
-        "Rare": 200,
-        "Epic": 500,
-        "Legendary": 1500,
-        "Mythical": 1500
-    }
-    base = base_release.get(p.rarity, 100)
-    coins_earned = base + (up.level * 10)
-
-    # Delete UserPokemon
-    await db.delete(up)
-
-    # Award coins to user
-    user_stmt = select(User).where(User.id == user_id)
-    user_res = await db.execute(user_stmt)
-    user = user_res.scalar_one()
-    user.coins += coins_earned
-    await db.commit()
-
-    text = (
-        f"💸 **POKÉMON RELEASED** 💸\n"
-        f"───────────────\n\n"
-        f"You successfully released **{p.name.title()}** and received `💰 {coins_earned} coins`!\n\n"
-        f"💰 **New Balance**: `💰 {user.coins} coins`\n"
-        f"───────────────"
-    )
-
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="🎒 Back to Bag", callback_data=f"dm_bag_{page}"))
-
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
-    await callback.answer(f"Earned {coins_earned} coins!")
-
-active_battles = {}
+    await callback.answer("❌ Release is disabled (Pokémon Bag is retired).", show_alert=True)
 
 @router.callback_query(F.data.startswith("dm_train_"))
 async def cb_dm_train(callback: CallbackQuery, db: AsyncSession):
-    parts = callback.data.split("_")
-    up_id = int(parts[2])
-    page = int(parts[3])
-    user_id = callback.from_user.id
-
-    # Fetch User's Pokémon
-    stmt = select(UserPokemon, Pokemon).join(Pokemon).where(UserPokemon.id == up_id)
-    res = await db.execute(stmt)
-    pair = res.first()
-
-    if not pair:
-        await callback.answer("❌ Pokémon not found.", show_alert=True)
-        return
-
-    up, p = pair
-    base = get_base_stats(p.rarity)
-    
-    # User Pokémon stats
-    level = up.level
-    hp_max = ((2 * base["hp"] + up.iv_hp) * level) // 100 + level + 10
-    atk = ((2 * base["atk"] + up.iv_atk) * level) // 100 + 5
-    def_stat = ((2 * base["def"] + up.iv_def) * level) // 100 + 5
-    spd = ((2 * base["spd"] + up.iv_spd) * level) // 100 + 5
-    user_mon_name = escape_md(up.nickname) if up.nickname else escape_md(p.name.title())
-
-    # Generate random wild Pokémon of equal level
-    random_wild_id = random.randint(1, 1025)
-    wild_stmt = select(Pokemon).where(Pokemon.id == random_wild_id)
-    wild_res = await db.execute(wild_stmt)
-    wild_p = wild_res.scalar_one()
-
-    wild_base = get_base_stats(wild_p.rarity)
-    wild_iv = random.randint(0, 31)
-    
-    wild_hp_max = ((2 * wild_base["hp"] + wild_iv) * level) // 100 + level + 10
-    wild_atk = ((2 * wild_base["atk"] + wild_iv) * level) // 100 + 5
-    wild_def = ((2 * wild_base["def"] + wild_iv) * level) // 100 + 5
-    wild_spd = ((2 * wild_base["spd"] + wild_iv) * level) // 100 + 5
-
-    wild_name_escaped = escape_md(wild_p.name.title())
-
-    # Store battle session
-    active_battles[user_id] = {
-        "user_mon_id": up_id,
-        "user_mon_name": user_mon_name,
-        "user_mon_hp": hp_max,
-        "user_mon_hp_max": hp_max,
-        "user_mon_atk": atk,
-        "user_mon_def": def_stat,
-        "user_mon_spd": spd,
-        "wild_name": wild_name_escaped,
-        "wild_hp": wild_hp_max,
-        "wild_hp_max": wild_hp_max,
-        "wild_atk": wild_atk,
-        "wild_def": wild_def,
-        "wild_spd": wild_spd,
-        "page": page,
-        "turn": 1,
-        "log": f"⚔️ Battle started! Lvl {level} {user_mon_name} encountered wild Lvl {level} {wild_name_escaped}!"
-    }
-
-    text = (
-        f"⚔️ **BATTLE ENCOUNTER** ⚔️\n"
-        f"───────────────\n\n"
-        f"Trainer's **{user_mon_name}** `(Lvl {level})`\n"
-        f"{get_hp_bar(hp_max, hp_max)}\n\n"
-        f"Wild **{wild_p.name.title()}** `(Lvl {level})`\n"
-        f"{get_hp_bar(wild_hp_max, wild_hp_max)}\n\n"
-        f"───────────────\n"
-        f"💬 {active_battles[user_id]['log']}"
-    )
-
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="⚔️ Attack", callback_data=f"bat_atk_{up_id}_{page}"),
-        InlineKeyboardButton(text="🛡️ Defend", callback_data=f"bat_def_{up_id}_{page}")
-    )
-    builder.row(
-        InlineKeyboardButton(text="🏃 Run", callback_data=f"bat_run_{up_id}_{page}")
-    )
-
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
-    await callback.answer()
+    await callback.answer("❌ Training from the bag is disabled (Pokémon Bag is retired).", show_alert=True)
 
 @router.callback_query(F.data.startswith("bat_"))
 async def cb_battle_action(callback: CallbackQuery, db: AsyncSession):

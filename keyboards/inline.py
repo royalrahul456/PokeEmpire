@@ -7,7 +7,7 @@ def get_dm_menu_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text="👤 Profile", callback_data="dm_profile"),
-        InlineKeyboardButton(text="🎒 Pokemon Bag", callback_data="dm_bag_1")
+        InlineKeyboardButton(text="🔥 Streak", callback_data="dm_streak")
     )
     builder.row(
         InlineKeyboardButton(text="🏆 Pokédex", callback_data="dm_dex_1"),

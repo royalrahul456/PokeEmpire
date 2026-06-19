@@ -1287,3 +1287,57 @@ async def cmd_streak_leaderboard(message: Message, db: AsyncSession):
         f"───────────────"
     )
     await message.answer(leaderboard_card, parse_mode="Markdown")
+
+@router.callback_query(F.data == "dm_streak")
+async def cb_dm_streak(callback: CallbackQuery, db: AsyncSession):
+    user_id = callback.from_user.id
+    
+    # Check registration
+    stmt = select(User).where(User.id == user_id)
+    res = await db.execute(stmt)
+    user = res.scalar_one_or_none()
+    if not user:
+        await callback.answer("⚠️ You must register first by catching a Pokémon!", show_alert=True)
+        return
+        
+    from utils.streak import get_streak_data, get_streak_rank
+    from utils.formatters import escape_md
+    from keyboards.inline import get_back_to_hub_keyboard
+    
+    s_data = await get_streak_data(user_id)
+    
+    today = datetime.utcnow().date().isoformat()
+    yesterday = (datetime.utcnow() - timedelta(days=1)).date().isoformat()
+    
+    # Determine status
+    last_sec = s_data.get("last_secured_date", "")
+    if last_sec == today:
+        status_str = "Active!"
+        capped_count = 3
+    elif last_sec == yesterday:
+        status_str = "Active!"
+        capped_count = min(s_data.get("catches_today", 0), 3)
+    else:
+        status_str = "Streak broken!"
+        capped_count = min(s_data.get("catches_today", 0), 3)
+        
+    current_days = s_data.get("current_streak", 0)
+    best_days = s_data.get("best_streak", 0)
+    rank_str = get_streak_rank(current_days)
+    
+    # Progress bar
+    bar_chars = "█" * (capped_count * 3) + "░" * (10 - (capped_count * 3))
+    if capped_count == 3:
+        bar_chars = "█" * 10
+        
+    text = (
+        f" 🔥 **Daily Streak — {escape_md(user.nickname)}**\n\n"
+        f"💧 **Status**: `{status_str}`\n"
+        f"🎁 **Current**: `{current_days} days`\n"
+        f"🏆 **Best**: `{best_days} days`\n"
+        f"🏆 **Rank**: `{rank_str}`\n"
+        f"🎁 **Progress**: `[{bar_chars}] {capped_count}/3`\n\n"
+        f"👉 *Snatch (catch) 3 Pokémon every day to keep your streak!*"
+    )
+    await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    await callback.answer()

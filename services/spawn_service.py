@@ -1,9 +1,50 @@
+import os
+import json
 import random
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from database.models import Pokemon, ActiveSpawn
 from aiogram import Bot
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+SPAWN_SETTINGS_FILE = os.path.join("data", "spawn_settings.json")
+
+def load_spawn_settings():
+    if not os.path.exists(SPAWN_SETTINGS_FILE):
+        os.makedirs(os.path.dirname(SPAWN_SETTINGS_FILE), exist_ok=True)
+        default_settings = {
+            "legendary_only_groups": True,
+            "group_rarity_probabilities": {
+                "Common": 70,
+                "Rare": 20,
+                "Epic": 7,
+                "Legendary": 2,
+                "Mythical": 1
+            }
+        }
+        with open(SPAWN_SETTINGS_FILE, "w") as f:
+            json.dump(default_settings, f, indent=4)
+        return default_settings
+
+    try:
+        with open(SPAWN_SETTINGS_FILE, "r") as f:
+            return json.load(f)
+    except Exception:
+        return {
+            "legendary_only_groups": True,
+            "group_rarity_probabilities": {
+                "Common": 70,
+                "Rare": 20,
+                "Epic": 7,
+                "Legendary": 2,
+                "Mythical": 1
+            }
+        }
+
+def save_spawn_settings(settings):
+    os.makedirs(os.path.dirname(SPAWN_SETTINGS_FILE), exist_ok=True)
+    with open(SPAWN_SETTINGS_FILE, "w") as f:
+        json.dump(settings, f, indent=4)
 
 RARITY_PROBABILITIES = {
     "Common": 70,
@@ -18,12 +59,15 @@ class SpawnService:
     async def trigger_spawn(db: AsyncSession, chat_id: int, bot: Bot) -> bool:
         """Rolls rarity, selects a random Pokémon, rolls shiny status, and spawns it in the group."""
         
-        # 1. Roll rarity tier (Group chats only spawn Legendary rarity)
-        if chat_id < 0:
+        settings = load_spawn_settings()
+        
+        # 1. Roll rarity tier
+        if chat_id < 0 and settings.get("legendary_only_groups", True):
             selected_rarity = "Legendary"
         else:
-            rarities = list(RARITY_PROBABILITIES.keys())
-            weights = [RARITY_PROBABILITIES[r] for r in rarities]
+            probs = settings.get("group_rarity_probabilities", RARITY_PROBABILITIES)
+            rarities = list(probs.keys())
+            weights = [probs.get(r, RARITY_PROBABILITIES.get(r, 0)) for r in rarities]
             selected_rarity = random.choices(rarities, weights=weights, k=1)[0]
 
         # 2. Query Pokémon matching that rarity tier

@@ -67,7 +67,7 @@ async def cmd_shop(message: Message, db: AsyncSession):
         f"• **Rare Candy** (💰 300c)\n"
         f"  _Instantly level up a Pokémon by 1 level._\n"
         f"• **Shiny Charm** (💰 2000c)\n"
-        f"  _Permanently boost wild shiny encounter rates!_\n"
+        f"  _Permanently gives a 1% chance to upgrade any normal catch to a Shiny Pokémon!_\n"
         f"───────────────"
     )
 
@@ -107,7 +107,7 @@ async def cb_dm_shop(callback: CallbackQuery, db: AsyncSession):
         f"• **Rare Candy** (💰 300c)\n"
         f"  _Instantly level up a Pokémon by 1 level._\n"
         f"• **Shiny Charm** (💰 2000c)\n"
-        f"  _Permanently boost wild shiny encounter rates!_\n"
+        f"  _Permanently gives a 1% chance to upgrade any normal catch to a Shiny Pokémon!_\n"
         f"───────────────"
     )
 

@@ -136,26 +136,26 @@ async def cmd_trade(message: Message, db: AsyncSession):
     parts = message.text.split()
     sender_id = message.from_user.id
     target_tg_user = None
-    my_pokemon_id = None
-    their_pokemon_id = None
+    my_pokedex_id = None
+    their_pokedex_id = None
     
     # 1. Parse arguments
     if message.reply_to_message:
         if len(parts) < 2 or not parts[1].isdigit():
-            await message.answer("⚠️ Format: Reply to a user with `/trade <your_pokemon_id> [their_pokemon_id]`")
+            await message.answer("⚠️ Format: Reply to a user with `/trade <your_pokedex_id> [their_pokedex_id]`")
             return
-        my_pokemon_id = int(parts[1])
+        my_pokedex_id = int(parts[1])
         if len(parts) > 2 and parts[2].isdigit():
-            their_pokemon_id = int(parts[2])
+            their_pokedex_id = int(parts[2])
         target_tg_user = message.reply_to_message.from_user
     else:
         if len(parts) < 3 or not parts[2].isdigit():
-            await message.answer("⚠️ Format: `/trade <@username/user_id> <your_pokemon_id> [their_pokemon_id]`")
+            await message.answer("⚠️ Format: `/trade <@username/user_id> <your_pokedex_id> [their_pokedex_id]`")
             return
         target_str = parts[1]
-        my_pokemon_id = int(parts[2])
+        my_pokedex_id = int(parts[2])
         if len(parts) > 3 and parts[3].isdigit():
-            their_pokemon_id = int(parts[3])
+            their_pokedex_id = int(parts[3])
             
         if target_str.isdigit():
             t_id = int(target_str)
@@ -218,22 +218,22 @@ async def cmd_trade(message: Message, db: AsyncSession):
         await db.flush()
 
     # Query Proposer's Pokémon
-    my_poke_stmt = select(UserPokemon, Pokemon).join(Pokemon).where(UserPokemon.id == my_pokemon_id, UserPokemon.user_id == sender_id)
+    my_poke_stmt = select(UserPokemon, Pokemon).join(Pokemon).where(UserPokemon.pokemon_id == my_pokedex_id, UserPokemon.user_id == sender_id).limit(1)
     my_poke_res = await db.execute(my_poke_stmt)
     my_pair = my_poke_res.first()
     if not my_pair:
-        await message.answer(f"❌ You do not own any Pokémon with database ID `{my_pokemon_id}`!")
+        await message.answer(f"❌ You do not own any Pokémon with Pokédex ID `{my_pokedex_id}`!")
         return
     my_up, my_p = my_pair
 
     # Query Partner's Pokémon (if swap)
     their_up, their_p = None, None
-    if their_pokemon_id is not None:
-        their_poke_stmt = select(UserPokemon, Pokemon).join(Pokemon).where(UserPokemon.id == their_pokemon_id, UserPokemon.user_id == target_id)
+    if their_pokedex_id is not None:
+        their_poke_stmt = select(UserPokemon, Pokemon).join(Pokemon).where(UserPokemon.pokemon_id == their_pokedex_id, UserPokemon.user_id == target_id).limit(1)
         their_poke_res = await db.execute(their_poke_stmt)
         their_pair = their_poke_res.first()
         if not their_pair:
-            await message.answer(f"❌ Target Trainer **{escape_md(target_user.nickname)}** does not own any Pokémon with database ID `{their_pokemon_id}`!")
+            await message.answer(f"❌ Target Trainer **{escape_md(target_user.nickname)}** does not own any Pokémon with Pokédex ID `{their_pokedex_id}`!")
             return
         their_up, their_p = their_pair
 
@@ -242,7 +242,7 @@ async def cmd_trade(message: Message, db: AsyncSession):
     my_rarity = get_rarity_emoji(my_p.rarity)
     my_display = f"{my_rarity} {my_shiny}**{escape_md(my_up.nickname or my_p.name.title())}** `(Lvl {my_up.level})`"
 
-    if their_pokemon_id is not None:
+    if their_pokedex_id is not None:
         their_shiny = "✨ Shiny " if their_up.is_shiny else ""
         their_rarity = get_rarity_emoji(their_p.rarity)
         their_display = f"{their_rarity} {their_shiny}**{escape_md(their_up.nickname or their_p.name.title())}** `(Lvl {their_up.level})`"
@@ -261,9 +261,9 @@ async def cmd_trade(message: Message, db: AsyncSession):
     )
 
     builder = InlineKeyboardBuilder()
-    their_pid_str = str(their_pokemon_id) if their_pokemon_id is not None else "none"
-    callback_accept = f"t_acc_{sender_id}_{target_id}_{my_pokemon_id}_{their_pid_str}"
-    callback_decline = f"t_dec_{sender_id}_{target_id}_{my_pokemon_id}_{their_pid_str}"
+    their_pid_str = str(their_pokedex_id) if their_pokedex_id is not None else "none"
+    callback_accept = f"t_acc_{sender_id}_{target_id}_{my_pokedex_id}_{their_pid_str}"
+    callback_decline = f"t_dec_{sender_id}_{target_id}_{my_pokedex_id}_{their_pid_str}"
 
     builder.row(
         InlineKeyboardButton(text="✅ Accept", callback_data=callback_accept),
@@ -277,9 +277,9 @@ async def cb_trade_accept(callback: CallbackQuery, db: AsyncSession):
     parts = callback.data.split("_")
     proposer_id = int(parts[2])
     target_id = int(parts[3])
-    my_pokemon_id = int(parts[4])
+    my_pokedex_id = int(parts[4])
     their_pid_str = parts[5]
-    their_pokemon_id = int(their_pid_str) if their_pid_str != "none" else None
+    their_pokedex_id = int(their_pid_str) if their_pid_str != "none" else None
 
     # Only target can accept
     if callback.from_user.id != target_id:
@@ -299,26 +299,26 @@ async def cb_trade_accept(callback: CallbackQuery, db: AsyncSession):
         await callback.answer("❌ Error: One of the trainers is not registered.", show_alert=True)
         return
 
-    # Verify Proposer still owns Pokémon
-    my_poke_stmt = select(UserPokemon, Pokemon).join(Pokemon).where(UserPokemon.id == my_pokemon_id, UserPokemon.user_id == proposer_id)
+    # Verify Proposer still owns at least one Pokémon of this species
+    my_poke_stmt = select(UserPokemon, Pokemon).join(Pokemon).where(UserPokemon.pokemon_id == my_pokedex_id, UserPokemon.user_id == proposer_id).limit(1)
     my_poke_res = await db.execute(my_poke_stmt)
     my_pair = my_poke_res.first()
 
     if not my_pair:
-        await callback.answer("❌ Trade failed! Proposer no longer owns the Pokémon.", show_alert=True)
+        await callback.answer("❌ Trade failed! Proposer no longer owns this species.", show_alert=True)
         await callback.message.edit_text("❌ **TRADE FAILED**: Offering Pokémon is no longer owned by Proposer.")
         return
     my_up, my_p = my_pair
 
-    # Verify Target still owns Pokémon (if swap)
+    # Verify Target still owns at least one Pokémon of this species (if swap)
     their_up, their_p = None, None
-    if their_pokemon_id is not None:
-        their_poke_stmt = select(UserPokemon, Pokemon).join(Pokemon).where(UserPokemon.id == their_pokemon_id, UserPokemon.user_id == target_id)
+    if their_pokedex_id is not None:
+        their_poke_stmt = select(UserPokemon, Pokemon).join(Pokemon).where(UserPokemon.pokemon_id == their_pokedex_id, UserPokemon.user_id == target_id).limit(1)
         their_poke_res = await db.execute(their_poke_stmt)
         their_pair = their_poke_res.first()
 
         if not their_pair:
-            await callback.answer("❌ Trade failed! Partner no longer owns the Pokémon.", show_alert=True)
+            await callback.answer("❌ Trade failed! Partner no longer owns this species.", show_alert=True)
             await callback.message.edit_text("❌ **TRADE FAILED**: Demanded Pokémon is no longer owned by Partner.")
             return
         their_up, their_p = their_pair

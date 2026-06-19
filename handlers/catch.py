@@ -65,8 +65,34 @@ async def cmd_catch(message: Message, db: AsyncSession):
         await message.answer("❌ That name is incorrect! Take another look and try again.")
         return
 
-    # 4. Perform database transaction to catch
-    # Re-check active spawn still exists (prevents double-catch)
+    # 4. Check user registration & union membership for new players
+    user_stmt = select(User).where(User.id == user_id)
+    user_res = await db.execute(user_stmt)
+    user = user_res.scalar_one_or_none()
+
+    if not user:
+        # Check union group membership
+        try:
+            member = await message.bot.get_chat_member(chat_id="@pokeempireunion", user_id=user_id)
+            is_member = member.status in ["creator", "administrator", "member", "restricted"]
+        except Exception:
+            is_member = False
+
+        if not is_member:
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🌲 Join PokéEmpire Union", url="https://t.me/pokeempireunion")]
+            ])
+            await message.answer(
+                "❌ **Catch Denied! First-Time Player Registration Required** 🌲\n\n"
+                "To start your PokéEmpire journey and catch your very first Pokémon, "
+                "you must first join our official Union Group!\n\n"
+                "👉 Join below, then try catching again!",
+                reply_markup=kb
+            )
+            return
+
+    # 5. Re-check active spawn still exists (prevents double-catch)
     rechk_stmt = select(ActiveSpawn).where(ActiveSpawn.chat_id == chat_id)
     rechk_res = await db.execute(rechk_stmt)
     active_lock = rechk_res.scalar_one_or_none()
@@ -81,10 +107,6 @@ async def cmd_catch(message: Message, db: AsyncSession):
         await db.flush()
 
         # Check and register user in DB if they don't exist yet
-        user_stmt = select(User).where(User.id == user_id)
-        user_res = await db.execute(user_stmt)
-        user = user_res.scalar_one_or_none()
-
         if not user:
             user = User(
                 id=user_id,
@@ -106,7 +128,14 @@ async def cmd_catch(message: Message, db: AsyncSession):
         coins_won = random.randint(30, 80)
         user.coins += coins_won
 
+        # Shiny Charm roll (1 in 100 chance to upgrade)
         is_shiny = spawn.is_shiny
+        shiny_upgraded = False
+        if not is_shiny and user.has_shiny_charm:
+            if random.randint(1, 100) == 1:
+                is_shiny = True
+                shiny_upgraded = True
+
         capture = UserPokemon(
             user_id=user_id,
             pokemon_id=pokemon.id,
@@ -138,7 +167,7 @@ async def cmd_catch(message: Message, db: AsyncSession):
         elif capped_count >= 3:
             streak_msg += f"\n✨ **Streak Secured today!** (Current: `{streak_days} days`)"
 
-        # 5. Announce winner
+        # 6. Announce winner
         shiny_badge = "✨ Shiny " if is_shiny else ""
         poke_display = pokemon.name.title()
         r_emoji = get_rarity_emoji(pokemon.rarity)
@@ -153,6 +182,11 @@ async def cmd_catch(message: Message, db: AsyncSession):
             f"🎉 **SUCCESSFUL CATCH!** 🎉\n"
             f"───────────────\n"
             f"Trainer **{user.nickname}** successfully caught the wild {r_emoji} {shiny_badge}**{poke_display}**!\n\n"
+        )
+        if shiny_upgraded:
+            announcement += "🍀 ✨ **Shiny Charm Activated!** Your catch was upgraded to a **Shiny**! ✨\n\n"
+            
+        announcement += (
             f"💰 **Reward**: `💰 +{coins_won} coins`\n"
             f"📊 **Level**: `Lvl 1`\n"
             f"🧬 **IV Quality**: `🧬 {iv_pct}%`\n"

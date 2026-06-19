@@ -29,7 +29,10 @@ async def cmd_catch(message: Message, db: AsyncSession):
     spawn = spawn_res.scalar_one_or_none()
 
     if not spawn:
-        await message.answer("⚠️ There are no active wild Pokémon in this group! Keep chatting to spawn one.")
+        if message.chat.type == "private":
+            await message.answer("⚠️ No wild Pokémon in your DM! Use `/hunt` to find one.", parse_mode="Markdown")
+        else:
+            await message.answer("⚠️ There are no active wild Pokémon here! Keep chatting to spawn one.")
         return
 
     # 2. Fetch Pokémon details
@@ -42,11 +45,11 @@ async def cmd_catch(message: Message, db: AsyncSession):
         await message.answer("❌ That name is incorrect! Take another look and try again.")
         return
 
-    # 4. Perform database transaction to catch (race condition protection)
-    # Double check active spawn exists
-    lock_spawn_stmt = select(ActiveSpawn).where(ActiveSpawn.chat_id == chat_id).with_for_update()
-    lock_spawn_res = await db.execute(lock_spawn_stmt)
-    active_lock = lock_spawn_res.scalar_one_or_none()
+    # 4. Perform database transaction to catch
+    # Re-check active spawn still exists (prevents double-catch)
+    rechk_stmt = select(ActiveSpawn).where(ActiveSpawn.chat_id == chat_id)
+    rechk_res = await db.execute(rechk_stmt)
+    active_lock = rechk_res.scalar_one_or_none()
 
     if not active_lock:
         await message.answer("⚠️ Too slow! Someone else caught this Pokémon already.")

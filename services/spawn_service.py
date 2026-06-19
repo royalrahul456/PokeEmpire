@@ -78,8 +78,19 @@ class SpawnService:
             # Update the active spawn record with the message ID
             active.message_id = msg.message_id
             await db.commit()
-            return True
         except Exception as e:
-            print(f"Error sending spawn message to chat {chat_id}: {e}")
-            return False
-        return False
+            print(f"Error sending spawn photo to chat {chat_id}: {e}")
+            # Fallback: send a text-only spawn message so players can still catch
+            try:
+                r_emoji = "⭐" if selected_rarity == "Legendary" else "✨"
+                fallback = (
+                    f"🌳 **WILD ENCOUNTER** 🌳\n"
+                    f"A wild **{selected_rarity}** Pokémon appeared!\n\n"
+                    f"{r_emoji} **Rarity**: `{selected_rarity}`\n\n"
+                    f"👉 `/catch <name>` to catch it!\n"
+                    f"───────────────"
+                )
+                await bot.send_message(chat_id=chat_id, text=fallback, parse_mode="Markdown")
+            except Exception:
+                pass
+        return True

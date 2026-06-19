@@ -21,7 +21,7 @@ else:
     if db_url.startswith("postgresql://"):
         db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
     if "sslmode=require" in db_url:
-        db_url = db_url.replace("sslmode=require", "ssl=true")
+        db_url = db_url.replace("sslmode=require", "ssl=require")
     DATABASE_URL = db_url
 
 # Admin List

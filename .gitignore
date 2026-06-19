@@ -1,0 +1,22 @@
+# Secrets & Environment
+.env
+
+# Databases & local state
+*.db
+*.sqlite
+*.sqlite3
+
+# Python cache & compiler output
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+ENV/
+.venv/
+
+# OS files
+.DS_Store
+Thumbs.db

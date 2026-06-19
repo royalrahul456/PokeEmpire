@@ -1,0 +1,427 @@
+{
+  "bulbasaur": {
+    "name": "Bulbasaur",
+    "tier": "Uncommon",
+    "types": ["Grass", "Poison"],
+    "base_stats": {
+      "hp": 45,
+      "atk": 49,
+      "def": 49,
+      "spd": 45,
+      "sp_atk": 65,
+      "sp_def": 65
+    },
+    "evolution_chain": ["bulbasaur", "ivysaur", "venusaur"],
+    "next_evolution": "ivysaur",
+    "evolution_level": 16,
+    "evolution_item": null
+  },
+  "ivysaur": {
+    "name": "Ivysaur",
+    "tier": "Rare",
+    "types": ["Grass", "Poison"],
+    "base_stats": {
+      "hp": 60,
+      "atk": 62,
+      "def": 63,
+      "spd": 60,
+      "sp_atk": 80,
+      "sp_def": 80
+    },
+    "evolution_chain": ["bulbasaur", "ivysaur", "venusaur"],
+    "next_evolution": "venusaur",
+    "evolution_level": 32,
+    "evolution_item": null
+  },
+  "venusaur": {
+    "name": "Venusaur",
+    "tier": "Epic",
+    "types": ["Grass", "Poison"],
+    "base_stats": {
+      "hp": 80,
+      "atk": 82,
+      "def": 83,
+      "spd": 80,
+      "sp_atk": 100,
+      "sp_def": 100
+    },
+    "evolution_chain": ["bulbasaur", "ivysaur", "venusaur"],
+    "next_evolution": null,
+    "evolution_level": null,
+    "evolution_item": null
+  },
+  "charmander": {
+    "name": "Charmander",
+    "tier": "Uncommon",
+    "types": ["Fire"],
+    "base_stats": {
+      "hp": 39,
+      "atk": 52,
+      "def": 43,
+      "spd": 65,
+      "sp_atk": 60,
+      "sp_def": 50
+    },
+    "evolution_chain": ["charmander", "charmeleon", "charizard"],
+    "next_evolution": "charmeleon",
+    "evolution_level": 16,
+    "evolution_item": null
+  },
+  "charmeleon": {
+    "name": "Charmeleon",
+    "tier": "Rare",
+    "types": ["Fire"],
+    "base_stats": {
+      "hp": 58,
+      "atk": 64,
+      "def": 58,
+      "spd": 80,
+      "sp_atk": 80,
+      "sp_def": 65
+    },
+    "evolution_chain": ["charmander", "charmeleon", "charizard"],
+    "next_evolution": "charizard",
+    "evolution_level": 36,
+    "evolution_item": null
+  },
+  "charizard": {
+    "name": "Charizard",
+    "tier": "Epic",
+    "types": ["Fire", "Flying"],
+    "base_stats": {
+      "hp": 78,
+      "atk": 84,
+      "def": 78,
+      "spd": 100,
+      "sp_atk": 109,
+      "sp_def": 85
+    },
+    "evolution_chain": ["charmander", "charmeleon", "charizard"],
+    "next_evolution": null,
+    "evolution_level": null,
+    "evolution_item": null
+  },
+  "squirtle": {
+    "name": "Squirtle",
+    "tier": "Uncommon",
+    "types": ["Water"],
+    "base_stats": {
+      "hp": 44,
+      "atk": 48,
+      "def": 65,
+      "spd": 43,
+      "sp_atk": 50,
+      "sp_def": 64
+    },
+    "evolution_chain": ["squirtle", "wartortle", "blastoise"],
+    "next_evolution": "wartortle",
+    "evolution_level": 16,
+    "evolution_item": null
+  },
+  "wartortle": {
+    "name": "Wartortle",
+    "tier": "Rare",
+    "types": ["Water"],
+    "base_stats": {
+      "hp": 59,
+      "atk": 63,
+      "def": 80,
+      "spd": 58,
+      "sp_atk": 65,
+      "sp_def": 80
+    },
+    "evolution_chain": ["squirtle", "wartortle", "blastoise"],
+    "next_evolution": "blastoise",
+    "evolution_level": 36,
+    "evolution_item": null
+  },
+  "blastoise": {
+    "name": "Blastoise",
+    "tier": "Epic",
+    "types": ["Water"],
+    "base_stats": {
+      "hp": 79,
+      "atk": 83,
+      "def": 100,
+      "spd": 78,
+      "sp_atk": 85,
+      "sp_def": 105
+    },
+    "evolution_chain": ["squirtle", "wartortle", "blastoise"],
+    "next_evolution": null,
+    "evolution_level": null,
+    "evolution_item": null
+  },
+  "caterpie": {
+    "name": "Caterpie",
+    "tier": "Common",
+    "types": ["Bug"],
+    "base_stats": {
+      "hp": 45,
+      "atk": 30,
+      "def": 35,
+      "spd": 45,
+      "sp_atk": 20,
+      "sp_def": 20
+    },
+    "evolution_chain": ["caterpie", "metapod", "butterfree"],
+    "next_evolution": "metapod",
+    "evolution_level": 7,
+    "evolution_item": null
+  },
+  "metapod": {
+    "name": "Metapod",
+    "tier": "Common",
+    "types": ["Bug"],
+    "base_stats": {
+      "hp": 50,
+      "atk": 20,
+      "def": 55,
+      "spd": 30,
+      "sp_atk": 25,
+      "sp_def": 25
+    },
+    "evolution_chain": ["caterpie", "metapod", "butterfree"],
+    "next_evolution": "butterfree",
+    "evolution_level": 10,
+    "evolution_item": null
+  },
+  "butterfree": {
+    "name": "Butterfree",
+    "tier": "Uncommon",
+    "types": ["Bug", "Flying"],
+    "base_stats": {
+      "hp": 60,
+      "atk": 45,
+      "def": 50,
+      "spd": 70,
+      "sp_atk": 90,
+      "sp_def": 80
+    },
+    "evolution_chain": ["caterpie", "metapod", "butterfree"],
+    "next_evolution": null,
+    "evolution_level": null,
+    "evolution_item": null
+  },
+  "pikachu": {
+    "name": "Pikachu",
+    "tier": "Rare",
+    "types": ["Electric"],
+    "base_stats": {
+      "hp": 35,
+      "atk": 55,
+      "def": 40,
+      "spd": 90,
+      "sp_atk": 50,
+      "sp_def": 50
+    },
+    "evolution_chain": ["pichu", "pikachu", "raichu"],
+    "next_evolution": "raichu",
+    "evolution_level": null,
+    "evolution_item": "thunder_stone"
+  },
+  "raichu": {
+    "name": "Raichu",
+    "tier": "Epic",
+    "types": ["Electric"],
+    "base_stats": {
+      "hp": 60,
+      "atk": 90,
+      "def": 55,
+      "spd": 110,
+      "sp_atk": 90,
+      "sp_def": 80
+    },
+    "evolution_chain": ["pichu", "pikachu", "raichu"],
+    "next_evolution": null,
+    "evolution_level": null,
+    "evolution_item": null
+  },
+  "gastly": {
+    "name": "Gastly",
+    "tier": "Rare",
+    "types": ["Ghost", "Poison"],
+    "base_stats": {
+      "hp": 30,
+      "atk": 35,
+      "def": 30,
+      "spd": 80,
+      "sp_atk": 100,
+      "sp_def": 35
+    },
+    "evolution_chain": ["gastly", "haunter", "gengar"],
+    "next_evolution": "haunter",
+    "evolution_level": 25,
+    "evolution_item": null
+  },
+  "haunter": {
+    "name": "Haunter",
+    "tier": "Epic",
+    "types": ["Ghost", "Poison"],
+    "base_stats": {
+      "hp": 45,
+      "atk": 50,
+      "def": 45,
+      "spd": 95,
+      "sp_atk": 115,
+      "sp_def": 55
+    },
+    "evolution_chain": ["gastly", "haunter", "gengar"],
+    "next_evolution": "gengar",
+    "evolution_level": 40,
+    "evolution_item": null
+  },
+  "gengar": {
+    "name": "Gengar",
+    "tier": "Epic",
+    "types": ["Ghost", "Poison"],
+    "base_stats": {
+      "hp": 60,
+      "atk": 65,
+      "def": 60,
+      "spd": 110,
+      "sp_atk": 130,
+      "sp_def": 75
+    },
+    "evolution_chain": ["gastly", "haunter", "gengar"],
+    "next_evolution": null,
+    "evolution_level": null,
+    "evolution_item": null
+  },
+  "rattata": {
+    "name": "Rattata",
+    "tier": "Common",
+    "types": ["Normal"],
+    "base_stats": {
+      "hp": 30,
+      "atk": 56,
+      "def": 35,
+      "spd": 72,
+      "sp_atk": 25,
+      "sp_def": 35
+    },
+    "evolution_chain": ["rattata", "raticate"],
+    "next_evolution": "raticate",
+    "evolution_level": 20,
+    "evolution_item": null
+  },
+  "raticate": {
+    "name": "Raticate",
+    "tier": "Uncommon",
+    "types": ["Normal"],
+    "base_stats": {
+      "hp": 55,
+      "atk": 81,
+      "def": 60,
+      "spd": 97,
+      "sp_atk": 50,
+      "sp_def": 70
+    },
+    "evolution_chain": ["rattata", "raticate"],
+    "next_evolution": null,
+    "evolution_level": null,
+    "evolution_item": null
+  },
+  "eevee": {
+    "name": "Eevee",
+    "tier": "Rare",
+    "types": ["Normal"],
+    "base_stats": {
+      "hp": 55,
+      "atk": 55,
+      "def": 50,
+      "spd": 55,
+      "sp_atk": 45,
+      "sp_def": 65
+    },
+    "evolution_chain": ["eevee", "flareon", "vaporeon", "jolteon"],
+    "next_evolution": "vaporeon",
+    "evolution_level": null,
+    "evolution_item": "water_stone"
+  },
+  "flareon": {
+    "name": "Flareon",
+    "tier": "Epic",
+    "types": ["Fire"],
+    "base_stats": {
+      "hp": 65,
+      "atk": 130,
+      "def": 60,
+      "spd": 65,
+      "sp_atk": 95,
+      "sp_def": 110
+    },
+    "evolution_chain": ["eevee", "flareon"],
+    "next_evolution": null,
+    "evolution_level": null,
+    "evolution_item": null
+  },
+  "vaporeon": {
+    "name": "Vaporeon",
+    "tier": "Epic",
+    "types": ["Water"],
+    "base_stats": {
+      "hp": 130,
+      "atk": 65,
+      "def": 60,
+      "spd": 65,
+      "sp_atk": 110,
+      "sp_def": 95
+    },
+    "evolution_chain": ["eevee", "vaporeon"],
+    "next_evolution": null,
+    "evolution_level": null,
+    "evolution_item": null
+  },
+  "jolteon": {
+    "name": "Jolteon",
+    "tier": "Epic",
+    "types": ["Electric"],
+    "base_stats": {
+      "hp": 65,
+      "atk": 65,
+      "def": 60,
+      "spd": 130,
+      "sp_atk": 110,
+      "sp_def": 95
+    },
+    "evolution_chain": ["eevee", "jolteon"],
+    "next_evolution": null,
+    "evolution_level": null,
+    "evolution_item": null
+  },
+  "mewtwo": {
+    "name": "Mewtwo",
+    "tier": "Legendary",
+    "types": ["Psychic"],
+    "base_stats": {
+      "hp": 106,
+      "atk": 110,
+      "def": 90,
+      "spd": 130,
+      "sp_atk": 154,
+      "sp_def": 90
+    },
+    "evolution_chain": ["mewtwo"],
+    "next_evolution": null,
+    "evolution_level": null,
+    "evolution_item": null
+  },
+  "mew": {
+    "name": "Mew",
+    "tier": "Mythical",
+    "types": ["Psychic"],
+    "base_stats": {
+      "hp": 100,
+      "atk": 100,
+      "def": 100,
+      "spd": 100,
+      "sp_atk": 100,
+      "sp_def": 100
+    },
+    "evolution_chain": ["mew"],
+    "next_evolution": null,
+    "evolution_level": null,
+    "evolution_item": null
+  }
+}

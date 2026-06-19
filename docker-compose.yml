@@ -1,0 +1,10 @@
+services:
+  bot:
+    build: .
+    container_name: pokeempire_bot
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ./pokeempire.db:/app/pokeempire.db
+      - ./data:/app/data

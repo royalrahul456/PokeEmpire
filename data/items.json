@@ -1,0 +1,87 @@
+{
+  "ball_basic": {
+    "name": "Basic Ball",
+    "description": "A standard device for catching wild monsters.",
+    "category": "ball",
+    "multiplier": 1.0,
+    "buy_price": 100,
+    "sell_price": 50
+  },
+  "ball_great": {
+    "name": "Great Ball",
+    "description": "A high-performance ball with an improved catch rate.",
+    "category": "ball",
+    "multiplier": 1.5,
+    "buy_price": 300,
+    "sell_price": 150
+  },
+  "ball_ultra": {
+    "name": "Ultra Ball",
+    "description": "An ultra-performance ball that catches monsters easily.",
+    "category": "ball",
+    "multiplier": 2.0,
+    "buy_price": 800,
+    "sell_price": 400
+  },
+  "ball_master": {
+    "name": "Master Ball",
+    "description": "The best ball. It will catch any wild monster without fail.",
+    "category": "ball",
+    "multiplier": 100.0,
+    "buy_price": 10000,
+    "sell_price": 5000
+  },
+  "potion_basic": {
+    "name": "Potion",
+    "description": "Restores 50 HP of a wounded monster.",
+    "category": "potion",
+    "value": 50,
+    "buy_price": 150,
+    "sell_price": 75
+  },
+  "potion_hyper": {
+    "name": "Hyper Potion",
+    "description": "Restores 200 HP of a wounded monster.",
+    "category": "potion",
+    "value": 200,
+    "buy_price": 500,
+    "sell_price": 250
+  },
+  "revive_basic": {
+    "name": "Revive",
+    "description": "Revives a fainted monster, restoring 50% of its max HP.",
+    "category": "revive",
+    "value": 0.5,
+    "buy_price": 800,
+    "sell_price": 400
+  },
+  "thunder_stone": {
+    "name": "Thunder Stone",
+    "description": "A peculiar stone that can make certain Electric monsters evolve.",
+    "category": "stone",
+    "buy_price": 2000,
+    "sell_price": 1000
+  },
+  "water_stone": {
+    "name": "Water Stone",
+    "description": "A peculiar stone that can make certain Water monsters evolve.",
+    "category": "stone",
+    "buy_price": 2000,
+    "sell_price": 1000
+  },
+  "fire_stone": {
+    "name": "Fire Stone",
+    "description": "A peculiar stone that can make certain Fire monsters evolve.",
+    "category": "stone",
+    "buy_price": 2000,
+    "sell_price": 1000
+  },
+  "rare_candy": {
+    "name": "Rare Candy",
+    "description": "A candy that instantly boosts a monster's level by 1.",
+    "category": "xp_boost",
+    "value": 1,
+    "buy_price": 3000,
+    "sell_price": 1500
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "quest_daily_catch": {
+    "name": "Daily Collector",
+    "description": "Catch 3 wild monsters today.",
+    "type": "daily",
+    "target_type": "catch",
+    "target_amount": 3,
+    "rewards": {
+      "coins": 200,
+      "gems": 2,
+      "items": {
+        "ball_basic": 2
+      }
+    }
+  },
+  "quest_daily_battle": {
+    "name": "Daily Challenger",
+    "description": "Win 2 PvE bot battles today.",
+    "type": "daily",
+    "target_type": "battle_win",
+    "target_amount": 2,
+    "rewards": {
+      "coins": 300,
+      "gems": 3,
+      "items": {
+        "potion_basic": 1
+      }
+    }
+  },
+  "quest_weekly_hunt": {
+    "name": "Weekly Tracker",
+    "description": "Go hunting 20 times.",
+    "type": "weekly",
+    "target_type": "hunt",
+    "target_amount": 20,
+    "rewards": {
+      "coins": 1000,
+      "gems": 15,
+      "items": {
+        "ball_ultra": 2
+      }
+    }
+  },
+  "quest_weekly_duel": {
+    "name": "Weekly Duelist",
+    "description": "Win 3 PvP duels against other trainers.",
+    "type": "weekly",
+    "target_type": "pvp_win",
+    "target_amount": 3,
+    "rewards": {
+      "coins": 1500,
+      "gems": 20,
+      "items": {
+        "rare_candy": 1
+      }
+    }
+  },
+  "quest_story_first_catch": {
+    "name": "First Hunt",
+    "description": "Successfully catch your first monster.",
+    "type": "story",
+    "target_type": "catch",
+    "target_amount": 1,
+    "rewards": {
+      "coins": 500,
+      "gems": 5,
+      "items": {
+        "ball_great": 3
+      }
+    }
+  },
+  "quest_story_level_10": {
+    "name": "Unlocking Potential",
+    "description": "Reach Trainer Level 10.",
+    "type": "story",
+    "target_type": "trainer_level",
+    "target_amount": 10,
+    "rewards": {
+      "coins": 2000,
+      "gems": 30,
+      "items": {
+        "ball_master": 1
+      }
+    }
+  }
+}

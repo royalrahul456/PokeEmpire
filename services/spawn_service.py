@@ -44,19 +44,7 @@ class SpawnService:
         # 3. Roll shiny rate (1 in 500)
         is_shiny = random.randint(1, 500) == 1
 
-        # 4. Remove any active spawn in this chat
-        await db.execute(delete(ActiveSpawn).where(ActiveSpawn.chat_id == chat_id))
-
-        # 5. Insert new active spawn record
-        active = ActiveSpawn(
-            chat_id=chat_id,
-            pokemon_id=selected_pokemon.id,
-            is_shiny=is_shiny
-        )
-        db.add(active)
-        await db.commit()
-
-        # 6. Build spawn text
+        # 4. Build spawn text & keyboards
         status_text = "✨ **SHINY** ✨" if is_shiny else "🌳 **Normal**"
         caption = (
             f"🌳 **WILD ENCOUNTER** 🌳\n"
@@ -72,7 +60,9 @@ class SpawnService:
             [InlineKeyboardButton(text="🔍 Hint (2,000 coins)", callback_data="spawn_hint")]
         ])
 
-        # 7. Post spawn photo to the chat
+        message_id = None
+
+        # 5. Post spawn photo to the chat
         try:
             msg = await bot.send_photo(
                 chat_id=chat_id,
@@ -81,9 +71,7 @@ class SpawnService:
                 reply_markup=hint_keyboard,
                 parse_mode="Markdown"
             )
-            # Update the active spawn record with the message ID
-            active.message_id = msg.message_id
-            await db.commit()
+            message_id = msg.message_id
         except Exception as e:
             print(f"Error sending spawn photo to chat {chat_id}: {e}")
             # Fallback: send a text-only spawn message so players can still catch
@@ -96,7 +84,22 @@ class SpawnService:
                     f"👉 `/catch <name>` to catch it!\n"
                     f"───────────────"
                 )
-                await bot.send_message(chat_id=chat_id, text=fallback, reply_markup=hint_keyboard, parse_mode="Markdown")
+                msg = await bot.send_message(chat_id=chat_id, text=fallback, reply_markup=hint_keyboard, parse_mode="Markdown")
+                message_id = msg.message_id
             except Exception:
                 pass
+
+        # 6. Perform DB operations in a single fast transaction
+        # Remove any active spawn in this chat
+        await db.execute(delete(ActiveSpawn).where(ActiveSpawn.chat_id == chat_id))
+
+        # Insert new active spawn record with message_id already set
+        active = ActiveSpawn(
+            chat_id=chat_id,
+            pokemon_id=selected_pokemon.id,
+            is_shiny=is_shiny,
+            message_id=message_id
+        )
+        db.add(active)
+        await db.commit()
         return True

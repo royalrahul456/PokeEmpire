@@ -58,8 +58,8 @@ async def cmd_catch(message: Message, db: AsyncSession):
         return
 
     try:
-        # Delete active spawn first to block other catch requests
-        await db.delete(active_lock)
+        # Delete active spawn using direct SQL (avoids ORM identity-map conflicts with asyncpg)
+        await db.execute(delete(ActiveSpawn).where(ActiveSpawn.chat_id == chat_id))
         await db.flush()
 
         # Check and register user in DB if they don't exist yet
@@ -130,11 +130,14 @@ async def cmd_catch(message: Message, db: AsyncSession):
         await message.answer(announcement, parse_mode="Markdown")
 
     except Exception as e:
+        # Rollback broken transaction before any further DB operations
+        await db.rollback()
         # Log full error to Render logs for diagnosis
-        print(f"[CATCH ERROR] user={user_id} chat={chat_id} pokemon={pokemon.name}: {e}")
+        print(f"[CATCH ERROR] user={user_id} chat={chat_id} pokemon={pokemon.name} error_type={type(e).__name__}: {e}")
         traceback.print_exc()
         await message.answer(
             f"❌ **Catch failed!** A database error occurred.\n"
             f"Please try again. If this keeps happening, contact the bot owner."
         )
+
 

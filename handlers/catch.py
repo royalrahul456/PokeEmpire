@@ -43,7 +43,21 @@ async def cmd_catch(message: Message, db: AsyncSession):
     pokemon = poke_res.scalar_one()
 
     # 3. Check guess correctness
-    if guess != pokemon.name.lower():
+    actual_name = pokemon.name.lower()
+    # Accept base name for form variants by stripping known suffixes from the END only
+    # e.g. "basculegion-male" → "basculegion", "mr-mime-galarian" → "mr-mime"
+    FORM_SUFFIXES = {"male", "female", "galarian", "alolan", "hisuian", "paldean",
+                     "galar", "alola", "hisui", "paldea", "mega", "gmax", "primal",
+                     "origin", "sky", "land", "incarnate", "therian", "black", "white",
+                     "attack", "defense", "speed", "sunshine", "rainy", "snowy",
+                     "heat", "wash", "frost", "fan", "mow", "altered", "overcast",
+                     "sandy", "trash", "plant", "east", "west", "north", "south"}
+    base_name = actual_name
+    if "-" in actual_name:
+        parts = actual_name.rsplit("-", 1)
+        if parts[-1] in FORM_SUFFIXES:
+            base_name = parts[0]
+    if guess != actual_name and guess != base_name:
         await message.answer("❌ That name is incorrect! Take another look and try again.")
         return
 

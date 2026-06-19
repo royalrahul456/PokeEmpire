@@ -17,10 +17,13 @@ class SpawnService:
     async def trigger_spawn(db: AsyncSession, chat_id: int, bot: Bot) -> bool:
         """Rolls rarity, selects a random Pokémon, rolls shiny status, and spawns it in the group."""
         
-        # 1. Roll rarity tier
-        rarities = list(RARITY_PROBABILITIES.keys())
-        weights = [RARITY_PROBABILITIES[r] for r in rarities]
-        selected_rarity = random.choices(rarities, weights=weights, k=1)[0]
+        # 1. Roll rarity tier (Group chats only spawn Legendary rarity)
+        if chat_id < 0:
+            selected_rarity = "Legendary"
+        else:
+            rarities = list(RARITY_PROBABILITIES.keys())
+            weights = [RARITY_PROBABILITIES[r] for r in rarities]
+            selected_rarity = random.choices(rarities, weights=weights, k=1)[0]
 
         # 2. Query Pokémon matching that rarity tier
         stmt = select(Pokemon).where(Pokemon.rarity == selected_rarity)

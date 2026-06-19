@@ -42,8 +42,8 @@ async def cmd_set_spawn(message: Message, db: AsyncSession):
         return
 
     threshold = int(parts[1])
-    if threshold < 5 or threshold > 1000:
-        await message.answer("⚠️ Threshold must be between 5 and 1000 messages.")
+    if threshold < 30 or threshold > 300:
+        await message.answer("⚠️ Threshold must be between 30 and 300 messages.")
         return
 
     # Query or create GroupSetting

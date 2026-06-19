@@ -20,7 +20,8 @@ from handlers import (
     admin,
     games,
     shop,
-    trade
+    trade,
+    hunt
 )
 
 # Set up logging configuration
@@ -142,6 +143,7 @@ async def main():
     dp.include_router(games.router)
     dp.include_router(shop.router)
     dp.include_router(trade.router)
+    dp.include_router(hunt.router)
 
     logger.info("Bot handlers and routers registered.")
     

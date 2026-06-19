@@ -253,18 +253,24 @@ async def cb_dm_dex(callback: CallbackQuery, db: AsyncSession):
     caught_count_res = await db.execute(caught_count_stmt)
     caught_count = caught_count_res.scalar() or 0
 
+    # Get nickname
+    u_stmt = select(User).where(User.id == user_id)
+    u_res = await db.execute(u_stmt)
+    user = u_res.scalar_one_or_none()
+    nickname = user.nickname if user else callback.from_user.first_name
+
     if caught_count == 0:
         text = (
-            "🏆 **POKÉDEX** 🏆\n"
-            "───────────────\n\n"
-            "⚠️ **Your Pokédex is empty!**\n"
-            "Catch wild Pokémon in a group chat first to register them in your Pokédex."
+            f"👑 **{escape_md(nickname)}'s Pokédex** 👑\n"
+            f"───────────────\n\n"
+            f"⚠️ **Your Pokédex is empty!**\n"
+            f"Catch wild Pokémon in a group chat first to register them in your Pokédex."
         )
         await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
         await callback.answer()
         return
 
-    per_page = 30
+    per_page = 15
     max_page = (caught_count + per_page - 1) // per_page
     if page < 1: page = 1
     if page > max_page: page = max_page
@@ -272,28 +278,79 @@ async def cb_dm_dex(callback: CallbackQuery, db: AsyncSession):
     offset = (page - 1) * per_page
 
     # Query unique caught species sorted by ID for the current page
-    poke_stmt = select(Pokemon).join(UserPokemon).where(
-        UserPokemon.user_id == user_id
-    ).group_by(Pokemon.id).order_by(Pokemon.id).offset(offset).limit(per_page)
+    poke_stmt = (
+        select(
+            Pokemon,
+            func.count(UserPokemon.id).label("total_caught"),
+            func.max(UserPokemon.is_shiny).label("has_shiny")
+        )
+        .join(UserPokemon)
+        .where(UserPokemon.user_id == user_id)
+        .group_by(Pokemon.id)
+        .order_by(Pokemon.id)
+        .offset(offset)
+        .limit(per_page)
+    )
     poke_res = await db.execute(poke_stmt)
-    all_pokemon = poke_res.scalars().all()
+    pairs = poke_res.all()
+
+    # Query stats per generation
+    gen_stats_stmt = (
+        select(Pokemon.generation, func.count(distinct(UserPokemon.pokemon_id)))
+        .join(UserPokemon)
+        .where(UserPokemon.user_id == user_id)
+        .group_by(Pokemon.generation)
+    )
+    gen_stats_res = await db.execute(gen_stats_stmt)
+    gen_stats = {gen: count for gen, count in gen_stats_res.all()}
+
+    gen_totals_stmt = select(Pokemon.generation, func.count(Pokemon.id)).group_by(Pokemon.generation)
+    gen_totals_res = await db.execute(gen_totals_stmt)
+    gen_totals = {gen: count for gen, count in gen_totals_res.all()}
+
+    # Determine Pokedex Cover Image
+    from utils.favorite import get_favorite_id
+    fav_id = get_favorite_id(user_id)
+    cover_image = None
+    if fav_id:
+        fav_stmt = select(Pokemon.image_url).join(UserPokemon, UserPokemon.pokemon_id == Pokemon.id).where(UserPokemon.id == fav_id, UserPokemon.user_id == user_id)
+        fav_res = await db.execute(fav_stmt)
+        cover_image = fav_res.scalar_one_or_none()
+    
+    if not cover_image:
+        rand_stmt = select(Pokemon.image_url).join(UserPokemon, UserPokemon.pokemon_id == Pokemon.id).where(UserPokemon.user_id == user_id).order_by(func.random()).limit(1)
+        rand_res = await db.execute(rand_stmt)
+        cover_image = rand_res.scalar_one_or_none()
 
     percent = int((caught_count / total_species) * 100)
-
-    # Progress bar
     bar = get_progress_bar(caught_count, total_species, 10, fill_char="█", empty_char="░")
 
+    cover_link = f"[​]({cover_image})" if cover_image else ""
     text = (
-        f"🏆 **POKÉDEX** 🏆\n"
-        f"Page {page} of {max_page}\n"
+        f"{cover_link}"
+        f"👑 **{escape_md(nickname)}'s Pokédex** 👑 — Page {page}/{max_page}\n"
         f"Completion: **{caught_count}/{total_species}** species (**{percent}%**)\n"
         f"`[{bar}]` 🔴\n"
-        f"───────────────\n\n"
+        f"───────────────\n"
     )
 
-    for p in all_pokemon:
-        r_emoji = get_rarity_emoji(p.rarity)
-        text += f"{r_emoji} **#{p.id:03d}** {p.name.title()} `({p.rarity})`\n"
+    current_gen = None
+    rarity_badges = {
+        "Common": "⚪️",
+        "Rare": "🔵",
+        "Epic": "🟣",
+        "Legendary": "🟡",
+        "Mythical": "🌌"
+    }
+
+    for p, total, has_shiny in pairs:
+        if p.generation != current_gen:
+            current_gen = p.generation
+            text += f"\n**Generation {current_gen}** {gen_stats.get(current_gen, 0)}/{gen_totals.get(current_gen, 0)}\n"
+            
+        badge = rarity_badges.get(p.rarity, "⚪️")
+        shiny_tag = " [✨]" if has_shiny else ""
+        text += f"◈⌠{badge}⌡ #{p.id:03d} {p.name.title()}{shiny_tag} ×{total}\n"
 
     text += "\n───────────────"
 

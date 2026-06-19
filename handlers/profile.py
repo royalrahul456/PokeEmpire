@@ -1,6 +1,7 @@
-from aiogram import Router
+from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, distinct, desc
 from database.models import User, UserPokemon, Pokemon
@@ -176,16 +177,22 @@ async def cmd_pokedex(message: Message, db: AsyncSession):
     caught_count_res = await db.execute(caught_count_stmt)
     caught_count = caught_count_res.scalar() or 0
 
+    # Get nickname
+    u_stmt = select(User).where(User.id == user_id)
+    u_res = await db.execute(u_stmt)
+    user = u_res.scalar_one_or_none()
+    nickname = user.nickname if user else message.from_user.first_name
+
     if caught_count == 0:
         await message.answer(
-            "🏆 **POKÉDEX** 🏆\n"
-            "───────────────\n\n"
-            "⚠️ **Your Pokédex is empty!**\n"
-            "Catch wild Pokémon in a group chat first to register them in your Pokédex."
+            f"👑 **{escape_md(nickname)}'s Pokédex** 👑\n"
+            f"───────────────\n\n"
+            f"⚠️ **Your Pokédex is empty!**\n"
+            f"Catch wild Pokémon in a group chat first to register them in your Pokédex."
         )
         return
 
-    per_page = 30
+    per_page = 15
     max_page = (caught_count + per_page - 1) // per_page
     if page < 1: page = 1
     if page > max_page: page = max_page
@@ -193,28 +200,79 @@ async def cmd_pokedex(message: Message, db: AsyncSession):
     offset = (page - 1) * per_page
 
     # Query unique caught species sorted by ID for the current page
-    poke_stmt = select(Pokemon).join(UserPokemon).where(
-        UserPokemon.user_id == user_id
-    ).group_by(Pokemon.id).order_by(Pokemon.id).offset(offset).limit(per_page)
+    poke_stmt = (
+        select(
+            Pokemon,
+            func.count(UserPokemon.id).label("total_caught"),
+            func.max(UserPokemon.is_shiny).label("has_shiny")
+        )
+        .join(UserPokemon)
+        .where(UserPokemon.user_id == user_id)
+        .group_by(Pokemon.id)
+        .order_by(Pokemon.id)
+        .offset(offset)
+        .limit(per_page)
+    )
     poke_res = await db.execute(poke_stmt)
-    all_pokemon = poke_res.scalars().all()
+    pairs = poke_res.all()
+
+    # Query stats per generation
+    gen_stats_stmt = (
+        select(Pokemon.generation, func.count(distinct(UserPokemon.pokemon_id)))
+        .join(UserPokemon)
+        .where(UserPokemon.user_id == user_id)
+        .group_by(Pokemon.generation)
+    )
+    gen_stats_res = await db.execute(gen_stats_stmt)
+    gen_stats = {gen: count for gen, count in gen_stats_res.all()}
+
+    gen_totals_stmt = select(Pokemon.generation, func.count(Pokemon.id)).group_by(Pokemon.generation)
+    gen_totals_res = await db.execute(gen_totals_stmt)
+    gen_totals = {gen: count for gen, count in gen_totals_res.all()}
+
+    # Determine Pokedex Cover Image
+    from utils.favorite import get_favorite_id
+    fav_id = get_favorite_id(user_id)
+    cover_image = None
+    if fav_id:
+        fav_stmt = select(Pokemon.image_url).join(UserPokemon, UserPokemon.pokemon_id == Pokemon.id).where(UserPokemon.id == fav_id, UserPokemon.user_id == user_id)
+        fav_res = await db.execute(fav_stmt)
+        cover_image = fav_res.scalar_one_or_none()
+    
+    if not cover_image:
+        rand_stmt = select(Pokemon.image_url).join(UserPokemon, UserPokemon.pokemon_id == Pokemon.id).where(UserPokemon.user_id == user_id).order_by(func.random()).limit(1)
+        rand_res = await db.execute(rand_stmt)
+        cover_image = rand_res.scalar_one_or_none()
 
     percent = int((caught_count / total_species) * 100)
-
-    # Progress bar
     bar = get_progress_bar(caught_count, total_species, 10, fill_char="█", empty_char="░")
 
+    cover_link = f"[​]({cover_image})" if cover_image else ""
     text = (
-        f"🏆 **POKÉDEX** 🏆\n"
-        f"Page {page} of {max_page}\n"
+        f"{cover_link}"
+        f"👑 **{escape_md(nickname)}'s Pokédex** 👑 — Page {page}/{max_page}\n"
         f"Completion: **{caught_count}/{total_species}** species (**{percent}%**)\n"
         f"`[{bar}]` 🔴\n"
-        f"───────────────\n\n"
+        f"───────────────\n"
     )
 
-    for p in all_pokemon:
-        r_emoji = get_rarity_emoji(p.rarity)
-        text += f"{r_emoji} **#{p.id:03d}** {p.name.title()} `({p.rarity})`\n"
+    current_gen = None
+    rarity_badges = {
+        "Common": "⚪️",
+        "Rare": "🔵",
+        "Epic": "🟣",
+        "Legendary": "🟡",
+        "Mythical": "🌌"
+    }
+
+    for p, total, has_shiny in pairs:
+        if p.generation != current_gen:
+            current_gen = p.generation
+            text += f"\n**Generation {current_gen}** {gen_stats.get(current_gen, 0)}/{gen_totals.get(current_gen, 0)}\n"
+            
+        badge = rarity_badges.get(p.rarity, "⚪️")
+        shiny_tag = " [✨]" if has_shiny else ""
+        text += f"◈⌠{badge}⌡ #{p.id:03d} {p.name.title()}{shiny_tag} ×{total}\n"
 
     text += "\n───────────────"
     if max_page > 1:
@@ -337,4 +395,169 @@ async def cmd_leaderboard(message: Message, db: AsyncSession):
     )
 
     await message.answer(leaderboard_card, parse_mode="Markdown")
+
+@router.message(Command("fav"))
+async def cmd_fav(message: Message, db: AsyncSession):
+    user_id = message.from_user.id
+    parts = message.text.split()
+    if len(parts) < 2 or not parts[1].isdigit():
+        await message.answer("⚠️ Format: `/fav <inventory_id>`\n(e.g., `/fav 14` from your `/pokemon` list)")
+        return
+    
+    up_id = int(parts[1])
+    
+    # Verify user owns this UserPokemon
+    stmt = select(UserPokemon, Pokemon).join(Pokemon).where(
+        UserPokemon.id == up_id,
+        UserPokemon.user_id == user_id
+    )
+    res = await db.execute(stmt)
+    pair = res.first()
+    
+    if not pair:
+        await message.answer("❌ You don't own a Pokémon with that inventory ID in your collection!")
+        return
+        
+    up, p = pair
+    from utils.favorite import set_favorite_id
+    set_favorite_id(user_id, up_id)
+    
+    shiny_tag = "✨ Shiny " if up.is_shiny else ""
+    await message.answer(f"⭐ **{shiny_tag}{p.name.title()}** (ID: {up_id}) has been set as your Pokédex cover favorite!")
+
+@router.message(Command("unfav"))
+async def cmd_unfav(message: Message):
+    user_id = message.from_user.id
+    from utils.favorite import set_favorite_id
+    set_favorite_id(user_id, None)
+    await message.answer("❌ Cleared your favorite cover. A random Pokémon from your bag will be shown instead.")
+
+@router.message(Command("search"))
+@router.message(Command("s"))
+async def cmd_search(message: Message, db: AsyncSession):
+    user_id = message.from_user.id
+    parts = message.text.split()
+    if len(parts) < 2:
+        await message.answer("⚠️ Format: `/search <pokemon_name_or_id>`\n(e.g., `/search bulbasaur` or `/search 1`)")
+        return
+        
+    query = " ".join(parts[1:]).strip().lower()
+    
+    # Query species
+    if query.isdigit():
+        poke_stmt = select(Pokemon).where(Pokemon.id == int(query))
+    else:
+        poke_stmt = select(Pokemon).where(Pokemon.name.ilike(query))
+        
+    poke_res = await db.execute(poke_stmt)
+    pokemon = poke_res.scalar_one_or_none()
+    
+    if not pokemon:
+        await message.answer(f"❌ Pokémon '{escape_md(query)}' not found in database.")
+        return
+        
+    # Query player's own catches of this species
+    catches_stmt = select(UserPokemon).where(
+        UserPokemon.user_id == user_id,
+        UserPokemon.pokemon_id == pokemon.id
+    ).order_by(UserPokemon.caught_at.desc())
+    catches_res = await db.execute(catches_stmt)
+    user_catches = catches_res.scalars().all()
+    
+    r_emoji = get_rarity_emoji(pokemon.rarity)
+    cover_link = f"[​]({pokemon.image_url})"
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="👥 Owners", callback_data=f"show_owners_{pokemon.id}")]
+    ])
+    
+    if len(user_catches) > 0:
+        # Find best caught (highest IV)
+        best_up = None
+        best_iv_pct = -1
+        for up in user_catches:
+            iv_total = up.iv_hp + up.iv_atk + up.iv_def + up.iv_spd
+            iv_pct = int((iv_total / 124) * 100)
+            if iv_pct > best_iv_pct:
+                best_iv_pct = iv_pct
+                best_up = up
+                
+        shiny_label = "✨ Yes" if best_up.is_shiny else "❌ No"
+        text = (
+            f"{cover_link}"
+            f"🔍 **SEARCH RESULTS** 🔍\n"
+            f"───────────────\n"
+            f"🎉 Species: {r_emoji} **{pokemon.name.title()}** {r_emoji}\n"
+            f"🆔 Pokédex ID: `#{pokemon.id:03d}`\n"
+            f"⭐ Rarity: `{pokemon.rarity}`\n"
+            f"🧬 Total Caught: `{len(user_catches)} caught`\n\n"
+            f"🏆 **Your Best Pokémon**:\n"
+            f"• Inventory ID: `{best_up.id}`\n"
+            f"• Level: `Lvl {best_up.level}`\n"
+            f"• IV Quality: `{best_iv_pct}%` (HP: {best_up.iv_hp}, ATK: {best_up.iv_atk}, DEF: {best_up.iv_def}, SPD: {best_up.iv_spd})\n"
+            f"• Shiny: `{shiny_label}`\n"
+            f"───────────────"
+        )
+    else:
+        text = (
+            f"{cover_link}"
+            f"🔍 **SEARCH RESULTS** 🔍\n"
+            f"───────────────\n"
+            f"🎉 Species: {r_emoji} **{pokemon.name.title()}** {r_emoji}\n"
+            f"🆔 Pokédex ID: `#{pokemon.id:03d}`\n"
+            f"⭐ Rarity: `{pokemon.rarity}`\n"
+            f"🧬 Total Caught: `0 caught` (You haven't caught this species yet!)\n"
+            f"───────────────"
+        )
+        
+    await message.answer(text, reply_markup=kb, parse_mode="Markdown")
+
+@router.callback_query(F.data.startswith("show_owners_"))
+async def cb_show_owners(callback: CallbackQuery, db: AsyncSession):
+    try:
+        pokemon_id = int(callback.data.split("_")[2])
+    except (IndexError, ValueError):
+        await callback.answer("⚠️ Invalid action.")
+        return
+        
+    # Fetch Pokémon details
+    poke_stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
+    poke_res = await db.execute(poke_stmt)
+    pokemon = poke_res.scalar_one_or_none()
+    
+    if not pokemon:
+        await callback.answer("⚠️ Pokémon not found.")
+        return
+        
+    # Query owners list
+    owners_stmt = (
+        select(User.nickname, User.username, func.count(UserPokemon.id))
+        .join(UserPokemon, UserPokemon.user_id == User.id)
+        .where(UserPokemon.pokemon_id == pokemon_id)
+        .group_by(User.id)
+        .order_by(func.count(UserPokemon.id).desc())
+    )
+    owners_res = await db.execute(owners_stmt)
+    owners = owners_res.all()
+    
+    # Format list
+    if owners:
+        owner_rows = []
+        for idx, (nickname, username, count) in enumerate(owners):
+            num = idx + 1
+            username_str = f" (@{escape_md(username)})" if username else ""
+            owner_rows.append(f"**{num}.** **{escape_md(nickname)}**{username_str} `x{count}`")
+        owners_list = "\n".join(owner_rows)
+    else:
+        owners_list = "• *No trainer owns this species yet.*"
+        
+    text = (
+        f"👥 **OWNERS OF {pokemon.name.upper()}** 👥\n"
+        f"───────────────\n"
+        f"{owners_list}\n"
+        f"───────────────"
+    )
+    
+    await callback.message.answer(text, parse_mode="Markdown")
+    await callback.answer()
 

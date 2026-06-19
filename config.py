@@ -17,7 +17,10 @@ if _raw_db_url.startswith("sqlite+aiosqlite:///"):
     else:
         DATABASE_URL = _raw_db_url
 else:
-    DATABASE_URL = _raw_db_url
+    if _raw_db_url.startswith("postgresql://"):
+        DATABASE_URL = _raw_db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    else:
+        DATABASE_URL = _raw_db_url
 
 # Admin List
 _admin_ids_str = os.getenv("ADMIN_IDS", "")

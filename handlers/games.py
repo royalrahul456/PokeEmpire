@@ -1198,3 +1198,92 @@ async def cb_trivia_answer(callback: CallbackQuery, db: AsyncSession):
                 reply_markup=None,
                 parse_mode="Markdown"
             )
+
+@router.message(Command("streak"))
+async def cmd_streak(message: Message, db: AsyncSession):
+    user_id = message.from_user.id
+    
+    # Check registration
+    stmt = select(User).where(User.id == user_id)
+    res = await db.execute(stmt)
+    user = res.scalar_one_or_none()
+    if not user:
+        await message.answer("⚠️ You must register first with /start or catch a Pokémon!")
+        return
+        
+    from utils.streak import get_streak_data, get_streak_rank
+    from utils.formatters import escape_md
+    
+    s_data = await get_streak_data(user_id)
+    
+    today = datetime.utcnow().date().isoformat()
+    yesterday = (datetime.utcnow() - timedelta(days=1)).date().isoformat()
+    
+    # Determine status
+    last_sec = s_data.get("last_secured_date", "")
+    if last_sec == today:
+        status_str = "Active!"
+        capped_count = 3
+    elif last_sec == yesterday:
+        status_str = "Active!"
+        capped_count = min(s_data.get("catches_today", 0), 3)
+    else:
+        status_str = "Streak broken!"
+        capped_count = min(s_data.get("catches_today", 0), 3)
+        
+    current_days = s_data.get("current_streak", 0)
+    best_days = s_data.get("best_streak", 0)
+    rank_str = get_streak_rank(current_days)
+    
+    # Progress bar
+    bar_chars = "█" * (capped_count * 3) + "░" * (10 - (capped_count * 3))
+    if capped_count == 3:
+        bar_chars = "█" * 10
+        
+    text = (
+        f" 🔥 **Daily Streak — {escape_md(user.nickname)}**\n\n"
+        f"💧 **Status**: `{status_str}`\n"
+        f"🎁 **Current**: `{current_days} days`\n"
+        f"🏆 **Best**: `{best_days} days`\n"
+        f"🏆 **Rank**: `{rank_str}`\n"
+        f"🎁 **Progress**: `[{bar_chars}] {capped_count}/3`\n\n"
+        f"👉 *Snatch (catch) 3 Pokémon every day to keep your streak!*"
+    )
+    await message.answer(text, parse_mode="Markdown")
+
+@router.message(Command("streaklb"))
+@router.message(Command("slb"))
+async def cmd_streak_leaderboard(message: Message, db: AsyncSession):
+    from utils.streak import get_top_streaks
+    from utils.formatters import escape_md
+    
+    top_users = await get_top_streaks(10)
+    
+    if not top_users:
+        await message.answer("🏆 **STREAK LEADERBOARD** 🏆\n───────────────\n\n• *No active streaks recorded yet.*")
+        return
+        
+    # Query nicknames and usernames for the top users
+    uids = [uid for uid, _ in top_users]
+    u_stmt = select(User).where(User.id.in_(uids))
+    u_res = await db.execute(u_stmt)
+    users_dict = {u.id: u for u in u_res.scalars().all()}
+    
+    rows = []
+    for idx, (uid, uinfo) in enumerate(top_users):
+        rank_prefix = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx + 1}."
+        user = users_dict.get(uid)
+        nickname = user.nickname if user else f"Trainer_{uid}"
+        username_str = f" (@{escape_md(user.username)})" if user and user.username else ""
+        
+        best = uinfo.get("best_streak", 0)
+        curr = uinfo.get("current_streak", 0)
+        rows.append(f"{rank_prefix} **{escape_md(nickname)}**{username_str} • Best: `{best}d` (Current: `{curr}d`)")
+        
+    leaderboard_card = (
+        f"🔥 **DAILY STREAK LEADERBOARD** 🔥\n"
+        f"───────────────\n\n"
+        f"{'\n'.join(rows)}\n\n"
+        f"───────────────"
+    )
+    await message.answer(leaderboard_card, parse_mode="Markdown")

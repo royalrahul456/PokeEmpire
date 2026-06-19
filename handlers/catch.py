@@ -121,6 +121,23 @@ async def cmd_catch(message: Message, db: AsyncSession):
         db.add(capture)
         await db.commit()
 
+        # Increment daily catch streak
+        from utils.streak import increment_streak_catch, get_streak_data
+        secured, current_count = await increment_streak_catch(user_id)
+        streak_info = await get_streak_data(user_id)
+
+        streak_days = streak_info.get("current_streak", 0)
+        capped_count = min(current_count, 3)
+        streak_bar_chars = "█" * (capped_count * 3) + "░" * (10 - (capped_count * 3))
+        if capped_count == 3:
+            streak_bar_chars = "█" * 10
+
+        streak_msg = f"🔥 **Streak Progress**: `[{streak_bar_chars}] {capped_count}/3`"
+        if secured:
+            streak_msg += f"\n🎉 **Streak Secured!** (Current: `{streak_days} days`)"
+        elif capped_count >= 3:
+            streak_msg += f"\n✨ **Streak Secured today!** (Current: `{streak_days} days`)"
+
         # 5. Announce winner
         shiny_badge = "✨ Shiny " if is_shiny else ""
         poke_display = pokemon.name.title()
@@ -143,6 +160,8 @@ async def cmd_catch(message: Message, db: AsyncSession):
             f"• ATK IV: `[{atk_bar}]` `({iv_atk}/31)`\n"
             f"• DEF IV: `[{def_bar}]` `({iv_def}/31)`\n"
             f"• SPD IV: `[{spd_bar}]` `({iv_spd}/31)`\n"
+            f"───────────────\n"
+            f"{streak_msg}\n"
             f"───────────────"
         )
         await message.answer(announcement, parse_mode="Markdown")

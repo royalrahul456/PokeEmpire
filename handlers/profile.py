@@ -36,10 +36,16 @@ async def cmd_profile(message: Message, db: AsyncSession):
     shiny_res = await db.execute(shiny_stmt)
     total_shiny = shiny_res.scalar() or 0
 
-    # Calculate Level based on catches (e.g. 5 catches = 1 Level)
-    trainer_level = (total_caught // 5) + 1
+    # Count total species in database
+    total_species_stmt = select(func.count(Pokemon.id))
+    total_species_res = await db.execute(total_species_stmt)
+    total_species = total_species_res.scalar() or 1
 
-    # Count caught by rarity to determine titles
+    # Calculate percentage
+    dex_pct = (unique_caught / total_species) * 100
+    dex_bar = get_progress_bar(unique_caught, total_species, 10, fill_char="▰", empty_char="▱")
+
+    # Count caught by rarity
     rarity_stmt = select(Pokemon.rarity, func.count(UserPokemon.id)).join(UserPokemon).where(UserPokemon.user_id == user_id).group_by(Pokemon.rarity)
     rarity_res = await db.execute(rarity_stmt)
     rarity_counts = {r: count for r, count in rarity_res.all()}
@@ -50,40 +56,43 @@ async def cmd_profile(message: Message, db: AsyncSession):
     legendaries = rarity_counts.get("Legendary", 0)
     mythicals = rarity_counts.get("Mythical", 0)
 
-    # Calculate Titles
-    titles = []
-    if commons >= 10:
-        titles.append("⚪ Common Collector")
-    if rares >= 5:
-        titles.append("🔵 Rare Specialist")
-    if epics >= 3:
-        titles.append("🟣 Epic Champion")
-    if legendaries >= 1:
-        titles.append("🟡 Legendary Hero")
-    if mythicals >= 1:
-        titles.append("🌌 Mythical Legend")
-    if total_shiny >= 1:
-        titles.append("✨ Shiny Hunter")
+    # Formatted coins
+    formatted_coins = f"{user.coins:,}"
 
-    if not titles:
-        titles.append("🐣 Novice Trainer")
-
-    titles_str = "\n".join([f"  • {t}" for t in titles])
+    # Calculate global rank position based on catches
+    rank_stmt = (
+        select(func.count())
+        .select_from(
+            select(User.id)
+            .join(UserPokemon, UserPokemon.user_id == User.id)
+            .group_by(User.id)
+            .having(func.count(UserPokemon.id) > total_caught)
+            .subquery()
+        )
+    )
+    rank_res = await db.execute(rank_stmt)
+    rank_position = (rank_res.scalar() or 0) + 1
 
     profile_card = (
-        f"💳 **TRAINER CARD** 💳\n"
-        f"───────────────\n"
-        f"👤 **Trainer**: **{escape_md(user.nickname)}**\n"
-        f"🏆 **Trainer Level**: `Lvl {trainer_level}`\n"
-        f"💰 **Coins**: `💰 {user.coins} coins`\n"
-        f"✨ **Shiny Charm**: `{'✨ Active' if user.has_shiny_charm else '❌ None'}`\n\n"
-        f"📈 **Statistics**:\n"
-        f"• Total Catches: `🧬 {total_caught} Pokémon`\n"
-        f"• Unique Species: `🏆 {unique_caught} caught`\n"
-        f"• Shiny Pokémon: `✨ {total_shiny} caught`\n"
-        f"• Journey Started: `📅 {user.created_at.strftime('%Y-%m-%d')}`\n\n"
-        f"👑 **Titles**:\n{titles_str}\n"
-        f"───────────────"
+        f"╭──「 🏆 Trainer Profile 」\n"
+        f"├─➩ 🏓 User: {escape_md(user.nickname)}\n"
+        f"├─➩ 🆔 ID: `{user.id}`\n"
+        f"├─➩ 💰 Balance: `{formatted_coins} coins`\n"
+        f"├─➩ ⚡ Pokémon: {unique_caught} (Total Catches: {total_caught})\n"
+        f"├─➩ 🌍 Pokédex: {unique_caught}/{total_species} ({dex_pct:.3f}%)\n"
+        f"├─➩ 🎁 Progress:\n"
+        f"╰         {dex_bar}\n\n"
+        f"╭─ Rarity Breakdown ─\n"
+        f"├─➩ ⚪️ Common: {commons}\n"
+        f"├─➩ 🔵 Rare: {rares}\n"
+        f"├─➩ 🟣 Epic: {epics}\n"
+        f"├─➩ 🟡 Legendary: {legendaries}\n"
+        f"├─➩ 🌌 Mythical: {mythicals}\n"
+        f"├─➩ ✨ Shiny: {total_shiny}\n"
+        f"╰───────────────────\n\n"
+        f"╭─ Global Rank ─\n"
+        f"├─➩ 🏆 Position: #{rank_position}\n"
+        f"╰───────────────────"
     )
     await message.answer(profile_card, parse_mode="Markdown")
 

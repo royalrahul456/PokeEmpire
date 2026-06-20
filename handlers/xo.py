@@ -21,6 +21,29 @@ router = Router()
 # - For PvP: f"xo_pvp_{chat_id}_{message_id}"
 active_xo_games = {}
 
+async def edit_xo_message(callback: CallbackQuery, text: str, reply_markup: Optional[InlineKeyboardMarkup] = None):
+    """Safely edits either a media message (caption) or a text message (text)."""
+    msg = callback.message
+    if not msg:
+        return
+    try:
+        if msg.photo or msg.video or msg.animation or msg.document:
+            await msg.edit_caption(
+                caption=text,
+                reply_markup=reply_markup,
+                parse_mode="HTML"
+            )
+        else:
+            await msg.edit_text(
+                text=text,
+                reply_markup=reply_markup,
+                parse_mode="HTML"
+            )
+    except Exception as e:
+        if "message is not modified" not in str(e).lower():
+            print(f"Error editing XO message: {e}")
+
+
 # -------------------------------------------------------------
 # TIC TAC TOE GAME LOGIC & MINIMAX AI
 # -------------------------------------------------------------
@@ -219,7 +242,14 @@ async def cmd_xo(message: Message, db: AsyncSession):
             f"💰 <b>Bet</b>: 💰 <b>{bet} coins</b> each\n\n"
             f"Hey, do you accept this challenge?"
         )
-        await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        await send_cover_media(
+            chat_id=message.chat.id,
+            key="xo",
+            caption=text,
+            reply_markup=builder.as_markup(),
+            bot=message.bot,
+            default_url="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/890.png"
+        )
         return
 
     # Default: Show Main Menu
@@ -261,7 +291,7 @@ async def cb_xo_pvp_info(callback: CallbackQuery):
         return
         
     text = (
-        f"👥 <b>Tic Tac Toe PvP Mode</b> 👥\n"
+        f"👥 <b>Tic Tac Toe PvP</b> 👥\n"
         f"───────────────\n"
         f"Challenge another trainer to a 3x3 game of Tic Tac Toe with coins at stake!\n\n"
         f"👉 <b>How to challenge</b>:\n"
@@ -271,7 +301,7 @@ async def cb_xo_pvp_info(callback: CallbackQuery):
     )
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="🔙 Back to Menu", callback_data=f"xo_menu_back_{user_id}"))
-    await callback.message.edit_caption(caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    await edit_xo_message(callback, text, builder.as_markup())
     await callback.answer()
 
 @router.callback_query(F.data.startswith("xo_menu_back_"))
@@ -300,7 +330,7 @@ async def cb_xo_menu_back(callback: CallbackQuery):
     builder.row(
         InlineKeyboardButton(text="👥 PvP Mode Info", callback_data=f"xo_pvp_info_{user_id}")
     )
-    await callback.message.edit_caption(caption=caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+    await edit_xo_message(callback, caption, builder.as_markup())
     await callback.answer()
 
 @router.callback_query(F.data.startswith("xo_ai_start_"))
@@ -337,11 +367,7 @@ async def cb_xo_ai_start(callback: CallbackQuery):
     )
     
     # Replace menu with the active board
-    await callback.message.edit_caption(
-        caption=text, 
-        reply_markup=get_xo_keyboard(game_key, [""] * 9, is_pvp=False),
-        parse_mode="HTML"
-    )
+    await edit_xo_message(callback, text, get_xo_keyboard(game_key, [""] * 9, is_pvp=False))
     await callback.answer()
 
 @router.callback_query(F.data.startswith("xo_ai_play_"))
@@ -399,11 +425,7 @@ async def cb_xo_ai_play(callback: CallbackQuery, db: AsyncSession):
         f"Opponent: ⭕ <b>AI</b>\n\n"
         f"🟢 Your turn! Click an empty square:"
     )
-    await callback.message.edit_caption(
-        caption=text,
-        reply_markup=get_xo_keyboard(game_key, board, is_pvp=False),
-        parse_mode="HTML"
-    )
+    await edit_xo_message(callback, text, get_xo_keyboard(game_key, board, is_pvp=False))
     await callback.answer()
 
 async def handle_ai_game_over(callback: CallbackQuery, game_id: str, winner: str, db: AsyncSession):
@@ -428,9 +450,10 @@ async def handle_ai_game_over(callback: CallbackQuery, game_id: str, winner: str
         res = await db.execute(stmt)
         user = res.scalar_one_or_none()
         if user:
-            user.coins += reward
+            new_coins = user.coins + reward
+            user.coins = new_coins
             await db.commit()
-            coins_str = f"Balance: 💰 <b>{user.coins} coins</b>."
+            coins_str = f"Balance: 💰 <b>{new_coins} coins</b>."
         else:
             coins_str = ""
             
@@ -458,7 +481,7 @@ async def handle_ai_game_over(callback: CallbackQuery, game_id: str, winner: str
             f"Good game!"
         )
         
-    await callback.message.edit_caption(caption=text, reply_markup=final_kb, parse_mode="HTML")
+    await edit_xo_message(callback, text, final_kb)
     await callback.answer("Game Over!")
     # Auto delete the game message after 60s
     asyncio.create_task(delete_message_after(callback.message, 60))
@@ -477,7 +500,7 @@ async def cb_xo_pvp_decline(callback: CallbackQuery):
         await callback.answer("❌ This challenge was not sent to you!", show_alert=True)
         return
         
-    await callback.message.edit_text("❌ Challenge declined.")
+    await edit_xo_message(callback, "❌ Challenge declined.", None)
     await callback.answer()
     asyncio.create_task(delete_message_after(callback.message, 10))
 
@@ -502,7 +525,7 @@ async def cb_xo_pvp_accept(callback: CallbackQuery, db: AsyncSession):
     
     if not challenger or challenger.coins < bet:
         await callback.answer("❌ Challenger no longer has enough coins!", show_alert=True)
-        await callback.message.edit_text("❌ Match cancelled due to insufficient funds of challenger.")
+        await edit_xo_message(callback, "❌ Match cancelled due to insufficient funds of challenger.", None)
         return
 
     # Check opponent balance
@@ -513,6 +536,9 @@ async def cb_xo_pvp_accept(callback: CallbackQuery, db: AsyncSession):
     if not opponent or opponent.coins < bet:
         await callback.answer("❌ You do not have enough coins to accept this challenge!", show_alert=True)
         return
+
+    challenger_name = challenger.nickname or "Challenger"
+    opponent_name = opponent.nickname or "Opponent"
 
     # Deduct bets
     challenger.coins -= bet
@@ -527,9 +553,9 @@ async def cb_xo_pvp_accept(callback: CallbackQuery, db: AsyncSession):
         "type": "pvp",
         "board": [""] * 9,
         "player_x": challenger_id,
-        "player_x_name": challenger.nickname or "Challenger",
+        "player_x_name": challenger_name,
         "player_o": target_id,
-        "player_o_name": opponent.nickname or "Opponent",
+        "player_o_name": opponent_name,
         "turn": "X",
         "bet": bet,
         "created_at": time.time()
@@ -538,44 +564,14 @@ async def cb_xo_pvp_accept(callback: CallbackQuery, db: AsyncSession):
     text = (
         f"🎲 <b>Tic Tac Toe PvP</b> 🎲\n"
         f"───────────────\n"
-        f"❌ <b>{escape_md(challenger.nickname or 'Challenger')}</b> vs ⭕ <b>{escape_md(opponent.nickname or 'Opponent')}</b>\n"
+        f"❌ <b>{escape_md(challenger_name)}</b> vs ⭕ <b>{escape_md(opponent_name)}</b>\n"
         f"💰 Bet: 💰 <b>{bet} coins</b> each\n\n"
-        f"🟢 It's <a href='tg://user?id={challenger_id}'>{escape_md(challenger.nickname or 'Challenger')}</a>'s turn! (X)"
+        f"🟢 It's <a href='tg://user?id={challenger_id}'>{escape_md(challenger_name)}</a>'s turn! (X)"
     )
     
-    # Delete the original invitation and start the game with the board
-    try:
-        await callback.message.delete()
-    except Exception:
-        pass
-        
-    sent_msg = await callback.message.channel_post.answer_photo(
-        photo="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/890.png"
-    ) if False else None # Wait, let's just send it as photo, or send a new photo message!
+    # Directly edit the cover message caption & keyboard
+    await edit_xo_message(callback, text, get_xo_keyboard(game_key, [""] * 9, is_pvp=True))
     
-    # Actually, sending a new photo message is much better for UI:
-    new_msg = await callback.bot.send_photo(
-        chat_id=chat_id,
-        photo="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/890.png",
-        caption=text,
-        reply_markup=get_xo_keyboard(game_key, [""] * 9, is_pvp=True),
-        parse_mode="HTML"
-    )
-    
-    # Re-key the game state with the new message ID so gameplay clicks map correctly!
-    active_xo_games.pop(game_id)
-    new_game_key = f"{chat_id}_{new_msg.message_id}"
-    active_xo_games[f"xo_pvp_{new_game_key}"] = {
-        "type": "pvp",
-        "board": [""] * 9,
-        "player_x": challenger_id,
-        "player_x_name": challenger.nickname or "Challenger",
-        "player_o": target_id,
-        "player_o_name": opponent.nickname or "Opponent",
-        "turn": "X",
-        "bet": bet,
-        "created_at": time.time()
-    }
     await callback.answer("Challenge accepted!")
 
 @router.callback_query(F.data.startswith("xo_pvp_play_"))
@@ -632,11 +628,7 @@ async def cb_xo_pvp_play(callback: CallbackQuery, db: AsyncSession):
         f"🟢 It's <a href='tg://user?id={next_player_id}'>{escape_md(next_player_name)}</a>'s turn! ({next_symbol})"
     )
     
-    await callback.message.edit_caption(
-        caption=text,
-        reply_markup=get_xo_keyboard(game_key, board, is_pvp=True),
-        parse_mode="HTML"
-    )
+    await edit_xo_message(callback, text, get_xo_keyboard(game_key, board, is_pvp=True))
     await callback.answer()
 
 async def handle_pvp_game_over(callback: CallbackQuery, game_id: str, winner: str, db: AsyncSession):
@@ -683,9 +675,10 @@ async def handle_pvp_game_over(callback: CallbackQuery, game_id: str, winner: st
         user = res.scalar_one_or_none()
         
         if user:
-            user.coins += bet * 2
+            new_coins = user.coins + bet * 2
+            user.coins = new_coins
             await db.commit()
-            coins_str = f"Balance: 💰 <b>{user.coins} coins</b>."
+            coins_str = f"Balance: 💰 <b>{new_coins} coins</b>."
         else:
             coins_str = ""
             

@@ -5,7 +5,7 @@ import os
 import json
 from typing import Optional, Tuple
 from datetime import datetime, timedelta
-from aiogram import Router, F
+from aiogram import Router, F, Bot
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 import config
 from database.models import User, Pokemon, UserPokemon
+from database.database import SessionLocal
 from utils.formatters import escape_md, get_rarity_emoji
 
 router = Router()
@@ -276,7 +277,126 @@ async def cmd_rps(message: Message, db: AsyncSession):
     await asyncio.sleep(0.5)
     await msg.edit_text(text, parse_mode="Markdown")
 
-async def start_auto_scribble_game(chat_id: int, message: Message, db: AsyncSession):
+def generate_hint(name: str) -> str:
+    revealed_indices = set()
+    alpha_indices = [i for i, c in enumerate(name) if c.isalpha()]
+    
+    if alpha_indices:
+        revealed_indices.add(alpha_indices[0])
+        revealed_indices.add(alpha_indices[-1])
+        if len(alpha_indices) > 5:
+            mid_idx = alpha_indices[len(alpha_indices) // 2]
+            revealed_indices.add(mid_idx)
+            
+    hint_parts = []
+    for i, c in enumerate(name):
+        if c == ' ':
+            hint_parts.append("  ")  # double space for word separation
+        elif not c.isalpha():
+            hint_parts.append(c)
+        elif i in revealed_indices:
+            hint_parts.append(c.upper())
+        else:
+            hint_parts.append("_")
+            
+    return " ".join(hint_parts)
+
+async def cleanup_scribble_messages(bot: Bot, chat_id: int, game: dict):
+    if "message_id" in game:
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=game["message_id"])
+        except Exception:
+            pass
+    if "hint_message_id" in game:
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=game["hint_message_id"])
+        except Exception:
+            pass
+
+async def cleanup_nameguess_messages(bot: Bot, chat_id: int, game: dict):
+    if "message_id" in game:
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=game["message_id"])
+        except Exception:
+            pass
+    if "hint_message_id" in game:
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=game["hint_message_id"])
+        except Exception:
+            pass
+
+async def scribble_timeout_task(chat_id: int, message_id: int, bot: Bot):
+    await asyncio.sleep(60)
+    if chat_id in active_games:
+        game = active_games[chat_id]
+        if game.get("type") == "scribble" and game.get("message_id") == message_id:
+            del active_games[chat_id]
+            await cleanup_scribble_messages(bot, chat_id, game)
+            try:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=f"⏳ **Time is up!** No one guessed the correct answer in time.\n💡 Correct Answer: **{game['answer'].title()}**",
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                pass
+            
+            # Automatically start next auto game if enabled
+            if game.get("is_auto") and is_scribble_enabled(chat_id):
+                await asyncio.sleep(2)
+                async with SessionLocal() as db:
+                    # Check if the official group chat
+                    try:
+                        chat = await bot.get_chat(chat_id)
+                        is_official = (chat.username == "pokeempireunion")
+                    except Exception:
+                        is_official = False
+                    
+                    if chat_id not in active_games and is_scribble_enabled(chat_id):
+                        if is_official:
+                            if random.choice([True, False]):
+                                await start_auto_nameguess_game(chat_id, bot, db)
+                            else:
+                                await start_auto_scribble_game(chat_id, bot, db)
+                        else:
+                            await start_auto_scribble_game(chat_id, bot, db)
+
+async def nameguess_timeout_task(chat_id: int, message_id: int, bot: Bot):
+    await asyncio.sleep(60)
+    if chat_id in active_games:
+        game = active_games[chat_id]
+        if game.get("type") == "nameguess" and game.get("message_id") == message_id:
+            del active_games[chat_id]
+            await cleanup_nameguess_messages(bot, chat_id, game)
+            try:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=f"⏳ **Time is up!** No one guessed the Pokémon in time.\n💡 Correct Answer: **{game['answer'].title()}**",
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                pass
+            
+            # Automatically start next auto game if enabled
+            if game.get("is_auto") and is_scribble_enabled(chat_id):
+                await asyncio.sleep(2)
+                async with SessionLocal() as db:
+                    try:
+                        chat = await bot.get_chat(chat_id)
+                        is_official = (chat.username == "pokeempireunion")
+                    except Exception:
+                        is_official = False
+                    
+                    if chat_id not in active_games and is_scribble_enabled(chat_id):
+                        if is_official:
+                            if random.choice([True, False]):
+                                await start_auto_nameguess_game(chat_id, bot, db)
+                            else:
+                                await start_auto_scribble_game(chat_id, bot, db)
+                        else:
+                            await start_auto_scribble_game(chat_id, bot, db)
+
+async def start_auto_scribble_game(chat_id: int, bot: Bot, db: AsyncSession):
     # Set a synchronous lock to prevent overlapping auto-starts in the same chat
     active_games[chat_id] = {
         "type": "initializing",
@@ -312,18 +432,98 @@ async def start_auto_scribble_game(chat_id: int, message: Message, db: AsyncSess
             "is_auto": True
         }
 
-        r_emoji = get_rarity_emoji(pokemon.rarity)
-
+        # Format message in clean card style
         text = (
-            f"✏️ **POKÉMON SCRIBBLE** ✏️\n"
-            f"───────────────\n\n"
-            f"Unscramble this Pokémon's name:\n"
-            f"👉 **`{scrambled.upper()}`**\n\n"
-            f"✨ **Rarity**: {r_emoji} `{pokemon.rarity}`\n"
-            f"🧬 **Generation**: `Gen {pokemon.generation}`\n\n"
-            f"👉 Type the correct name to win 💰 **10-50 coins**! (Ends in 60s)"
+            f"💬 **Word Scramble!**\n"
+            f"───────────────\n"
+            f"🔀 **Scrambled**: `{scrambled.upper()}`\n"
+            f"💰 **Reward**: `10-50 coins`\n"
+            f"⌛ **Type the correct name! (60s)**"
         )
-        await message.answer(text, parse_mode="Markdown")
+        
+        # Add inline buttons
+        builder = InlineKeyboardBuilder()
+        builder.row(
+            InlineKeyboardButton(text="🔍 Hint", callback_data="scribble_hint"),
+            InlineKeyboardButton(text="🚫 Stop Game", callback_data="scribble_stop")
+        )
+        
+        sent_msg = await bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            reply_markup=builder.as_markup(),
+            parse_mode="Markdown"
+        )
+        
+        active_games[chat_id]["message_id"] = sent_msg.message_id
+        
+        # Start background timeout task
+        asyncio.create_task(scribble_timeout_task(chat_id, sent_msg.message_id, bot))
+        
+    except Exception as e:
+        # Clean up lock on error
+        if chat_id in active_games and active_games[chat_id].get("type") == "initializing":
+            del active_games[chat_id]
+        raise e
+
+async def start_auto_nameguess_game(chat_id: int, bot: Bot, db: AsyncSession):
+    # Set a synchronous lock to prevent overlapping auto-starts in the same chat
+    active_games[chat_id] = {
+        "type": "initializing",
+        "created_at": time.time()
+    }
+    
+    try:
+        # Select random Pokémon
+        random_id = random.randint(1, 1025)
+        stmt = select(Pokemon).where(Pokemon.id == random_id)
+        res = await db.execute(stmt)
+        pokemon = res.scalar_one_or_none()
+
+        if not pokemon:
+            # Clean up lock
+            if chat_id in active_games and active_games[chat_id].get("type") == "initializing":
+                del active_games[chat_id]
+            return
+
+        name = pokemon.name.lower()
+
+        active_games[chat_id] = {
+            "type": "nameguess",
+            "answer": name,
+            "created_at": time.time(),
+            "is_auto": True
+        }
+
+        # Format message in clean card style with photo
+        text = (
+            f"🧠 **Guess The Pokémon!**\n"
+            f"───────────────\n"
+            f"💭 **Think you know this Pokémon?**\n"
+            f"⌛ **You have 60 seconds!**\n"
+            f"💰 **Reward**: `100-200 coins`"
+        )
+        
+        # Add inline buttons
+        builder = InlineKeyboardBuilder()
+        builder.row(
+            InlineKeyboardButton(text="🔍 Hint", callback_data="nameguess_hint"),
+            InlineKeyboardButton(text="🚫 Stop Game", callback_data="nameguess_stop")
+        )
+        
+        sent_msg = await bot.send_photo(
+            chat_id=chat_id,
+            photo=pokemon.image_url,
+            caption=text,
+            reply_markup=builder.as_markup(),
+            parse_mode="Markdown"
+        )
+        
+        active_games[chat_id]["message_id"] = sent_msg.message_id
+        
+        # Start background timeout task
+        asyncio.create_task(nameguess_timeout_task(chat_id, sent_msg.message_id, bot))
+        
     except Exception as e:
         # Clean up lock on error
         if chat_id in active_games and active_games[chat_id].get("type") == "initializing":
@@ -719,7 +919,6 @@ async def cmd_scribble(message: Message, db: AsyncSession):
     random.shuffle(name_list)
     scrambled = "".join(name_list)
 
-    # Make sure scrambled name is not identical to original
     while scrambled == name and len(name) > 1:
         random.shuffle(name_list)
         scrambled = "".join(name_list)
@@ -731,18 +930,26 @@ async def cmd_scribble(message: Message, db: AsyncSession):
         "is_auto": False
     }
 
-    r_emoji = get_rarity_emoji(pokemon.rarity)
-
     text = (
-        f"✏️ **POKÉMON SCRIBBLE** ✏️\n"
-        f"───────────────\n\n"
-        f"Unscramble this Pokémon's name:\n"
-        f"👉 **`{scrambled.upper()}`**\n\n"
-        f"✨ **Rarity**: {r_emoji} `{pokemon.rarity}`\n"
-        f"🧬 **Generation**: `Gen {pokemon.generation}`\n\n"
-        f"👉 Type the correct name to win 💰 **100 coins**! (Ends in 60s)"
+        f"💬 **Word Scramble!**\n"
+        f"───────────────\n"
+        f"🔀 **Scrambled**: `{scrambled.upper()}`\n"
+        f"💰 **Reward**: `100 coins`\n"
+        f"⌛ **Type the correct name! (60s)**"
     )
-    await message.answer(text, parse_mode="Markdown")
+
+    # Add inline buttons
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🔍 Hint", callback_data="scribble_hint"),
+        InlineKeyboardButton(text="🚫 Stop Game", callback_data="scribble_stop")
+    )
+
+    sent_msg = await message.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    active_games[chat_id]["message_id"] = sent_msg.message_id
+
+    # Start background timeout task
+    asyncio.create_task(scribble_timeout_task(chat_id, sent_msg.message_id, message.bot))
 
 # Custom filter to check if there is an active game in the chat
 def has_active_game(message: Message) -> bool:
@@ -760,12 +967,6 @@ async def check_game_answers(message: Message, db: AsyncSession):
 
     # Check timeout (60 seconds)
     if time.time() - game["created_at"] > 60:
-        del active_games[chat_id]
-        await message.answer("⏳ **Time is up!** No one guessed the correct answer in time.")
-        
-        # Automatically trigger next scribble game in group chats if scribble mode is enabled
-        if message.chat.type in ["group", "supergroup"] and is_scribble_enabled(chat_id):
-            await start_auto_scribble_game(chat_id, message, db)
         return
 
     # For trivia, we ignore text guesses entirely as we now use buttons
@@ -789,34 +990,62 @@ async def check_game_answers(message: Message, db: AsyncSession):
             db.add(user)
             await db.flush()
 
-        # Group automatic scribble games award a random reward between 10 and 50 coins
-        if message.chat.type in ["group", "supergroup"] and game.get("is_auto"):
-            reward = random.randint(10, 50)
-        else:
-            reward = 100
+        # Determine reward
+        if game.get("type") == "nameguess":
+            if message.chat.type in ["group", "supergroup"] and game.get("is_auto"):
+                reward = random.randint(100, 200)
+            else:
+                reward = 150
+        else: # scribble
+            if message.chat.type in ["group", "supergroup"] and game.get("is_auto"):
+                reward = random.randint(10, 50)
+            else:
+                reward = 100
 
         user.coins += reward
         await db.commit()
 
-        # Clear active game
+        # Clear active game and delete prompt/hint messages
         del active_games[chat_id]
+        if game.get("type") == "nameguess":
+            await cleanup_nameguess_messages(message.bot, chat_id, game)
+        else:
+            await cleanup_scribble_messages(message.bot, chat_id, game)
 
-        game_title = "Scribble"
-        text = (
-            f"🎉 **{game_title.upper()} CHAMPION!** 🎉\n"
-            f"───────────────\n"
-            f"Trainer **{escape_md(user.nickname)}** answered correctly!\n\n"
-            f"💡 Correct Answer: **{escape_md(correct_answer.title())}**\n"
-            f"💰 Reward: **+{reward} coins**\n"
-            f"Balance: 💰 **{user.coins} coins**."
-        )
-        await message.answer(text, parse_mode="Markdown")
+        # Format victory message in clean card style
+        if game.get("type") == "nameguess":
+            text = (
+                f"🎉 **Correct!**\n"
+                f"───────────────\n"
+                f"🧠 **Pokémon**: {correct_answer.title()}\n"
+                f"💰 **Earned**: +{reward} coins\n"
+                f"👥 **Winner**: {message.from_user.mention_html()}"
+            )
+        else:
+            text = (
+                f"🎉 **Correct!**\n"
+                f"───────────────\n"
+                f"🛑 **Word**: {correct_answer.title()}\n"
+                f"💰 **Earned**: +{reward} coins\n"
+                f"👥 **Winner**: {message.from_user.mention_html()}"
+            )
 
-        # Automatically start another scribble game in group chats if scribble mode is enabled
+        await message.reply(text, parse_mode="HTML")
+
+        # Automatically start another game in group chats if scribble mode is enabled
         if message.chat.type in ["group", "supergroup"] and is_scribble_enabled(chat_id):
-            await start_auto_scribble_game(chat_id, message, db)
+            await asyncio.sleep(2)
+            if chat_id not in active_games and is_scribble_enabled(chat_id):
+                is_official = (message.chat.username == "pokeempireunion")
+                if is_official:
+                    if random.choice([True, False]):
+                        await start_auto_nameguess_game(chat_id, message.bot, db)
+                    else:
+                        await start_auto_scribble_game(chat_id, message.bot, db)
+                else:
+                    await start_auto_scribble_game(chat_id, message.bot, db)
 
-# Automatic trigger: starts a scribble game when conversation happens in group chat with no active game
+# Automatic trigger: starts a scribble/nameguess game when conversation happens in group chat with no active game
 def no_active_game_in_group(message: Message) -> bool:
     return (message.chat.type in ["group", "supergroup"] and 
             message.chat.id not in active_games and 
@@ -824,7 +1053,14 @@ def no_active_game_in_group(message: Message) -> bool:
 
 @router.message(F.text, ~F.text.startswith("/"), no_active_game_in_group)
 async def auto_start_scribble(message: Message, db: AsyncSession):
-    await start_auto_scribble_game(message.chat.id, message, db)
+    is_official = (message.chat.username == "pokeempireunion")
+    if is_official:
+        if random.choice([True, False]):
+            await start_auto_nameguess_game(message.chat.id, message.bot, db)
+        else:
+            await start_auto_scribble_game(message.chat.id, message.bot, db)
+    else:
+        await start_auto_scribble_game(message.chat.id, message.bot, db)
 
 @router.callback_query(F.data == "dm_games")
 async def cb_dm_games(callback: CallbackQuery, db: AsyncSession):
@@ -1005,21 +1241,258 @@ async def cb_play_scribble(callback: CallbackQuery, db: AsyncSession):
         "is_auto": False
     }
 
-    r_emoji = get_rarity_emoji(pokemon.rarity)
-
     text = (
-        f"✏️ **POKÉMON SCRIBBLE** ✏️\n"
-        f"───────────────\n\n"
-        f"Unscramble this Pokémon's name:\n"
-        f"👉 **`{scrambled.upper()}`**\n\n"
-        f"✨ **Rarity**: {r_emoji} `{pokemon.rarity}`\n"
-        f"🧬 **Generation**: `Gen {pokemon.generation}`\n\n"
-        f"👉 Type the correct name to win 💰 **100 coins**! (Ends in 60s)\n"
-        f"───────────────"
+        f"💬 **Word Scramble!**\n"
+        f"───────────────\n"
+        f"🔀 **Scrambled**: `{scrambled.upper()}`\n"
+        f"💰 **Reward**: `100 coins`\n"
+        f"⌛ **Type the correct name! (60s)**"
+    )
+
+    # Add inline buttons
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🔍 Hint", callback_data="scribble_hint"),
+        InlineKeyboardButton(text="🚫 Stop Game", callback_data="scribble_stop")
+    )
+
+    sent_msg = await callback.message.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    active_games[chat_id]["message_id"] = sent_msg.message_id
+
+    await callback.answer("Scribble started!")
+
+    # Start background timeout task
+    asyncio.create_task(scribble_timeout_task(chat_id, sent_msg.message_id, callback.bot))
+
+
+# ==========================================
+# SCRIBBLE AND NAMEGUESS GAME CONTROLS
+# ==========================================
+
+@router.callback_query(F.data == "scribble_hint")
+async def cb_scribble_hint(callback: CallbackQuery):
+    chat_id = callback.message.chat.id
+    
+    if chat_id not in active_games:
+        await callback.answer("⚠️ No active scribble game in this chat.", show_alert=True)
+        return
+        
+    game = active_games[chat_id]
+    if game.get("type") != "scribble":
+        await callback.answer("⚠️ No active scribble game in this chat.", show_alert=True)
+        return
+        
+    # Check if hint already exists to avoid spamming
+    if "hint_text" in game:
+        hint_text = game["hint_text"]
+        await callback.answer(f"💡 Hint already sent: {hint_text}", show_alert=True)
+        return
+        
+    # Generate hint
+    hint_text = generate_hint(game["answer"])
+    game["hint_text"] = hint_text
+    
+    # Send the hint message (replying to the scramble message)
+    hint_msg = await callback.message.reply(
+        f"💡 **Scribble Hint**\n"
+        f"───────────────\n"
+        f"👉 `{hint_text}`",
+        parse_mode="Markdown"
     )
     
-    await callback.message.answer(text, parse_mode="Markdown")
-    await callback.answer("Scribble started!")
+    game["hint_message_id"] = hint_msg.message_id
+    await callback.answer("Hint generated!")
+
+
+@router.callback_query(F.data == "scribble_stop")
+async def cb_scribble_stop(callback: CallbackQuery):
+    chat_id = callback.message.chat.id
+    user_id = callback.from_user.id
+    
+    if chat_id not in active_games:
+        await callback.answer("⚠️ No active scribble game to stop.", show_alert=True)
+        return
+        
+    game = active_games[chat_id]
+    if game.get("type") != "scribble":
+        await callback.answer("⚠️ No active scribble game to stop.", show_alert=True)
+        return
+
+    # Check permission
+    is_allowed = False
+    if callback.message.chat.type == "private":
+        is_allowed = True
+    else:
+        # Group chat: only admin or owner
+        if user_id in config.ADMIN_IDS:
+            is_allowed = True
+        else:
+            try:
+                member = await callback.bot.get_chat_member(chat_id=chat_id, user_id=user_id)
+                is_allowed = member.status in ["creator", "administrator"]
+            except Exception:
+                is_allowed = False
+                
+    if not is_allowed:
+        await callback.answer("❌ Only group administrators or bot owners can stop the game.", show_alert=True)
+        return
+        
+    # Clean up the game state
+    del active_games[chat_id]
+    
+    # Delete the prompt and hint messages
+    await cleanup_scribble_messages(callback.bot, chat_id, game)
+    
+    # Send game stopped notification
+    await callback.message.answer(f"🛑 **Scribble game stopped** by {callback.from_user.first_name}.")
+    await callback.answer("Game stopped!")
+
+
+@router.callback_query(F.data == "nameguess_hint")
+async def cb_nameguess_hint(callback: CallbackQuery):
+    chat_id = callback.message.chat.id
+    
+    if chat_id not in active_games:
+        await callback.answer("⚠️ No active nameguess game in this chat.", show_alert=True)
+        return
+        
+    game = active_games[chat_id]
+    if game.get("type") != "nameguess":
+        await callback.answer("⚠️ No active nameguess game in this chat.", show_alert=True)
+        return
+        
+    # Check if hint already exists to avoid spamming
+    if "hint_text" in game:
+        hint_text = game["hint_text"]
+        await callback.answer(f"💡 Hint already sent: {hint_text}", show_alert=True)
+        return
+        
+    # Generate hint
+    hint_text = generate_hint(game["answer"])
+    game["hint_text"] = hint_text
+    
+    # Send the hint message (replying to the photo message)
+    hint_msg = await callback.message.reply(
+        f"💡 **Nameguess Hint**\n"
+        f"───────────────\n"
+        f"👉 `{hint_text}`",
+        parse_mode="Markdown"
+    )
+    
+    game["hint_message_id"] = hint_msg.message_id
+    await callback.answer("Hint generated!")
+
+
+@router.callback_query(F.data == "nameguess_stop")
+async def cb_nameguess_stop(callback: CallbackQuery):
+    chat_id = callback.message.chat.id
+    user_id = callback.from_user.id
+    
+    if chat_id not in active_games:
+        await callback.answer("⚠️ No active nameguess game to stop.", show_alert=True)
+        return
+        
+    game = active_games[chat_id]
+    if game.get("type") != "nameguess":
+        await callback.answer("⚠️ No active nameguess game to stop.", show_alert=True)
+        return
+
+    # Check permission
+    is_allowed = False
+    if callback.message.chat.type == "private":
+        is_allowed = True
+    else:
+        # Group chat: only admin or owner
+        if user_id in config.ADMIN_IDS:
+            is_allowed = True
+        else:
+            try:
+                member = await callback.bot.get_chat_member(chat_id=chat_id, user_id=user_id)
+                is_allowed = member.status in ["creator", "administrator"]
+            except Exception:
+                is_allowed = False
+                
+    if not is_allowed:
+        await callback.answer("❌ Only group administrators or bot owners can stop the game.", show_alert=True)
+        return
+        
+    # Clean up the game state
+    del active_games[chat_id]
+    
+    # Delete the prompt photo and hint messages
+    await cleanup_nameguess_messages(callback.bot, chat_id, game)
+    
+    # Send game stopped notification
+    await callback.message.answer(f"🛑 **Nameguess game stopped** by {callback.from_user.first_name}.")
+    await callback.answer("Game stopped!")
+
+
+@router.message(Command("nameguess"))
+@router.message(Command("guess"))
+async def cmd_nameguess(message: Message, db: AsyncSession):
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+
+    if message.chat.type in ["group", "supergroup"]:
+        # Verify if it's the official group chat
+        if message.chat.username != "pokeempireunion":
+            await message.answer("❌ This game can only be played in the official group chat @pokeempireunion or in private chat!")
+            return
+            
+    if chat_id in active_games:
+        await message.answer("⚠️ There is already an active trivia or scribble game in this chat! Answer it first.")
+        return
+
+    # Select random Pokémon
+    random_id = random.randint(1, 1025)
+    stmt = select(Pokemon).where(Pokemon.id == random_id)
+    res = await db.execute(stmt)
+    pokemon = res.scalar_one_or_none()
+
+    if not pokemon:
+        await message.answer("❌ Error initiating nameguess. Try again.")
+        return
+
+    name = pokemon.name.lower()
+
+    active_games[chat_id] = {
+        "type": "nameguess",
+        "answer": name,
+        "created_at": time.time(),
+        "is_auto": False
+    }
+
+    text = (
+        f"🧠 **Guess The Pokémon!**\n"
+        f"───────────────\n"
+        f"💭 **Think you know this Pokémon?**\n"
+        f"⌛ **You have 60 seconds!**\n"
+        f"💰 **Reward**: `150 coins`"
+    )
+    
+    # Add inline buttons
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🔍 Hint", callback_data="nameguess_hint"),
+        InlineKeyboardButton(text="🚫 Stop Game", callback_data="nameguess_stop")
+    )
+
+    try:
+        sent_msg = await message.answer_photo(
+            photo=pokemon.image_url,
+            caption=text,
+            reply_markup=builder.as_markup(),
+            parse_mode="Markdown"
+        )
+        active_games[chat_id]["message_id"] = sent_msg.message_id
+        
+        # Start background timeout task
+        asyncio.create_task(nameguess_timeout_task(chat_id, sent_msg.message_id, message.bot))
+    except Exception as e:
+        if chat_id in active_games:
+            del active_games[chat_id]
+        print(f"Error sending nameguess photo: {e}")
+        await message.answer("❌ Error initiating nameguess. Make sure the bot has permission to send photos.")
 
 # ==========================================
 # ADMIN SCRIBBLE TOGGLE & TRIVIA CALLBACKS

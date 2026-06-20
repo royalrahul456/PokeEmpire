@@ -201,7 +201,7 @@ async def cmd_pokedex(message: Message, db: AsyncSession):
     cover_link = f"[​]({cover_image})" if cover_image else ""
     text = (
         f"{cover_link}"
-        f"👑 **{escape_md(nickname)}'s Pokédex** 👑 — Page {page}/{max_page}\n"
+        f"⭐ **{escape_md(nickname)}'s Pokédex** ⭐ — Page {page}/{max_page}\n"
         f"Completion: **{caught_count}/{total_species}** species (**{percent}%**)\n"
         f"`[{bar}]` 🔴\n"
         f"───────────────\n"
@@ -223,7 +223,7 @@ async def cmd_pokedex(message: Message, db: AsyncSession):
             
         badge = rarity_badges.get(p.rarity, "⚪️")
         shiny_tag = " [✨]" if has_shiny else ""
-        text += f"◈⌠{badge}⌡ #{p.id:03d} {p.name.title()}{shiny_tag} ×{total}\n"
+        text += f"◆ [ {badge} ] #{p.id:03d} {p.name.title()}{shiny_tag} x{total}\n"
 
     text += "\n───────────────"
     if max_page > 1:
@@ -293,59 +293,95 @@ async def cmd_check_pokemon(message: Message, db: AsyncSession):
 
     await message.answer(text, parse_mode="Markdown")
 
+async def get_leaderboard_text(lb_type: str, db: AsyncSession) -> str:
+    if lb_type == "coins":
+        coins_stmt = select(User).order_by(desc(User.coins)).limit(10)
+        coins_res = await db.execute(coins_stmt)
+        coins_users = coins_res.scalars().all()
+        
+        text = "🏆 **TOP 10 — Coins**\n\n"
+        if coins_users:
+            for idx, u in enumerate(coins_users):
+                rank = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx + 1}."
+                text += f"{rank} {escape_md(u.nickname or 'Trainer')}  -> {u.coins}\n"
+        else:
+            text += "• *No trainers registered yet.*"
+            
+    elif lb_type == "catches":
+        catches_stmt = (
+            select(User.nickname, func.count(UserPokemon.id).label("total_catches"))
+            .join(UserPokemon, UserPokemon.user_id == User.id)
+            .group_by(User.id)
+            .order_by(desc(func.count(UserPokemon.id)))
+            .limit(10)
+        )
+        catches_res = await db.execute(catches_stmt)
+        catches_data = catches_res.all()
+        
+        text = "🏆 **TOP 10 — Pokémon**\n\n"
+        if catches_data:
+            for idx, row in enumerate(catches_data):
+                rank = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx + 1}."
+                text += f"{rank} {escape_md(row.nickname or 'Trainer')}  -> {row.total_catches}\n"
+        else:
+            text += "• *No catches registered yet.*"
+            
+    elif lb_type == "streak":
+        from utils.streak import get_top_streaks
+        top_users = await get_top_streaks(10)
+        
+        text = "🏆 **TOP 10 — Streaks**\n\n"
+        if top_users:
+            for idx, (user_id, uinfo) in enumerate(top_users):
+                rank = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx + 1}."
+                
+                stmt = select(User.nickname).where(User.id == user_id)
+                res = await db.execute(stmt)
+                nickname = res.scalar_one_or_none() or "Trainer"
+                
+                best_streak = uinfo.get("best_streak", 0)
+                text += f"{rank} {escape_md(nickname)}  -> {best_streak} days\n"
+        else:
+            text += "• *No active streaks recorded yet.*"
+            
+    return text
+
+def get_leaderboard_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🏆 Pokémon", callback_data="lb_type_catches"),
+        InlineKeyboardButton(text="💰 Coins", callback_data="lb_type_coins"),
+        InlineKeyboardButton(text="🔥 Streak", callback_data="lb_type_streak")
+    )
+    return builder.as_markup()
+
 @router.message(Command("leaderboard"))
 @router.message(Command("lb"))
 async def cmd_leaderboard(message: Message, db: AsyncSession):
-    # Query top 10 users by coins
-    coins_stmt = select(User).order_by(desc(User.coins)).limit(10)
-    coins_res = await db.execute(coins_stmt)
-    coins_users = coins_res.scalars().all()
-
-    # Query top 10 users by catches
-    catches_stmt = (
-        select(User.nickname, User.username, func.count(UserPokemon.id).label("total_catches"))
-        .join(UserPokemon, UserPokemon.user_id == User.id)
-        .group_by(User.id)
-        .order_by(desc(func.count(UserPokemon.id)))
-        .limit(10)
-    )
-    catches_res = await db.execute(catches_stmt)
-    catches_data = catches_res.all()
-
-    # Format coins leaderboard
-    coins_rows = []
-    if coins_users:
-        for idx, u in enumerate(coins_users):
-            rank_prefix = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx + 1}."
-            username_str = f" (@{escape_md(u.username)})" if u.username else ""
-            coins_rows.append(f"{rank_prefix} **{escape_md(u.nickname)}**{username_str} • `💰 {u.coins}c`")
-        coins_list = "\n".join(coins_rows)
-    else:
-        coins_list = "• *No trainers registered yet.*"
-
-    # Format catches leaderboard
-    catches_rows = []
-    if catches_data:
-        for idx, row in enumerate(catches_data):
-            rank_prefix = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx + 1}."
-            username_str = f" (@{escape_md(row.username)})" if row.username else ""
-            catches_rows.append(f"{rank_prefix} **{escape_md(row.nickname)}**{username_str} • `🧬 {row.total_catches} caught`")
-        catches_list = "\n".join(catches_rows)
-    else:
-        catches_list = "• *No trainers have caught Pokémon yet.*"
-
-    leaderboard_card = (
-        f"🏆 **GLOBAL LEADERBOARD** 🏆\n"
-        f"───────────────\n\n"
-        f"💰 **TOP 10 COINS**\n"
-        f"{coins_list}\n\n"
-        f"───────────────\n\n"
-        f"🎒 **TOP 10 CATCHES**\n"
-        f"{catches_list}\n\n"
-        f"───────────────"
+    arceus_photo = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/493.png"
+    text = await get_leaderboard_text("catches", db)
+    
+    await message.answer_photo(
+        photo=arceus_photo,
+        caption=text,
+        reply_markup=get_leaderboard_keyboard(),
+        parse_mode="Markdown"
     )
 
-    await message.answer(leaderboard_card, parse_mode="Markdown")
+@router.callback_query(F.data.startswith("lb_type_"))
+async def cb_leaderboard_type(callback: CallbackQuery, db: AsyncSession):
+    lb_type = callback.data.replace("lb_type_", "")
+    text = await get_leaderboard_text(lb_type, db)
+    
+    try:
+        await callback.message.edit_caption(
+            caption=text,
+            reply_markup=get_leaderboard_keyboard(),
+            parse_mode="Markdown"
+        )
+    except Exception:
+        pass
+    await callback.answer()
 
 @router.message(Command("fav"))
 async def cmd_fav(message: Message, db: AsyncSession):

@@ -146,4 +146,44 @@ class SpawnService:
         )
         db.add(active)
         await db.commit()
+
+        # Trigger background despawn timeout task
+        if message_id:
+            import asyncio
+            asyncio.create_task(spawn_timeout_task(chat_id, message_id, bot))
+
         return True
+
+async def spawn_timeout_task(chat_id: int, message_id: int, bot: Bot):
+    import asyncio
+    await asyncio.sleep(60)
+    
+    from database.database import SessionLocal
+    from database.models import ActiveSpawn
+    from sqlalchemy import select, delete
+    
+    async with SessionLocal() as db:
+        stmt = select(ActiveSpawn).where(ActiveSpawn.chat_id == chat_id)
+        res = await db.execute(stmt)
+        active = res.scalar_one_or_none()
+        
+        if active and active.message_id == message_id:
+            # Pokémon fled! Delete active spawn record
+            await db.execute(delete(ActiveSpawn).where(ActiveSpawn.chat_id == chat_id))
+            await db.commit()
+            
+            # Delete the spawn message
+            try:
+                await bot.delete_message(chat_id=chat_id, message_id=message_id)
+            except Exception:
+                pass
+                
+            # Announce fleeing
+            try:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text="🏃‍♂️ **The wild Pokémon fled!** You were too slow."
+                )
+            except Exception:
+                pass
+

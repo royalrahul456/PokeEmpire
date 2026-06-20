@@ -234,14 +234,14 @@ async def cmd_xo(message: Message, db: AsyncSession):
     
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="🟢 Easy (+150)", callback_data="xo_ai_start_easy"),
-        InlineKeyboardButton(text="🟡 Medium (+300)", callback_data="xo_ai_start_medium")
+        InlineKeyboardButton(text="🟢 Easy (+150)", callback_data=f"xo_ai_start_easy_{user_id}"),
+        InlineKeyboardButton(text="🟡 Medium (+300)", callback_data=f"xo_ai_start_medium_{user_id}")
     )
     builder.row(
-        InlineKeyboardButton(text="🔴 Hard (+20k 💀)", callback_data="xo_ai_start_hard")
+        InlineKeyboardButton(text="🔴 Hard (+20k 💀)", callback_data=f"xo_ai_start_hard_{user_id}")
     )
     builder.row(
-        InlineKeyboardButton(text="👥 PvP Mode Info", callback_data="xo_pvp_info")
+        InlineKeyboardButton(text="👥 PvP Mode Info", callback_data=f"xo_pvp_info_{user_id}")
     )
     
     await send_cover_media(
@@ -253,8 +253,13 @@ async def cmd_xo(message: Message, db: AsyncSession):
         default_url="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/890.png"
     )
 
-@router.callback_query(F.data == "xo_pvp_info")
+@router.callback_query(F.data.startswith("xo_pvp_info_"))
 async def cb_xo_pvp_info(callback: CallbackQuery):
+    user_id = int(callback.data.replace("xo_pvp_info_", ""))
+    if callback.from_user.id != user_id:
+        await callback.answer("❌ This is not your menu! Use /xo to start your own.", show_alert=True)
+        return
+        
     text = (
         f"👥 <b>Tic Tac Toe PvP Mode</b> 👥\n"
         f"───────────────\n"
@@ -265,11 +270,17 @@ async def cb_xo_pvp_info(callback: CallbackQuery):
         f"⚠️ <i>Bets can range from 10 to 10,000 coins. Both players must have enough coins.</i>"
     )
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="🔙 Back to Menu", callback_data="xo_menu_back"))
+    builder.row(InlineKeyboardButton(text="🔙 Back to Menu", callback_data=f"xo_menu_back_{user_id}"))
     await callback.message.edit_caption(caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    await callback.answer()
 
-@router.callback_query(F.data == "xo_menu_back")
+@router.callback_query(F.data.startswith("xo_menu_back_"))
 async def cb_xo_menu_back(callback: CallbackQuery):
+    user_id = int(callback.data.replace("xo_menu_back_", ""))
+    if callback.from_user.id != user_id:
+        await callback.answer("❌ This is not your menu! Use /xo to start your own.", show_alert=True)
+        return
+        
     caption = (
         f"🎲 <b>Tic Tac Toe</b>\n\n"
         f"🟢 Easy — +150 coins\n"
@@ -280,23 +291,31 @@ async def cb_xo_menu_back(callback: CallbackQuery):
     )
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="🟢 Easy (+150)", callback_data="xo_ai_start_easy"),
-        InlineKeyboardButton(text="🟡 Medium (+300)", callback_data="xo_ai_start_medium")
+        InlineKeyboardButton(text="🟢 Easy (+150)", callback_data=f"xo_ai_start_easy_{user_id}"),
+        InlineKeyboardButton(text="🟡 Medium (+300)", callback_data=f"xo_ai_start_medium_{user_id}")
     )
     builder.row(
-        InlineKeyboardButton(text="🔴 Hard (+20k 💀)", callback_data="xo_ai_start_hard")
+        InlineKeyboardButton(text="🔴 Hard (+20k 💀)", callback_data=f"xo_ai_start_hard_{user_id}")
     )
     builder.row(
-        InlineKeyboardButton(text="👥 PvP Mode Info", callback_data="xo_pvp_info")
+        InlineKeyboardButton(text="👥 PvP Mode Info", callback_data=f"xo_pvp_info_{user_id}")
     )
     await callback.message.edit_caption(caption=caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+    await callback.answer()
 
 @router.callback_query(F.data.startswith("xo_ai_start_"))
 async def cb_xo_ai_start(callback: CallbackQuery):
-    difficulty = callback.data.replace("xo_ai_start_", "")
+    parts = callback.data.split("_")
+    # Structure: xo_ai_start_<difficulty>_<user_id>
+    difficulty = parts[3]
+    user_id = int(parts[4])
+    
+    if callback.from_user.id != user_id:
+        await callback.answer("❌ This is not your menu! Use /xo to start your own.", show_alert=True)
+        return
+        
     chat_id = callback.message.chat.id
-    user_id = callback.from_user.id
-    game_key = f"{chat_id}_{user_id}"
+    game_key = f"{chat_id}_{callback.message.message_id}"
     
     # Initialize game
     active_xo_games[f"xo_ai_{game_key}"] = {
@@ -328,12 +347,12 @@ async def cb_xo_ai_start(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("xo_ai_play_"))
 async def cb_xo_ai_play(callback: CallbackQuery, db: AsyncSession):
     parts = callback.data.split("_")
-    # Structure: xo_ai_play_<chat_id>_<user_id>_<cell_index>
+    # Structure: xo_ai_play_<chat_id>_<message_id>_<cell_index>
     chat_id = int(parts[3])
-    user_id = int(parts[4])
+    msg_id = int(parts[4])
     cell_idx = int(parts[5])
     
-    game_key = f"{chat_id}_{user_id}"
+    game_key = f"{chat_id}_{msg_id}"
     game_id = f"xo_ai_{game_key}"
     
     if game_id not in active_xo_games:
@@ -397,7 +416,7 @@ async def handle_ai_game_over(callback: CallbackQuery, game_id: str, winner: str
     user_id = game["player_x"]
     
     # Final board representation
-    final_kb = get_xo_keyboard(f"{callback.message.chat.id}_{user_id}", board, is_pvp=False)
+    final_kb = get_xo_keyboard(f"{callback.message.chat.id}_{callback.message.message_id}", board, is_pvp=False)
     
     if winner == "X":
         # Player won!

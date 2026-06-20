@@ -792,18 +792,66 @@ async def cb_owner_tools(callback: CallbackQuery):
     text = (
         f"🛠️ <b>POKÉEMPIRE OWNER CONSOLE</b> 🛠️\n"
         f"───────────────\n\n"
-        f"As the bot owner, you can dynamically customize start and game cover art directly from your chat!\n\n"
-        f"👉 <b>How to set a cover</b>:\n"
-        f"1. Type <code>/setcover start</code>, <code>/setcover xo</code>, or <code>/setcover pokedex</code> in DM.\n"
-        f"2. Send any photo, video, or animation (GIF).\n"
-        f"3. The bot will automatically update and apply it!\n\n"
-        f"👉 <b>How to reset a cover</b>:\n"
-        f"• Type <code>/resetcover start</code>, <code>/resetcover xo</code>, or <code>/resetcover pokedex</code>.\n\n"
-        f"👉 <b>Spawn Weight Adjustments</b>:\n"
-        f"• Type <code>/spawnchance</code> to view and set custom rates."
+        f"<b>🖼️ Cover Media</b>\n"
+        f"• <code>/setcover start</code> — Set start screen cover\n"
+        f"• <code>/setcover xo</code> — Set XO game cover\n"
+        f"• <code>/setcover pokedex</code> — Set Pokédex cover\n"
+        f"• <code>/resetcover &lt;key&gt;</code> — Reset to default\n\n"
+        f"<b>🎁 Gifts</b>\n"
+        f"• <code>/giftcoins @user &lt;amount&gt;</code> — Give coins\n"
+        f"• <code>/giftpokemon @user &lt;name&gt; [shiny] [amv]</code> — Gift Pokémon\n\n"
+        f"<b>🎫 Redeem Codes</b>\n"
+        f"• <code>/createredeem &lt;code&gt; &lt;limit&gt; &lt;coins/pokemon&gt; [shiny] [amv]</code>\n\n"
+        f"<b>🎨 Pokémon Media</b>\n"
+        f"• <code>/setpokemedia &lt;name or id&gt;</code> — Set photo/AMV for a Pokémon\n\n"
+        f"<b>⚙️ Spawn Controls</b>\n"
+        f"• <code>/spawnchance</code> — View/set rarity rates\n"
+        f"• <code>/spawn</code> — Force a manual spawn\n"
+        f"• <code>/setspawn &lt;chat_id&gt; &lt;threshold&gt;</code> — Set spawn rate\n\n"
+        f"<b>👑 Admin Management</b>\n"
+        f"• <code>/makeadmin @user</code> — Grant admin\n"
+        f"• <code>/removeadmin @user</code> — Revoke admin\n"
+        f"• <code>/adminlist</code> — List all admins"
     )
     builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🖼️ Set Start Cover", callback_data="owner_setcover_start"),
+        InlineKeyboardButton(text="🎮 Set XO Cover", callback_data="owner_setcover_xo")
+    )
+    builder.row(
+        InlineKeyboardButton(text="📖 Set Pokédex Cover", callback_data="owner_setcover_pokedex"),
+        InlineKeyboardButton(text="📊 Spawn Rates", callback_data="owner_spawnchance")
+    )
     builder.row(InlineKeyboardButton(text="🔙 Back to Menu", callback_data="dm_home"))
+    await callback.message.edit_caption(caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("owner_setcover_"))
+async def cb_owner_setcover(callback: CallbackQuery):
+    if callback.from_user.id not in config.ADMIN_IDS:
+        await callback.answer("❌ Denied. Owner only.", show_alert=True)
+        return
+    key = callback.data.replace("owner_setcover_", "")
+    active_cover_updates[callback.from_user.id] = key
+    await callback.answer(f"Ready! Now send the photo/video for '{key}' cover.", show_alert=True)
+
+@router.callback_query(F.data == "owner_spawnchance")
+async def cb_owner_spawnchance(callback: CallbackQuery):
+    if callback.from_user.id not in config.ADMIN_IDS:
+        await callback.answer("❌ Denied. Owner only.", show_alert=True)
+        return
+    from utils.settings import get_spawn_settings
+    settings = get_spawn_settings()
+    probs = settings.get("group_rarity_probabilities", {})
+    text = (
+        f"📊 <b>Current Spawn Rates</b>\n"
+        f"───────────────\n"
+    )
+    for rarity, chance in probs.items():
+        text += f"• {rarity.title()}: <code>{chance*100:.1f}%</code>\n"
+    text += f"\nUse <code>/spawnchance</code> in DM to modify rates."
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🔙 Back to Owner Tools", callback_data="owner_tools"))
     await callback.message.edit_caption(caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
     await callback.answer()
 

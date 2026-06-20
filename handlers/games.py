@@ -21,6 +21,7 @@ from utils.settings import (
     is_nameguess_enabled, 
     set_nameguess_status
 )
+from keyboards.inline import get_back_to_hub_keyboard
 
 router = Router()
 
@@ -1114,12 +1115,11 @@ async def cb_dm_games(callback: CallbackQuery, db: AsyncSession):
     text = (
         f"🎮 **GAMES CENTER** 🎮\n"
         f"───────────────\n\n"
-        f"Welcome to the PokéEmpire Games Center! Earn coins by playing these games:\n\n"
-        f"📅 **Daily Reward** (24h cooldown)\n"
-        f"🎡 **Lucky Spin** (4h cooldown)\n"
+        f"Earn coins and have fun with these games:\n\n"
+        f"📅 **Daily Reward** — claim every 24h\n"
+        f"🎡 **Lucky Spin** — spin every 4h\n"
         f"🪙 **Coinflip**: `/coinflip <bet> <heads/tails>`\n"
         f"✊ **Rock-Paper-Scissors**: `/rps <bet> <rock/paper/scissors>`\n"
-        f"❓ **Pokémon Trivia**: Test your knowledge!\n"
         f"✏️ **Pokémon Scribble**: Unscramble species names!\n"
         f"───────────────"
     )
@@ -1819,6 +1819,95 @@ async def cb_dm_streak(callback: CallbackQuery, db: AsyncSession):
         f"🏆 **Rank**: `{rank_str}`\n"
         f"🎁 **Progress**: `[{bar_chars}] {capped_count}/3`\n\n"
         f"👉 *Snatch (catch) 3 Pokémon every day to keep your streak!*"
+    )
+    await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    await callback.answer()
+
+@router.callback_query(F.data == "dm_leaderboard")
+async def cb_dm_leaderboard(callback: CallbackQuery):
+    text = (
+        "\ud83d\udcca **LEADERBOARD**\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n"
+        "View rankings across all trainers!\n\n"
+        "\ud83d\udc49 **Commands:**\n"
+        "\u2022 `/leaderboard` or `/lb` \u2014 Top trainers by coins\n"
+        "\u2022 `/streaklb` or `/slb` \u2014 Top streak holders\n"
+    )
+    await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    await callback.answer()
+
+@router.callback_query(F.data == "dm_battle_menu")
+async def cb_dm_battle_menu(callback: CallbackQuery):
+    text = (
+        "\ud83d\udee1\ufe0f **BATTLE**\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n"
+        "Battle wild Pok\u00e9mon with your team!\n\n"
+        "\ud83d\udc49 **Commands:**\n"
+        "\u2022 `/battlebot` \u2014 Battle against the AI\n"
+        "\u2022 `/duel @trainer` \u2014 Challenge another trainer\n"
+    )
+    await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    await callback.answer()
+
+@router.callback_query(F.data == "dm_duel_info")
+async def cb_dm_duel_info(callback: CallbackQuery):
+    text = (
+        "\u2694\ufe0f **TRAINER DUEL**\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n"
+        "Challenge another trainer to a Pok\u00e9mon battle!\n\n"
+        "\ud83d\udc49 **Commands:**\n"
+        "\u2022 `/duel @username` \u2014 Start a duel in group\n"
+    )
+    await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    await callback.answer()
+
+@router.callback_query(F.data == "dm_trade_info")
+async def cb_dm_trade_info(callback: CallbackQuery):
+    text = (
+        "\ud83d\udd04 **TRADE**\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n"
+        "Trade Pok\u00e9mon with other trainers!\n\n"
+        "\ud83d\udc49 **Commands:**\n"
+        "\u2022 `/trade @username` \u2014 Initiate a trade\n"
+    )
+    await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    await callback.answer()
+
+@router.callback_query(F.data == "dm_hunt_info")
+async def cb_dm_hunt_info(callback: CallbackQuery):
+    text = (
+        "\ud83c� **HUNT**\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n"
+        "Track a specific Pok\u00e9mon you want to catch!\n\n"
+        "\ud83d\udc49 **Commands:**\n"
+        "\u2022 `/hunt <Pokemon name>` \u2014 Set your hunt target\n"
+        "\u2022 `/hunt` \u2014 View current hunt target\n"
+    )
+    await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    await callback.answer()
+
+@router.callback_query(F.data == "dm_clan_menu")
+async def cb_dm_clan_menu(callback: CallbackQuery):
+    text = (
+        "\ud83d\udee1\ufe0f **CLANS**\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n"
+        "Join or create a clan with other trainers!\n\n"
+        "\ud83d\udc49 **Commands:**\n"
+        "\u2022 `/clan` \u2014 View your clan info\n"
+        "\u2022 `/createclan <name>` \u2014 Create a new clan\n"
+    )
+    await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    await callback.answer()
+
+@router.callback_query(F.data == "dm_redeem_info")
+async def cb_dm_redeem_info(callback: CallbackQuery):
+    text = (
+        "\ud83c\udf81 **REDEEM CODES**\n"
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n"
+        "Redeem special codes for coins or Pok\u00e9mon!\n\n"
+        "\ud83d\udc49 **Commands:**\n"
+        "\u2022 `/redeem <CODE>` \u2014 Use a promo code\n\n"
+        "\u26a0\ufe0f *Codes are distributed during special events.*"
     )
     await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
     await callback.answer()

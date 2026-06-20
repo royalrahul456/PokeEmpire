@@ -7,14 +7,30 @@ def get_dm_menu_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text="👤 Profile", callback_data="dm_profile"),
-        InlineKeyboardButton(text="🔥 Streak", callback_data="dm_streak")
+        InlineKeyboardButton(text="🏆 Pokédex", callback_data="dm_dex_1")
     )
     builder.row(
-        InlineKeyboardButton(text="🏆 Pokédex", callback_data="dm_dex_1"),
-        InlineKeyboardButton(text="🛒 Shop", callback_data="dm_shop")
+        InlineKeyboardButton(text="🎒 My Bag", callback_data="dm_bag_1"),
+        InlineKeyboardButton(text="📊 Leaderboard", callback_data="dm_leaderboard")
     )
     builder.row(
-        InlineKeyboardButton(text="🎮 Games Center", callback_data="dm_games"),
+        InlineKeyboardButton(text="🛡️ Battle", callback_data="dm_battle_menu"),
+        InlineKeyboardButton(text="⚔️ Duel Trainer", callback_data="dm_duel_info")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🔄 Trade", callback_data="dm_trade_info"),
+        InlineKeyboardButton(text="🏹 Hunt", callback_data="dm_hunt_info")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🛡️ Clan", callback_data="dm_clan_menu"),
+        InlineKeyboardButton(text="🎁 Redeem", callback_data="dm_redeem_info")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🛂 Shop", callback_data="dm_shop"),
+        InlineKeyboardButton(text="🎮 Games Center", callback_data="dm_games")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🔥 Streak", callback_data="dm_streak"),
         InlineKeyboardButton(text="❓ Guide", callback_data="dm_help")
     )
     return builder.as_markup()

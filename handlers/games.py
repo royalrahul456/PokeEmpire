@@ -15,6 +15,12 @@ import config
 from database.models import User, Pokemon, UserPokemon
 from database.database import SessionLocal
 from utils.formatters import escape_md, get_rarity_emoji
+from utils.settings import (
+    is_scribble_enabled, 
+    set_scribble_status, 
+    is_nameguess_enabled, 
+    set_nameguess_status
+)
 
 router = Router()
 
@@ -132,8 +138,8 @@ async def cmd_coinflip(message: Message, db: AsyncSession):
         return
     bet = int(bet_str)
 
-    if bet < 10 or bet > 500:
-        await message.answer("⚠️ Bet must be between 10 and 500 coins.")
+    if bet < 10 or bet > 10000:
+        await message.answer("⚠️ Bet must be between 10 and 10,000 coins.")
         return
 
     # Parse guess
@@ -203,8 +209,8 @@ async def cmd_rps(message: Message, db: AsyncSession):
         return
     bet = int(bet_str)
 
-    if bet < 10 or bet > 500:
-        await message.answer("⚠️ Bet must be between 10 and 500 coins.")
+    if bet < 10 or bet > 10000:
+        await message.answer("⚠️ Bet must be between 10 and 10,000 coins.")
         return
 
     choice = parts[2].lower()
@@ -325,6 +331,13 @@ async def cleanup_nameguess_messages(bot: Bot, chat_id: int, game: dict):
         except Exception:
             pass
 
+async def delete_message_after(message: Message, delay: int):
+    await asyncio.sleep(delay)
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
 async def scribble_timeout_task(chat_id: int, message_id: int, bot: Bot):
     await asyncio.sleep(60)
     if chat_id in active_games:
@@ -333,33 +346,37 @@ async def scribble_timeout_task(chat_id: int, message_id: int, bot: Bot):
             del active_games[chat_id]
             await cleanup_scribble_messages(bot, chat_id, game)
             try:
-                await bot.send_message(
+                msg = await bot.send_message(
                     chat_id=chat_id,
-                    text=f"⏳ **Time is up!** No one guessed the correct answer in time.\n💡 Correct Answer: **{game['answer'].title()}**",
-                    parse_mode="Markdown"
+                    text=f"⏳ <b>Time is up!</b> No one guessed the correct answer in time.\n💡 Correct Answer: <b>{game['answer'].title()}</b>",
+                    parse_mode="HTML"
                 )
+                asyncio.create_task(delete_message_after(msg, 60))
             except Exception:
                 pass
             
             # Automatically start next auto game if enabled
-            if game.get("is_auto") and is_scribble_enabled(chat_id):
+            if game.get("is_auto"):
                 await asyncio.sleep(2)
                 async with SessionLocal() as db:
-                    # Check if the official group chat
                     try:
                         chat = await bot.get_chat(chat_id)
                         is_official = (chat.username == "pokeempireunion")
                     except Exception:
                         is_official = False
                     
-                    if chat_id not in active_games and is_scribble_enabled(chat_id):
-                        if is_official:
+                    if is_official and chat_id not in active_games:
+                        scrib_ok = is_scribble_enabled(chat_id)
+                        nameg_ok = is_nameguess_enabled(chat_id)
+                        if scrib_ok and nameg_ok:
                             if random.choice([True, False]):
                                 await start_auto_nameguess_game(chat_id, bot, db)
                             else:
                                 await start_auto_scribble_game(chat_id, bot, db)
-                        else:
+                        elif scrib_ok:
                             await start_auto_scribble_game(chat_id, bot, db)
+                        elif nameg_ok:
+                            await start_auto_nameguess_game(chat_id, bot, db)
 
 async def nameguess_timeout_task(chat_id: int, message_id: int, bot: Bot):
     await asyncio.sleep(60)
@@ -369,16 +386,17 @@ async def nameguess_timeout_task(chat_id: int, message_id: int, bot: Bot):
             del active_games[chat_id]
             await cleanup_nameguess_messages(bot, chat_id, game)
             try:
-                await bot.send_message(
+                msg = await bot.send_message(
                     chat_id=chat_id,
-                    text=f"⏳ **Time is up!** No one guessed the Pokémon in time.\n💡 Correct Answer: **{game['answer'].title()}**",
-                    parse_mode="Markdown"
+                    text=f"⏳ <b>Time is up!</b> No one guessed the Pokémon in time.\n💡 Correct Answer: <b>{game['answer'].title()}</b>",
+                    parse_mode="HTML"
                 )
+                asyncio.create_task(delete_message_after(msg, 60))
             except Exception:
                 pass
             
             # Automatically start next auto game if enabled
-            if game.get("is_auto") and is_scribble_enabled(chat_id):
+            if game.get("is_auto"):
                 await asyncio.sleep(2)
                 async with SessionLocal() as db:
                     try:
@@ -387,14 +405,18 @@ async def nameguess_timeout_task(chat_id: int, message_id: int, bot: Bot):
                     except Exception:
                         is_official = False
                     
-                    if chat_id not in active_games and is_scribble_enabled(chat_id):
-                        if is_official:
+                    if is_official and chat_id not in active_games:
+                        scrib_ok = is_scribble_enabled(chat_id)
+                        nameg_ok = is_nameguess_enabled(chat_id)
+                        if scrib_ok and nameg_ok:
                             if random.choice([True, False]):
                                 await start_auto_nameguess_game(chat_id, bot, db)
                             else:
                                 await start_auto_scribble_game(chat_id, bot, db)
-                        else:
+                        elif scrib_ok:
                             await start_auto_scribble_game(chat_id, bot, db)
+                        elif nameg_ok:
+                            await start_auto_nameguess_game(chat_id, bot, db)
 
 async def start_auto_scribble_game(chat_id: int, bot: Bot, db: AsyncSession):
     # Set a synchronous lock to prevent overlapping auto-starts in the same chat
@@ -530,33 +552,7 @@ async def start_auto_nameguess_game(chat_id: int, bot: Bot, db: AsyncSession):
             del active_games[chat_id]
         raise e
 
-SETTINGS_FILE = os.path.join(config.DATA_DIR, "scribble_settings.json")
-
-def load_scribble_settings() -> dict:
-    if os.path.exists(SETTINGS_FILE):
-        try:
-            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
-
-def save_scribble_settings(settings: dict):
-    os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
-    try:
-        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-            json.dump(settings, f, indent=4)
-    except Exception as e:
-        print(f"Error saving scribble settings: {e}")
-
-def is_scribble_enabled(chat_id: int) -> bool:
-    settings = load_scribble_settings()
-    return settings.get(str(chat_id), True)
-
-def set_scribble_status(chat_id: int, enabled: bool):
-    settings = load_scribble_settings()
-    settings[str(chat_id)] = enabled
-    save_scribble_settings(settings)
+# Settings are now dynamically managed by utils.settings cache & DB
 
 TRIVIA_QUESTIONS = [
     {
@@ -821,6 +817,32 @@ TRIVIA_QUESTIONS = [
     }
 ]
 
+async def trivia_timeout_task(chat_id: int, message_id: int, bot: Bot):
+    await asyncio.sleep(60)
+    if chat_id in active_games:
+        game = active_games[chat_id]
+        if game.get("type") == "trivia" and game.get("message_id") == message_id:
+            del active_games[chat_id]
+            try:
+                text = (
+                    f"⏳ <b>TRIVIA EXPIRED</b> ⏳\n"
+                    f"───────────────\n\n"
+                    f"<b>Question:</b>\n"
+                    f"{game['question']}\n\n"
+                    f"❌ Time is up! No one answered in time.\n"
+                    f"💡 Correct Answer: <b>{game['answer']}</b>"
+                )
+                msg = await bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    text=text,
+                    reply_markup=None,
+                    parse_mode="HTML"
+                )
+                asyncio.create_task(delete_message_after(msg, 60))
+            except Exception:
+                pass
+
 async def initiate_trivia_game(chat_id: int, db: AsyncSession, is_auto: bool = False) -> Optional[Tuple[str, InlineKeyboardMarkup]]:
     """Starts a trivia game logic and returns the formatted question text and reply markup, or None on error."""
     if not TRIVIA_QUESTIONS:
@@ -844,16 +866,15 @@ async def initiate_trivia_game(chat_id: int, db: AsyncSession, is_auto: bool = F
 
     builder = InlineKeyboardBuilder()
     for idx, opt in enumerate(options):
-        # Callback data format: trivia_ans_<idx>
         builder.button(text=opt, callback_data=f"trivia_ans_{idx}")
     builder.adjust(1) # 1 button per row
 
     text = (
-        f"❓ **POKÉMON TRIVIA** ❓\n"
+        f"❓ <b>POKÉMON TRIVIA</b> ❓\n"
         f"───────────────\n\n"
-        f"**Question:**\n"
+        f"<b>Question:</b>\n"
         f"{q_data['question']}\n\n"
-        f"👉 Select the correct option below! You get only **one guess**! (Ends in 60s)"
+        f"👉 Select the correct option below! You get only <b>one guess</b>! (Ends in 60s)"
     )
     return text, builder.as_markup()
 
@@ -889,7 +910,9 @@ async def cmd_trivia(message: Message, db: AsyncSession):
 
     # Set trainer cooldown
     last_trivia_time[user_id] = time.time()
-    await message.answer(trivia_text, reply_markup=reply_markup, parse_mode="Markdown")
+    sent_msg = await message.answer(trivia_text, reply_markup=reply_markup, parse_mode="HTML")
+    active_games[chat_id]["message_id"] = sent_msg.message_id
+    asyncio.create_task(trivia_timeout_task(chat_id, sent_msg.message_id, message.bot))
 
 @router.message(Command("scribble"))
 @router.message(Command("unscramble"))
@@ -897,8 +920,19 @@ async def cmd_scribble(message: Message, db: AsyncSession):
     chat_id = message.chat.id
 
     if message.chat.type in ["group", "supergroup"]:
-        await message.answer("✏️ **Scribble** runs automatically in this group chat all the time! Keep an eye out for active words.")
-        return
+        if message.chat.username != "pokeempireunion":
+            builder = InlineKeyboardBuilder()
+            builder.row(InlineKeyboardButton(text="🔗 Join Official GC", url="https://t.me/pokeempireunion"))
+            await message.answer(
+                "⚠️ <b>Scribble and Nameguess games are only available in our official group chat!</b>\n\n"
+                "Join us there to play and win coins!",
+                reply_markup=builder.as_markup(),
+                parse_mode="HTML"
+            )
+            return
+        else:
+            await message.answer("✏️ <b>Scribble</b> runs automatically in this group chat all the time! Keep an eye out for active words.")
+            return
 
     if chat_id in active_games:
         await message.answer("⚠️ There is already an active trivia or scribble game in this chat! Answer it first.")
@@ -1015,52 +1049,65 @@ async def check_game_answers(message: Message, db: AsyncSession):
         # Format victory message in clean card style
         if game.get("type") == "nameguess":
             text = (
-                f"🎉 **Correct!**\n"
+                f"🎉 <b>Correct!</b>\n"
                 f"───────────────\n"
-                f"🧠 **Pokémon**: {correct_answer.title()}\n"
-                f"💰 **Earned**: +{reward} coins\n"
-                f"👥 **Winner**: {message.from_user.mention_html()}"
+                f"🧠 <b>Pokémon</b>: {correct_answer.title()}\n"
+                f"💰 <b>Earned</b>: +{reward} coins\n"
+                f"👥 <b>Winner</b>: {message.from_user.mention_html()}"
             )
         else:
             text = (
-                f"🎉 **Correct!**\n"
+                f"🎉 <b>Correct!</b>\n"
                 f"───────────────\n"
-                f"🛑 **Word**: {correct_answer.title()}\n"
-                f"💰 **Earned**: +{reward} coins\n"
-                f"👥 **Winner**: {message.from_user.mention_html()}"
+                f"🛑 <b>Word</b>: {correct_answer.title()}\n"
+                f"💰 <b>Earned</b>: +{reward} coins\n"
+                f"👥 <b>Winner</b>: {message.from_user.mention_html()}"
             )
 
-        await message.reply(text, parse_mode="HTML")
+        victory_msg = await message.reply(text, parse_mode="HTML")
+        asyncio.create_task(delete_message_after(victory_msg, 60))
 
-        # Automatically start another game in group chats if scribble mode is enabled
-        if message.chat.type in ["group", "supergroup"] and is_scribble_enabled(chat_id):
+        # Automatically start another game in group chats if enabled
+        if message.chat.type in ["group", "supergroup"] and message.chat.username == "pokeempireunion":
             await asyncio.sleep(2)
-            if chat_id not in active_games and is_scribble_enabled(chat_id):
-                is_official = (message.chat.username == "pokeempireunion")
-                if is_official:
+            if chat_id not in active_games:
+                scrib_ok = is_scribble_enabled(chat_id)
+                nameg_ok = is_nameguess_enabled(chat_id)
+                if scrib_ok and nameg_ok:
                     if random.choice([True, False]):
                         await start_auto_nameguess_game(chat_id, message.bot, db)
                     else:
                         await start_auto_scribble_game(chat_id, message.bot, db)
-                else:
+                elif scrib_ok:
                     await start_auto_scribble_game(chat_id, message.bot, db)
+                elif nameg_ok:
+                    await start_auto_nameguess_game(chat_id, message.bot, db)
 
 # Automatic trigger: starts a scribble/nameguess game when conversation happens in group chat with no active game
 def no_active_game_in_group(message: Message) -> bool:
-    return (message.chat.type in ["group", "supergroup"] and 
-            message.chat.id not in active_games and 
-            is_scribble_enabled(message.chat.id))
+    if message.chat.type not in ["group", "supergroup"]:
+        return False
+    if message.chat.username != "pokeempireunion":
+        return False
+    chat_id = message.chat.id
+    return (chat_id not in active_games and 
+            (is_scribble_enabled(chat_id) or is_nameguess_enabled(chat_id)))
 
 @router.message(F.text, ~F.text.startswith("/"), no_active_game_in_group)
 async def auto_start_scribble(message: Message, db: AsyncSession):
-    is_official = (message.chat.username == "pokeempireunion")
-    if is_official:
+    chat_id = message.chat.id
+    scrib_ok = is_scribble_enabled(chat_id)
+    nameg_ok = is_nameguess_enabled(chat_id)
+    
+    if scrib_ok and nameg_ok:
         if random.choice([True, False]):
-            await start_auto_nameguess_game(message.chat.id, message.bot, db)
+            await start_auto_nameguess_game(chat_id, message.bot, db)
         else:
-            await start_auto_scribble_game(message.chat.id, message.bot, db)
-    else:
-        await start_auto_scribble_game(message.chat.id, message.bot, db)
+            await start_auto_scribble_game(chat_id, message.bot, db)
+    elif scrib_ok:
+        await start_auto_scribble_game(chat_id, message.bot, db)
+    elif nameg_ok:
+        await start_auto_nameguess_game(chat_id, message.bot, db)
 
 @router.callback_query(F.data == "dm_games")
 async def cb_dm_games(callback: CallbackQuery, db: AsyncSession):
@@ -1204,8 +1251,10 @@ async def cb_play_trivia(callback: CallbackQuery, db: AsyncSession):
 
     trivia_text, reply_markup = res
 
-    await callback.message.answer(trivia_text, reply_markup=reply_markup, parse_mode="Markdown")
+    sent_msg = await callback.message.answer(trivia_text, reply_markup=reply_markup, parse_mode="HTML")
+    active_games[chat_id]["message_id"] = sent_msg.message_id
     await callback.answer("Trivia started!")
+    asyncio.create_task(trivia_timeout_task(chat_id, sent_msg.message_id, callback.bot))
 
 @router.callback_query(F.data == "play_scribble")
 async def cb_play_scribble(callback: CallbackQuery, db: AsyncSession):
@@ -1434,9 +1483,15 @@ async def cmd_nameguess(message: Message, db: AsyncSession):
     user_id = message.from_user.id
 
     if message.chat.type in ["group", "supergroup"]:
-        # Verify if it's the official group chat
         if message.chat.username != "pokeempireunion":
-            await message.answer("❌ This game can only be played in the official group chat @pokeempireunion or in private chat!")
+            builder = InlineKeyboardBuilder()
+            builder.row(InlineKeyboardButton(text="🔗 Join Official GC", url="https://t.me/pokeempireunion"))
+            await message.answer(
+                "⚠️ <b>Scribble and Nameguess games are only available in our official group chat!</b>\n\n"
+                "Join us there to play and win coins!",
+                reply_markup=builder.as_markup(),
+                parse_mode="HTML"
+            )
             return
             
     if chat_id in active_games:
@@ -1500,80 +1555,41 @@ async def cmd_nameguess(message: Message, db: AsyncSession):
 
 @router.message(Command("togglescribble"))
 async def cmd_toggle_scribble(message: Message):
-    # Verify chat type
     if message.chat.type not in ["group", "supergroup"]:
         await message.answer("⚠️ This command can only be used in group chats.")
         return
 
-    # Verify admin status
     from handlers.admin import is_user_admin
     if not await is_user_admin(message):
         await message.answer("❌ Denied. Only group administrators or bot owners can toggle scribble mode.")
         return
 
     chat_id = message.chat.id
-    enabled = is_scribble_enabled(chat_id)
-    
-    # Display message with a toggle button
-    status_str = "🟢 **ON**" if enabled else "🔴 **OFF**"
-    button_text = "🔴 Turn OFF" if enabled else "🟢 Turn ON"
-    
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text=button_text, callback_data=f"toggle_scribble_mode_{chat_id}"))
-    
-    text = (
-        f"✏️ **SCRIBBLE MODE SETTING** ✏️\n"
-        f"───────────────\n\n"
-        f"Automatic scribble mode triggers when conversation occurs in the group.\n\n"
-        f"📡 **Current Status**: {status_str}\n\n"
-        f"Click the button below to toggle scribble mode:"
-    )
-    await message.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
-
-@router.callback_query(F.data.startswith("toggle_scribble_mode_"))
-async def cb_toggle_scribble_mode(callback: CallbackQuery):
-    chat_id_str = callback.data.replace("toggle_scribble_mode_", "")
-    try:
-        chat_id = int(chat_id_str)
-    except ValueError:
-        await callback.answer("❌ Invalid chat ID.")
-        return
-
-    user_id = callback.from_user.id
-    is_admin = False
-    if user_id in config.ADMIN_IDS:
-        is_admin = True
-    else:
-        try:
-            member = await callback.bot.get_chat_member(chat_id=chat_id, user_id=user_id)
-            is_admin = member.status in ["creator", "administrator"]
-        except Exception:
-            is_admin = False
-
-    if not is_admin:
-        await callback.answer("❌ Only administrators can toggle scribble mode.", show_alert=True)
-        return
-
     current_status = is_scribble_enabled(chat_id)
     new_status = not current_status
-    set_scribble_status(chat_id, new_status)
-    
-    status_str = "🟢 **ON**" if new_status else "🔴 **OFF**"
-    button_text = "🔴 Turn OFF" if new_status else "🟢 Turn ON"
-    
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text=button_text, callback_data=f"toggle_scribble_mode_{chat_id}"))
-    
-    text = (
-        f"✏️ **SCRIBBLE MODE SETTING** ✏️\n"
-        f"───────────────\n\n"
-        f"Automatic scribble mode triggers when conversation occurs in the group.\n\n"
-        f"📡 **Current Status**: {status_str}\n\n"
-        f"Click the button below to toggle scribble mode:"
-    )
-    
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
-    await callback.answer(f"Scribble mode turned {'ON' if new_status else 'OFF'}.")
+    await set_scribble_status(chat_id, new_status)
+
+    status_str = "Enabled 🟢" if new_status else "Disabled 🔴"
+    await message.answer(f"✏️ <b>Scribble Mode</b> is now <b>{status_str}</b> in this chat.", parse_mode="HTML")
+
+@router.message(Command("togglenameguess"))
+async def cmd_toggle_nameguess(message: Message):
+    if message.chat.type not in ["group", "supergroup"]:
+        await message.answer("⚠️ This command can only be used in group chats.")
+        return
+
+    from handlers.admin import is_user_admin
+    if not await is_user_admin(message):
+        await message.answer("❌ Denied. Only group administrators or bot owners can toggle nameguess mode.")
+        return
+
+    chat_id = message.chat.id
+    current_status = is_nameguess_enabled(chat_id)
+    new_status = not current_status
+    await set_nameguess_status(chat_id, new_status)
+
+    status_str = "Enabled 🟢" if new_status else "Disabled 🔴"
+    await message.answer(f"🖼️ <b>Nameguess Mode</b> is now <b>{status_str}</b> in this chat.", parse_mode="HTML")
 
 @router.callback_query(F.data.startswith("trivia_ans_"))
 async def cb_trivia_answer(callback: CallbackQuery, db: AsyncSession):
@@ -1581,7 +1597,6 @@ async def cb_trivia_answer(callback: CallbackQuery, db: AsyncSession):
     user_id = callback.from_user.id
     nickname = callback.from_user.first_name
     
-    # 1. Check if there is an active trivia game
     if chat_id not in active_games:
         await callback.answer("⚠️ This trivia game has ended or expired.", show_alert=True)
         return
@@ -1591,27 +1606,24 @@ async def cb_trivia_answer(callback: CallbackQuery, db: AsyncSession):
         await callback.answer("⚠️ No active trivia game found.", show_alert=True)
         return
         
-    # 2. Check if this user has already guessed
     if user_id in game["guesses"]:
         await callback.answer("⚠️ You have already guessed once! Only one guess allowed per trainer.", show_alert=True)
         return
         
-    # 3. Check timeout (60 seconds)
     if time.time() - game["created_at"] > 60:
         del active_games[chat_id]
         await callback.message.edit_text(
-            f"❓ **TRIVIA EXPIRED** ❓\n"
+            f"⏳ <b>TRIVIA EXPIRED</b> ⏳\n"
             f"───────────────\n\n"
-            f"⏳ Time is up! No one guessed the correct answer in time.\n\n"
-            f"💡 Correct Answer was: **{game['answer']}**\n"
+            f"❌ Time is up! No one guessed the correct answer in time.\n\n"
+            f"💡 Correct Answer was: <b>{game['answer']}</b>\n"
             f"───────────────",
             reply_markup=None,
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
         await callback.answer("This trivia game has expired.")
         return
         
-    # 4. Extract selected option
     try:
         opt_idx = int(callback.data.replace("trivia_ans_", ""))
         selected_option = game["options"][opt_idx]
@@ -1619,12 +1631,9 @@ async def cb_trivia_answer(callback: CallbackQuery, db: AsyncSession):
         await callback.answer("❌ Error processing your answer.", show_alert=True)
         return
         
-    # Add user to guesses set
     game["guesses"].add(user_id)
     
-    # 5. Check if guess is correct
     if selected_option == game["answer"]:
-        # Query/Register user
         stmt = select(User).where(User.id == user_id)
         res = await db.execute(stmt)
         user = res.scalar_one_or_none()
@@ -1638,39 +1647,38 @@ async def cb_trivia_answer(callback: CallbackQuery, db: AsyncSession):
         user.coins += reward
         await db.commit()
 
-        # Clear active game
         del active_games[chat_id]
 
         text = (
-            f"🎉 **TRIVIA CHAMPION!** 🎉\n"
+            f"🎉 <b>TRIVIA CHAMPION!</b> 🎉\n"
             f"───────────────\n\n"
-            f"**Question:**\n"
+            f"<b>Question:</b>\n"
             f"{game['question']}\n\n"
-            f"💡 Correct Answer: **{game['answer']}**\n"
-            f"🏆 Winner: Trainer **{escape_md(user.nickname)}**\n"
-            f"💰 Reward: **+{reward} coins**\n"
-            f"Balance: 💰 **{user.coins} coins**.\n"
+            f"💡 Correct Answer: <b>{game['answer']}</b>\n"
+            f"🏆 Winner: Trainer <b>{escape_md(user.nickname)}</b>\n"
+            f"💰 Reward: <b>+{reward} coins</b>\n"
+            f"Balance: 💰 <b>{user.coins} coins</b>.\n"
             f"───────────────"
         )
         
-        await callback.message.edit_text(text, reply_markup=None, parse_mode="Markdown")
+        msg = await callback.message.edit_text(text, reply_markup=None, parse_mode="HTML")
         await callback.answer("🎉 Correct answer!")
+        asyncio.create_task(delete_message_after(msg, 60))
     else:
-        # Incorrect answer
         await callback.answer("❌ Incorrect answer! You are locked out of this question.", show_alert=True)
         
-        # If in DM, end game immediately since they are the only player
         if callback.message.chat.type == "private":
             del active_games[chat_id]
-            await callback.message.edit_text(
-                f"❓ **TRIVIA OVER** ❓\n"
+            msg = await callback.message.edit_text(
+                f"❓ <b>TRIVIA OVER</b> ❓\n"
                 f"───────────────\n\n"
                 f"❌ You guessed incorrectly!\n\n"
-                f"💡 Correct Answer: **{game['answer']}**\n"
+                f"💡 Correct Answer: <b>{game['answer']}</b>\n"
                 f"───────────────",
                 reply_markup=None,
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
+            asyncio.create_task(delete_message_after(msg, 60))
 
 @router.message(Command("streak"))
 async def cmd_streak(message: Message, db: AsyncSession):

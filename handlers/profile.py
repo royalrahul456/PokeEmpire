@@ -97,7 +97,9 @@ async def cmd_profile(message: Message, db: AsyncSession):
         f"├─➩ 🏆 Position: #{rank_position}\n"
         f"╰───────────────────"
     )
-    await message.answer(profile_card, parse_mode="Markdown")
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="📖 View Pokédex", callback_data=f"pd_page_{user_id}_1_All"))
+    await message.answer(profile_card, reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 @router.message(Command("pokemon"))
 async def cmd_pokemon_list(message: Message):
@@ -278,6 +280,11 @@ def get_pokedex_keyboard(user_id: int, page: int, max_page: int, rarity_filter: 
     # Row 3: Filter by Rarity Button
     builder.row(
         InlineKeyboardButton(text="🔍 Filter by Rarity", callback_data=f"pd_rarity_{user_id}_{page}_{rarity_filter}")
+    )
+    
+    # Row 4: View Profile Button
+    builder.row(
+        InlineKeyboardButton(text="👤 View Profile", callback_data=f"profile_view_{user_id}")
     )
     
     return builder.as_markup()
@@ -765,5 +772,106 @@ async def cb_show_owners(callback: CallbackQuery, db: AsyncSession):
     )
     
     await callback.message.answer(text, parse_mode="Markdown")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("profile_view_"))
+async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_")
+    user_id = int(parts[2])
+
+    if callback.from_user.id != user_id:
+        await callback.answer("❌ This is not your profile!", show_alert=True)
+        return
+
+    # Count total caught Pokémon
+    count_stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == user_id)
+    count_res = await db.execute(count_stmt)
+    total_caught = count_res.scalar() or 0
+
+    # Count unique caught Pokémon
+    unique_stmt = select(func.count(distinct(UserPokemon.pokemon_id))).where(UserPokemon.user_id == user_id)
+    unique_res = await db.execute(unique_stmt)
+    unique_caught = unique_res.scalar() or 0
+
+    # Count shiny Pokémon
+    shiny_stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == user_id, UserPokemon.is_shiny == True)
+    shiny_res = await db.execute(shiny_stmt)
+    total_shiny = shiny_res.scalar() or 0
+
+    # Count total species in database
+    total_species_stmt = select(func.count(Pokemon.id))
+    total_species_res = await db.execute(total_species_stmt)
+    total_species = total_species_res.scalar() or 1
+
+    # Calculate percentage
+    dex_pct = (unique_caught / total_species) * 100
+    dex_bar = get_progress_bar(unique_caught, total_species, 10, fill_char="▰", empty_char="▱")
+
+    # Count caught by rarity
+    rarity_stmt = select(Pokemon.rarity, func.count(UserPokemon.id)).join(UserPokemon).where(UserPokemon.user_id == user_id).group_by(Pokemon.rarity)
+    rarity_res = await db.execute(rarity_stmt)
+    rarity_counts = {r: count for r, count in rarity_res.all()}
+
+    commons = rarity_counts.get("Common", 0)
+    rares = rarity_counts.get("Rare", 0)
+    epics = rarity_counts.get("Epic", 0)
+    legendaries = rarity_counts.get("Legendary", 0)
+    mythicals = rarity_counts.get("Mythical", 0)
+
+    # Fetch User
+    u_stmt = select(User).where(User.id == user_id)
+    u_res = await db.execute(u_stmt)
+    user = u_res.scalar_one_or_none()
+    
+    formatted_coins = f"{user.coins:,}" if user else "0"
+    user_nickname = user.nickname if (user and user.nickname) else (callback.from_user.first_name or "Trainer")
+
+    # Calculate global rank position
+    rank_stmt = (
+        select(func.count())
+        .select_from(
+            select(User.id)
+            .join(UserPokemon, UserPokemon.user_id == User.id)
+            .group_by(User.id)
+            .having(func.count(UserPokemon.id) > total_caught)
+            .subquery()
+        )
+    )
+    rank_res = await db.execute(rank_stmt)
+    rank_position = (rank_res.scalar() or 0) + 1
+
+    profile_card = (
+        f"╭──「 🏆 Trainer Profile 」\n"
+        f"├─➩ 🏓 User: {escape_md(user_nickname)}\n"
+        f"├─➩ 🆔 ID: `{user_id}`\n"
+        f"├─➩ 💰 Balance: `{formatted_coins} coins`\n"
+        f"├─➩ ⚡ Pokémon: {unique_caught} (Total Catches: {total_caught})\n"
+        f"├─➩ 🌍 Pokédex: {unique_caught}/{total_species} ({dex_pct:.3f}%)\n"
+        f"├─➩ 🎁 Progress:\n"
+        f"╰         {dex_bar}\n\n"
+        f"╭─ Rarity Breakdown ─\n"
+        f"├─➩ ⚪️ Common: {commons}\n"
+        f"├─➩ 🔵 Rare: {rares}\n"
+        f"├─➩ 🟣 Epic: {epics}\n"
+        f"├─➩ 🟡 Legendary: {legendaries}\n"
+        f"├─➩ 🌌 Mythical: {mythicals}\n"
+        f"├─➩ ✨ Shiny: {total_shiny}\n"
+        f"╰───────────────────\n\n"
+        f"╭─ Global Rank ─\n"
+        f"├─➩ 🏆 Position: #{rank_position}\n"
+        f"╰───────────────────"
+    )
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="📖 View Pokédex", callback_data=f"pd_page_{user_id}_1_All"))
+    
+    try:
+        await callback.message.edit_text(profile_card, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    except Exception:
+        try:
+            await callback.message.edit_caption(caption=profile_card, reply_markup=builder.as_markup(), parse_mode="Markdown")
+        except Exception:
+            pass
     await callback.answer()
 

@@ -7,44 +7,7 @@ from database.models import Pokemon, ActiveSpawn
 from aiogram import Bot
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-SPAWN_SETTINGS_FILE = os.path.join("data", "spawn_settings.json")
-
-def load_spawn_settings():
-    if not os.path.exists(SPAWN_SETTINGS_FILE):
-        os.makedirs(os.path.dirname(SPAWN_SETTINGS_FILE), exist_ok=True)
-        default_settings = {
-            "legendary_only_groups": True,
-            "group_rarity_probabilities": {
-                "Common": 70,
-                "Rare": 20,
-                "Epic": 7,
-                "Legendary": 2,
-                "Mythical": 1
-            }
-        }
-        with open(SPAWN_SETTINGS_FILE, "w") as f:
-            json.dump(default_settings, f, indent=4)
-        return default_settings
-
-    try:
-        with open(SPAWN_SETTINGS_FILE, "r") as f:
-            return json.load(f)
-    except Exception:
-        return {
-            "legendary_only_groups": True,
-            "group_rarity_probabilities": {
-                "Common": 70,
-                "Rare": 20,
-                "Epic": 7,
-                "Legendary": 2,
-                "Mythical": 1
-            }
-        }
-
-def save_spawn_settings(settings):
-    os.makedirs(os.path.dirname(SPAWN_SETTINGS_FILE), exist_ok=True)
-    with open(SPAWN_SETTINGS_FILE, "w") as f:
-        json.dump(settings, f, indent=4)
+from utils.settings import load_spawn_settings
 
 RARITY_PROBABILITIES = {
     "Common": 70,

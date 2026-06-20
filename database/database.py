@@ -63,8 +63,21 @@ SEED_POKEMON = [
 async def init_db():
     """Initialize the SQLite database, creating all tables and seeding Pokémon list if empty."""
     async with engine.begin() as conn:
-        from database.models import User, Pokemon, UserPokemon, ActiveSpawn, GroupSetting
+        from database.models import User, Pokemon, UserPokemon, ActiveSpawn, GroupSetting, GlobalSetting
         await conn.run_sync(Base.metadata.create_all)
+
+    # Run migrations for existing databases (adds scribble_enabled and nameguess_enabled if missing)
+    async with engine.begin() as conn:
+        for col in ["scribble_enabled", "nameguess_enabled"]:
+            try:
+                if "postgresql" in DATABASE_URL:
+                    await conn.execute(text(f"ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS {col} BOOLEAN DEFAULT true"))
+                else:
+                    await conn.execute(text(f"ALTER TABLE group_settings ADD COLUMN {col} BOOLEAN DEFAULT true"))
+                print(f"✅ Migrated database: added {col} column to group_settings")
+            except Exception:
+                pass
+
 
     # Seed the Pokémon table if empty
     async with SessionLocal() as session:

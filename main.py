@@ -21,7 +21,8 @@ from handlers import (
     games,
     shop,
     trade,
-    hunt
+    hunt,
+    xo
 )
 
 # Set up logging configuration
@@ -95,6 +96,28 @@ async def start_dummy_server():
     except Exception as e:
         logger.error(f"Failed to start dummy HTTP server: {e}")
 
+async def register_bot_commands(bot: Bot):
+    from aiogram.types import BotCommand
+    commands = [
+        BotCommand(command="start", description="Open primary Hub Dashboard"),
+        BotCommand(command="profile", description="Check Trainer coins & metrics"),
+        BotCommand(command="pokemon", description="Browse caught collection bag"),
+        BotCommand(command="pokedex", description="Review Pokédex checklist"),
+        BotCommand(command="xo", description="Play Tic Tac Toe (AI or PvP)"),
+        BotCommand(command="coinflip", description="Bet coins on a coin flip"),
+        BotCommand(command="rps", description="Play Rock-Paper-Scissors"),
+        BotCommand(command="trivia", description="Answer trivia for coins"),
+        BotCommand(command="streak", description="View Catch Streak stats"),
+        BotCommand(command="shop", description="Open Coin Shop"),
+        BotCommand(command="leaderboard", description="Global standings ranks"),
+        BotCommand(command="help", description="Show complete guide instructions")
+    ]
+    try:
+        await bot.set_my_commands(commands)
+        logger.info("✅ Registered bot commands menu successfully")
+    except Exception as e:
+        logger.error(f"Failed to register bot commands: {e}")
+
 async def main():
     # Run database migration check before initializing connection
     check_and_copy_sqlite_db()
@@ -105,6 +128,11 @@ async def main():
     # Initialize Database tables and seeds
     await init_db()
     logger.info("Database initialized and seeded successfully.")
+
+    # Load settings cache and migrate json configs
+    from utils.settings import load_all_settings_into_cache
+    await load_all_settings_into_cache()
+    logger.info("Settings cache loaded successfully.")
 
     # Validate token presence
     if not config.BOT_TOKEN or config.BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
@@ -144,8 +172,12 @@ async def main():
     dp.include_router(shop.router)
     dp.include_router(trade.router)
     dp.include_router(hunt.router)
+    dp.include_router(xo.router)
 
     logger.info("Bot handlers and routers registered.")
+
+    # Register bot menu commands
+    await register_bot_commands(bot)
     
     # Start a dummy HTTP server in the background for Render health checks
     await start_dummy_server()

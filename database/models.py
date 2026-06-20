@@ -69,3 +69,12 @@ class GroupSetting(Base):
     message_counter = Column(Integer, default=0, nullable=False)
     spawn_threshold = Column(Integer, default=100, nullable=False)  # Threshold (30-300)
     enabled = Column(Boolean, default=True, nullable=False)
+    scribble_enabled = Column(Boolean, default=True, nullable=False)
+    nameguess_enabled = Column(Boolean, default=True, nullable=False)
+
+class GlobalSetting(Base):
+    __tablename__ = "global_settings"
+
+    key = Column(String(100), primary_key=True)
+    value = Column(String(1000), nullable=False)
+

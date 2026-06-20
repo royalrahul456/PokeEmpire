@@ -602,7 +602,7 @@ async def cmd_spawn_chance(message: Message):
         return
 
     parts = message.text.split()
-    from services.spawn_service import load_spawn_settings, save_spawn_settings
+    from utils.settings import load_spawn_settings, save_spawn_settings
     settings = load_spawn_settings()
 
     if len(parts) < 2:
@@ -631,7 +631,7 @@ async def cmd_spawn_chance(message: Message):
     arg = parts[1].lower()
     if arg == "legendary":
         settings["legendary_only_groups"] = True
-        save_spawn_settings(settings)
+        await save_spawn_settings(settings)
         await message.answer("✅ **Spawns in group chats are now restricted to Legendary rarity only.**")
     elif arg == "default":
         settings["legendary_only_groups"] = False
@@ -642,7 +642,7 @@ async def cmd_spawn_chance(message: Message):
             "Legendary": 2,
             "Mythical": 1
         }
-        save_spawn_settings(settings)
+        await save_spawn_settings(settings)
         await message.answer("✅ **Reset group spawn chances to default rates (70% C, 20% R, 7% E, 2% L, 1% M) and disabled Legendary-only restriction.**")
     else:
         # Check for 5 integer weights
@@ -666,7 +666,7 @@ async def cmd_spawn_chance(message: Message):
             "Legendary": weights[3],
             "Mythical": weights[4]
         }
-        save_spawn_settings(settings)
+        await save_spawn_settings(settings)
 
         await message.answer(
             "✅ **Group spawn chances configured!**\n"

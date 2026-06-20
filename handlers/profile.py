@@ -108,40 +108,38 @@ async def cmd_pokemon_list(message: Message):
         "👉 Use `/fav <pokedex_id>` to set a Pokédex cover favorite."
     )
 
-@router.message(Command("pokedex"))
-async def cmd_pokedex(message: Message, db: AsyncSession):
-    user_id = message.from_user.id
-
-    # Parse page number
-    parts = message.text.split()
-    page = 1
-    if len(parts) > 1 and parts[1].isdigit():
-        page = int(parts[1])
-
-    # Count total species in database
-    total_stmt = select(func.count(Pokemon.id))
+async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter: str, db: AsyncSession):
+    # 1. Query total species in database matching the filter
+    if rarity_filter and rarity_filter != "All":
+        total_stmt = select(func.count(Pokemon.id)).where(Pokemon.rarity == rarity_filter)
+    else:
+        total_stmt = select(func.count(Pokemon.id))
+        
     total_res = await db.execute(total_stmt)
     total_species = total_res.scalar() or 1
 
-    # Count unique species caught by user
-    caught_count_stmt = select(func.count(distinct(UserPokemon.pokemon_id))).where(UserPokemon.user_id == user_id)
+    # 2. Query unique species caught by user matching the filter
+    if rarity_filter and rarity_filter != "All":
+        caught_count_stmt = (
+            select(func.count(distinct(UserPokemon.pokemon_id)))
+            .join(Pokemon)
+            .where(UserPokemon.user_id == user_id, Pokemon.rarity == rarity_filter)
+        )
+    else:
+        caught_count_stmt = select(func.count(distinct(UserPokemon.pokemon_id))).where(UserPokemon.user_id == user_id)
+        
     caught_count_res = await db.execute(caught_count_stmt)
     caught_count = caught_count_res.scalar() or 0
 
-    # Get nickname
-    u_stmt = select(User).where(User.id == user_id)
-    u_res = await db.execute(u_stmt)
-    user = u_res.scalar_one_or_none()
-    nickname = user.nickname if (user and user.nickname) else (message.from_user.first_name or "Trainer")
-
     if caught_count == 0:
-        await message.answer(
-            f"👑 **{escape_md(nickname)}'s Pokédex** 👑\n"
+        filter_str = f" ({rarity_filter})" if rarity_filter and rarity_filter != "All" else ""
+        text = (
+            f"⭐ **{escape_md(nickname)}'s Pokédex** ⭐{filter_str}\n"
             f"───────────────\n\n"
             f"⚠️ **Your Pokédex is empty!**\n"
             f"Catch wild Pokémon in a group chat first to register them in your Pokédex."
         )
-        return
+        return text, 0, 0
 
     per_page = 15
     max_page = (caught_count + per_page - 1) // per_page
@@ -150,34 +148,63 @@ async def cmd_pokedex(message: Message, db: AsyncSession):
 
     offset = (page - 1) * per_page
 
-    # Query unique caught species sorted by ID for the current page
-    poke_stmt = (
-        select(
-            Pokemon,
-            func.count(UserPokemon.id).label("total_caught"),
-            func.max(case((UserPokemon.is_shiny == True, 1), else_=0)).label("has_shiny")
+    # 3. Query unique caught species sorted by ID for the current page
+    if rarity_filter and rarity_filter != "All":
+        poke_stmt = (
+            select(
+                Pokemon,
+                func.count(UserPokemon.id).label("total_caught"),
+                func.max(case((UserPokemon.is_shiny == True, 1), else_=0)).label("has_shiny")
+            )
+            .join(UserPokemon)
+            .where(UserPokemon.user_id == user_id, Pokemon.rarity == rarity_filter)
+            .group_by(Pokemon.id)
+            .order_by(Pokemon.id)
+            .offset(offset)
+            .limit(per_page)
         )
-        .join(UserPokemon)
-        .where(UserPokemon.user_id == user_id)
-        .group_by(Pokemon.id)
-        .order_by(Pokemon.id)
-        .offset(offset)
-        .limit(per_page)
-    )
+    else:
+        poke_stmt = (
+            select(
+                Pokemon,
+                func.count(UserPokemon.id).label("total_caught"),
+                func.max(case((UserPokemon.is_shiny == True, 1), else_=0)).label("has_shiny")
+            )
+            .join(UserPokemon)
+            .where(UserPokemon.user_id == user_id)
+            .group_by(Pokemon.id)
+            .order_by(Pokemon.id)
+            .offset(offset)
+            .limit(per_page)
+        )
     poke_res = await db.execute(poke_stmt)
     pairs = poke_res.all()
 
-    # Query stats per generation
-    gen_stats_stmt = (
-        select(Pokemon.generation, func.count(distinct(UserPokemon.pokemon_id)))
-        .join(UserPokemon)
-        .where(UserPokemon.user_id == user_id)
-        .group_by(Pokemon.generation)
-    )
+    # 4. Query stats per generation
+    if rarity_filter and rarity_filter != "All":
+        gen_stats_stmt = (
+            select(Pokemon.generation, func.count(distinct(UserPokemon.pokemon_id)))
+            .join(UserPokemon)
+            .where(UserPokemon.user_id == user_id, Pokemon.rarity == rarity_filter)
+            .group_by(Pokemon.generation)
+        )
+        gen_totals_stmt = (
+            select(Pokemon.generation, func.count(Pokemon.id))
+            .where(Pokemon.rarity == rarity_filter)
+            .group_by(Pokemon.generation)
+        )
+    else:
+        gen_stats_stmt = (
+            select(Pokemon.generation, func.count(distinct(UserPokemon.pokemon_id)))
+            .join(UserPokemon)
+            .where(UserPokemon.user_id == user_id)
+            .group_by(Pokemon.generation)
+        )
+        gen_totals_stmt = select(Pokemon.generation, func.count(Pokemon.id)).group_by(Pokemon.generation)
+        
     gen_stats_res = await db.execute(gen_stats_stmt)
     gen_stats = {gen: count for gen, count in gen_stats_res.all()}
 
-    gen_totals_stmt = select(Pokemon.generation, func.count(Pokemon.id)).group_by(Pokemon.generation)
     gen_totals_res = await db.execute(gen_totals_stmt)
     gen_totals = {gen: count for gen, count in gen_totals_res.all()}
 
@@ -199,9 +226,10 @@ async def cmd_pokedex(message: Message, db: AsyncSession):
     bar = get_progress_bar(caught_count, total_species, 10, fill_char="█", empty_char="░")
 
     cover_link = f"[​]({cover_image})" if cover_image else ""
+    filter_label = f" ({rarity_filter})" if rarity_filter and rarity_filter != "All" else ""
     text = (
         f"{cover_link}"
-        f"⭐ **{escape_md(nickname)}'s Pokédex** ⭐ — Page {page}/{max_page}\n"
+        f"⭐ **{escape_md(nickname)}'s Pokédex** ⭐{filter_label} — Page {page}/{max_page}\n"
         f"Completion: **{caught_count}/{total_species}** species (**{percent}%**)\n"
         f"`[{bar}]` 🔴\n"
         f"───────────────\n"
@@ -226,10 +254,193 @@ async def cmd_pokedex(message: Message, db: AsyncSession):
         text += f"◆ [ {badge} ] #{p.id:03d} {p.name.title()}{shiny_tag} x{total}\n"
 
     text += "\n───────────────"
-    if max_page > 1:
-        text += f"\n👉 Use `/pokedex <page>` to view other pages."
+    return text, page, max_page
 
-    await message.answer(text, parse_mode="Markdown")
+def get_pokedex_keyboard(user_id: int, page: int, max_page: int, rarity_filter: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    
+    # Row 1: Tab Switches
+    builder.row(
+        InlineKeyboardButton(text="⭐ Collection", callback_data=f"pd_tab_{user_id}_col"),
+        InlineKeyboardButton(text="🖼️ Cover Info", callback_data=f"pd_tab_{user_id}_cov")
+    )
+    
+    # Row 2: Pagination Buttons
+    prev_page = page - 1 if page > 1 else max_page
+    next_page = page + 1 if page < max_page else 1
+    
+    builder.row(
+        InlineKeyboardButton(text="⬅️", callback_data=f"pd_page_{user_id}_{prev_page}_{rarity_filter}"),
+        InlineKeyboardButton(text=f"{page}/{max_page}", callback_data="pd_page_info"),
+        InlineKeyboardButton(text="➡️", callback_data=f"pd_page_{user_id}_{next_page}_{rarity_filter}")
+    )
+    
+    # Row 3: Filter by Rarity Button
+    builder.row(
+        InlineKeyboardButton(text="🔍 Filter by Rarity", callback_data=f"pd_rarity_{user_id}_{page}_{rarity_filter}")
+    )
+    
+    return builder.as_markup()
+
+def get_rarity_filter_keyboard(user_id: int, current_page: int, current_filter: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    
+    builder.row(
+        InlineKeyboardButton(text="⚪ Common", callback_data=f"pd_setfilter_{user_id}_Common"),
+        InlineKeyboardButton(text="🔵 Rare", callback_data=f"pd_setfilter_{user_id}_Rare")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🟣 Epic", callback_data=f"pd_setfilter_{user_id}_Epic"),
+        InlineKeyboardButton(text="🟡 Legendary", callback_data=f"pd_setfilter_{user_id}_Legendary")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🌌 Mythical", callback_data=f"pd_setfilter_{user_id}_Mythical"),
+        InlineKeyboardButton(text="🌍 All", callback_data=f"pd_setfilter_{user_id}_All")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🔙 Back", callback_data=f"pd_page_{user_id}_{current_page}_{current_filter}")
+    )
+    
+    return builder.as_markup()
+
+@router.message(Command("pokedex"))
+async def cmd_pokedex(message: Message, db: AsyncSession):
+    user_id = message.from_user.id
+
+    # Parse page number
+    parts = message.text.split()
+    page = 1
+    if len(parts) > 1 and parts[1].isdigit():
+        page = int(parts[1])
+
+    u_stmt = select(User).where(User.id == user_id)
+    u_res = await db.execute(u_stmt)
+    user = u_res.scalar_one_or_none()
+    nickname = user.nickname if (user and user.nickname) else (message.from_user.first_name or "Trainer")
+
+    text, final_page, max_page = await get_pokedex_data(user_id, nickname, page, "All", db)
+    
+    if max_page == 0:
+        await message.answer(text, parse_mode="Markdown")
+        return
+
+    kb = get_pokedex_keyboard(user_id, final_page, max_page, "All")
+    await message.answer(text, reply_markup=kb, parse_mode="Markdown")
+
+@router.callback_query(F.data.startswith("pd_tab_"))
+async def cb_pokedex_tab(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_")
+    user_id = int(parts[2])
+    tab = parts[3]
+    
+    if callback.from_user.id != user_id:
+        await callback.answer("❌ This is not your Pokédex! Use /pokedex to view yours.", show_alert=True)
+        return
+        
+    if tab == "cov":
+        text = (
+            f"🖼️ **Pokédex Cover Favorite**\n"
+            f"───────────────\n\n"
+            f"Set your favorite Pokémon as the Pokédex cover illustration!\n\n"
+            f"👉 **How to set**: Type `/fav <pokedex_id>` in chat.\n"
+            f"*(e.g., `/fav 251` to set Celebi as cover)*"
+        )
+        builder = InlineKeyboardBuilder()
+        builder.row(InlineKeyboardButton(text="🔙 Back to Collection", callback_data=f"pd_page_{user_id}_1_All"))
+        
+        try:
+            await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+        except Exception:
+            pass
+        await callback.answer()
+    else:
+        # Default/collection back trigger
+        u_stmt = select(User).where(User.id == user_id)
+        u_res = await db.execute(u_stmt)
+        user = u_res.scalar_one_or_none()
+        nickname = user.nickname if (user and user.nickname) else (callback.from_user.first_name or "Trainer")
+        
+        text, final_page, max_page = await get_pokedex_data(user_id, nickname, 1, "All", db)
+        kb = get_pokedex_keyboard(user_id, final_page, max_page, "All")
+        
+        try:
+            await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+        except Exception:
+            pass
+        await callback.answer()
+
+@router.callback_query(F.data.startswith("pd_page_"))
+async def cb_pokedex_page(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_")
+    user_id = int(parts[2])
+    page = int(parts[3])
+    rarity_filter = parts[4]
+    
+    if callback.from_user.id != user_id:
+        await callback.answer("❌ This is not your Pokédex! Use /pokedex to view yours.", show_alert=True)
+        return
+        
+    u_stmt = select(User).where(User.id == user_id)
+    u_res = await db.execute(u_stmt)
+    user = u_res.scalar_one_or_none()
+    nickname = user.nickname if (user and user.nickname) else (callback.from_user.first_name or "Trainer")
+    
+    text, final_page, max_page = await get_pokedex_data(user_id, nickname, page, rarity_filter, db)
+    kb = get_pokedex_keyboard(user_id, final_page, max_page, rarity_filter)
+    
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+    except Exception:
+        pass
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("pd_rarity_"))
+async def cb_pokedex_rarity_menu(callback: CallbackQuery):
+    parts = callback.data.split("_")
+    user_id = int(parts[2])
+    page = int(parts[3])
+    rarity_filter = parts[4]
+    
+    if callback.from_user.id != user_id:
+        await callback.answer("❌ This is not your Pokédex! Use /pokedex to view yours.", show_alert=True)
+        return
+        
+    text = (
+        f"🔍 **Filter Pokédex by Rarity**\n"
+        f"───────────────\n\n"
+        f"Choose a rarity tier below to filter your species list:"
+    )
+    kb = get_rarity_filter_keyboard(user_id, page, rarity_filter)
+    
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+    except Exception:
+        pass
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("pd_setfilter_"))
+async def cb_pokedex_set_filter(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_")
+    user_id = int(parts[2])
+    rarity_filter = parts[3]
+    
+    if callback.from_user.id != user_id:
+        await callback.answer("❌ This is not your Pokédex! Use /pokedex to view yours.", show_alert=True)
+        return
+        
+    u_stmt = select(User).where(User.id == user_id)
+    u_res = await db.execute(u_stmt)
+    user = u_res.scalar_one_or_none()
+    nickname = user.nickname if (user and user.nickname) else (callback.from_user.first_name or "Trainer")
+    
+    text, final_page, max_page = await get_pokedex_data(user_id, nickname, 1, rarity_filter, db)
+    kb = get_pokedex_keyboard(user_id, final_page, max_page, rarity_filter)
+    
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+    except Exception:
+        pass
+    await callback.answer(f"Filtered by: {rarity_filter}")
 
 @router.message(Command("check"))
 async def cmd_check_pokemon(message: Message, db: AsyncSession):

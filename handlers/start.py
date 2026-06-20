@@ -43,14 +43,23 @@ async def cmd_start(message: Message, db: AsyncSession):
         )
         await message.answer(welcome_text, reply_markup=get_dm_menu_keyboard(), parse_mode="Markdown")
     else:
+        me = await message.bot.get_me()
         welcome_text = (
             f"🌲 **POKÉEMPIRE ACTIVE** 🌲\n"
             f"───────────────\n\n"
             f"Start chatting in this group, and a wild Pokémon will eventually appear!\n\n"
-            f"👉 Use `/catch <name>` to catch it when it spawns.\n"
-            f"👉 Message me in DMs to view your bag, profile, shop, and train!"
+            f"💬 **How to Play**:\n"
+            f"• Catch wild spawns with `/catch <name>`\n"
+            f"• Play Scramble & Guess the Pokémon games\n"
+            f"• Earn coins to spend in the shop\n\n"
+            f"👉 Click the buttons below to open private DMs or join our official group chat!"
         )
-        await message.answer(welcome_text, parse_mode="Markdown")
+        builder = InlineKeyboardBuilder()
+        builder.row(
+            InlineKeyboardButton(text="💬 Open Private DMs", url=f"https://t.me/{me.username}?start=help"),
+            InlineKeyboardButton(text="🌲 Union Group", url="https://t.me/pokeempireunion")
+        )
+        await message.answer(welcome_text, reply_markup=builder.as_markup(), parse_mode="Markdown")
 
 @router.message(Command("help"))
 async def cmd_help(message: Message):

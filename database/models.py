@@ -25,6 +25,7 @@ class Pokemon(Base):
     rarity = Column(String(50), nullable=False)  # Common, Rare, Epic, Legendary, Mythical
     generation = Column(Integer, default=1, nullable=False)
     image_url = Column(String(255), nullable=False)
+    video_url = Column(String(255), nullable=True)
 
     # Relationships
     user_captures = relationship("UserPokemon", back_populates="pokemon")
@@ -38,6 +39,8 @@ class UserPokemon(Base):
     pokemon_id = Column(Integer, ForeignKey("pokemon.id", ondelete="CASCADE"), nullable=False)
     nickname = Column(String(100), nullable=True)
     is_shiny = Column(Boolean, default=False, nullable=False)
+    is_amv = Column(Boolean, default=False, nullable=False)
+    serial_number = Column(String(20), nullable=True)
     level = Column(Integer, default=1, nullable=False)
     xp = Column(Integer, default=0, nullable=False)
     iv_hp = Column(Integer, default=0, nullable=False)
@@ -77,4 +80,27 @@ class GlobalSetting(Base):
 
     key = Column(String(100), primary_key=True)
     value = Column(String(1000), nullable=False)
+
+
+class RedeemCode(Base):
+    __tablename__ = "redeem_codes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(50), unique=True, nullable=False)
+    reward_type = Column(String(20), nullable=False)  # "coins" or "pokemon"
+    reward_value = Column(Integer, nullable=True)     # coin amount or pokemon_id
+    reward_is_shiny = Column(Boolean, default=False, nullable=False)
+    reward_is_amv = Column(Boolean, default=False, nullable=False)
+    usage_limit = Column(Integer, default=1, nullable=False)
+    usage_count = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+
+
+class RedeemClaim(Base):
+    __tablename__ = "redeem_claims"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    code_id = Column(Integer, ForeignKey("redeem_codes.id", ondelete="CASCADE"), nullable=False)
+    claimed_at = Column(DateTime, default=func.now(), nullable=False)
 

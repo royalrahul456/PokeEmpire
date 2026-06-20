@@ -1,6 +1,7 @@
 from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import config
@@ -304,15 +305,19 @@ async def cmd_gift_pokemon(message: Message, db: AsyncSession):
     target_user = None
     poke_query = None
     is_shiny = False
+    is_amv = False
     
-    # Check if this is a reply: /giftpokemon <pokemon_name_or_id> [shiny]
+    # Check if this is a reply: /giftpokemon <pokemon_name_or_id> [shiny] [amv]
     if message.reply_to_message:
         if len(parts) < 2:
-            await message.answer("⚠️ Format: Reply to a user's message with `/giftpokemon <pokemon_name/id> [shiny]`")
+            await message.answer("⚠️ Format: Reply to a user's message with `/giftpokemon <pokemon_name/id> [shiny] [amv]`")
             return
         poke_query = parts[1].lower()
-        if len(parts) > 2 and parts[2].lower() in ["shiny", "s"]:
+        extra_parts = [p.lower() for p in parts[2:]]
+        if "shiny" in extra_parts or "s" in extra_parts:
             is_shiny = True
+        if "amv" in extra_parts:
+            is_amv = True
             
         target_tg_user = message.reply_to_message.from_user
         
@@ -329,16 +334,19 @@ async def cmd_gift_pokemon(message: Message, db: AsyncSession):
             db.add(target_user)
             await db.flush()
     else:
-        # Not a reply, parse: /giftpokemon <@username/user_id> <pokemon_name_or_id> [shiny]
+        # Not a reply, parse: /giftpokemon <@username/user_id> <pokemon_name_or_id> [shiny] [amv]
         if len(parts) < 3:
-            await message.answer("⚠️ Format: `/giftpokemon <@username/user_id> <pokemon_name/id> [shiny]` (or reply to their message)")
+            await message.answer("⚠️ Format: `/giftpokemon <@username/user_id> <pokemon_name/id> [shiny] [amv]` (or reply to their message)")
             return
             
         target_str = parts[1]
         poke_query = parts[2].lower()
         
-        if len(parts) > 3 and parts[3].lower() in ["shiny", "s"]:
+        extra_parts = [p.lower() for p in parts[3:]]
+        if "shiny" in extra_parts or "s" in extra_parts:
             is_shiny = True
+        if "amv" in extra_parts:
+            is_amv = True
             
         if target_str.isdigit():
             # Target by User ID
@@ -375,6 +383,10 @@ async def cmd_gift_pokemon(message: Message, db: AsyncSession):
         await message.answer(f"❌ Pokémon '{poke_query}' not found in database.")
         return
 
+    if is_amv and not pokemon.video_url:
+        await message.answer(f"❌ Pokémon '{pokemon.name.title()}' does not have an AMV video edit set.\nUse `/setpokemedia {pokemon.id}` in private DM to configure its video first.")
+        return
+
     # Roll stats/IVs
     import random
     iv_hp = random.randint(0, 31)
@@ -384,11 +396,18 @@ async def cmd_gift_pokemon(message: Message, db: AsyncSession):
     iv_total = iv_hp + iv_atk + iv_def + iv_spd
     iv_pct = int((iv_total / 124) * 100)
 
+    # Generate unique serial number if AMV
+    serial_number = None
+    if is_amv:
+        serial_number = f"#{pokemon.id:03d}-{random.randint(1000, 9999)}"
+
     # Insert UserPokemon
     new_poke = UserPokemon(
         user_id=target_user.id,
         pokemon_id=pokemon.id,
         is_shiny=is_shiny,
+        is_amv=is_amv,
+        serial_number=serial_number,
         level=1,
         xp=0,
         iv_hp=iv_hp,
@@ -405,6 +424,8 @@ async def cmd_gift_pokemon(message: Message, db: AsyncSession):
     spd_bar = get_progress_bar(iv_spd, 31, 5, fill_char="▰", empty_char="▱")
 
     shiny_badge = "✨ Shiny " if is_shiny else ""
+    amv_badge = "🎬 AMV " if is_amv else ""
+    serial_str = f"\n🎫 **Serial Number**: `{serial_number}`" if serial_number else ""
     r_emoji = get_rarity_emoji(pokemon.rarity)
     admin_name = message.from_user.first_name
 
@@ -413,7 +434,7 @@ async def cmd_gift_pokemon(message: Message, db: AsyncSession):
         f"───────────────\n"
         f"Bot Owner **{escape_md(admin_name)}** gifted a Pokémon!\n\n"
         f"👤 Recipient: **{escape_md(target_user.nickname)}**\n"
-        f"🎉 Unwrapped: {r_emoji} {shiny_badge}**{pokemon.name.title()}** `(Lvl 1)`\n"
+        f"🎉 Unwrapped: {r_emoji} {shiny_badge}{amv_badge}**{pokemon.name.title()}** `(Lvl 1)`{serial_str}\n"
         f"🧬 **IV Quality**: `🧬 {iv_pct}%`\n"
         f"• HP IV: `[{hp_bar}]` `({iv_hp}/31)`\n"
         f"• ATK IV: `[{atk_bar}]` `({iv_atk}/31)`\n"
@@ -678,4 +699,114 @@ async def cmd_spawn_chance(message: Message):
             f"• Legendary: `{weights[3]}`\n"
             f"• Mythical: `{weights[4]}`"
         )
+
+
+# In-memory dictionary to track active pokemon media updates
+# Key: owner_id, Value: (pokemon_id, field_type)
+active_poke_media_updates = {}
+
+@router.message(Command("setpokemedia"))
+async def cmd_set_poke_media(message: Message, db: AsyncSession):
+    if message.chat.type != "private":
+        await message.answer("⚠️ This command can only be used in private DMs.")
+        return
+        
+    if not config.ADMIN_IDS or message.from_user.id != config.ADMIN_IDS[0]:
+        await message.answer("❌ Denied. Only the Bot Owner can configure Pokémon media.")
+        return
+        
+    parts = message.text.split()
+    if len(parts) < 2:
+        await message.answer("⚠️ Format: `/setpokemedia <pokemon_name/id>`")
+        return
+        
+    poke_query = parts[1].lower()
+    if poke_query.isdigit():
+        stmt = select(Pokemon).where(Pokemon.id == int(poke_query))
+    else:
+        stmt = select(Pokemon).where(Pokemon.name.ilike(poke_query))
+        
+    res = await db.execute(stmt)
+    pokemon = res.scalar_one_or_none()
+    
+    if not pokemon:
+        await message.answer(f"❌ Pokémon '{poke_query}' not found in database.")
+        return
+        
+    # Show inline options
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📸 Set Standard Photo", callback_data=f"setpm_std_{pokemon.id}_{message.from_user.id}")
+    builder.button(text="🎥 Set AMV Video", callback_data=f"setpm_amv_{pokemon.id}_{message.from_user.id}")
+    builder.adjust(1)
+    
+    await message.answer(
+        f"⚙️ <b>Configure Media for {pokemon.name.title()} (#{pokemon.id:03d})</b>\n\n"
+        f"Choose which media field you would like to set:",
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
+    )
+
+@router.callback_query(F.data.startswith("setpm_"))
+async def cb_set_poke_media_choice(callback: CallbackQuery):
+    parts = callback.data.split("_")
+    # Structure: setpm_<type>_<pokemon_id>_<owner_id>
+    m_type = parts[1]
+    pokemon_id = int(parts[2])
+    owner_id = int(parts[3])
+    
+    if callback.from_user.id != owner_id:
+        await callback.answer("❌ Denied.", show_alert=True)
+        return
+        
+    field = "image" if m_type == "std" else "video"
+    active_poke_media_updates[owner_id] = (pokemon_id, field)
+    
+    await callback.message.edit_text(
+        f"📥 <b>Ready to update {field} media!</b>\n\n"
+        f"Please send the photo, video, or animation (GIF) now. The bot will save it directly to the database.",
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+# Media receiver for owner pokemon edits
+@router.message(F.chat.type == "private", F.from_user.id.in_(config.ADMIN_IDS), lambda msg: msg.from_user.id in active_poke_media_updates)
+async def on_poke_media_received(message: Message, db: AsyncSession):
+    user_id = message.from_user.id
+    update_info = active_poke_media_updates.pop(user_id, None)
+    if not update_info:
+        return
+        
+    pokemon_id, field = update_info
+    
+    # Check media type in the sent message
+    media_value = None
+    
+    if message.photo:
+        media_value = message.photo[-1].file_id
+    elif message.video:
+        media_value = message.video.file_id
+    elif message.animation:
+        media_value = message.animation.file_id
+    elif message.document:
+        media_value = message.document.file_id
+        
+    if not media_value:
+        await message.answer("❌ No valid media detected. Operation cancelled. Please use the command again.")
+        return
+        
+    stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
+    res = await db.execute(stmt)
+    pokemon = res.scalar_one_or_none()
+    
+    if not pokemon:
+        await message.answer("❌ Pokémon no longer exists in database.")
+        return
+        
+    if field == "image":
+        pokemon.image_url = media_value
+    else:
+        pokemon.video_url = media_value
+        
+    await db.commit()
+    await message.answer(f"✅ Successfully updated <b>{field}</b> for <b>{pokemon.name.title()}</b>!", parse_mode="HTML")
 

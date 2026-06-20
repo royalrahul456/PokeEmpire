@@ -794,11 +794,11 @@ async def cb_owner_tools(callback: CallbackQuery):
         f"───────────────\n\n"
         f"As the bot owner, you can dynamically customize start and game cover art directly from your chat!\n\n"
         f"👉 <b>How to set a cover</b>:\n"
-        f"1. Type <code>/setcover start</code> or <code>/setcover xo</code> in DM.\n"
+        f"1. Type <code>/setcover start</code>, <code>/setcover xo</code>, or <code>/setcover pokedex</code> in DM.\n"
         f"2. Send any photo, video, or animation (GIF).\n"
         f"3. The bot will automatically update and apply it!\n\n"
         f"👉 <b>How to reset a cover</b>:\n"
-        f"• Type <code>/resetcover start</code> or <code>/resetcover xo</code>.\n\n"
+        f"• Type <code>/resetcover start</code>, <code>/resetcover xo</code>, or <code>/resetcover pokedex</code>.\n\n"
         f"👉 <b>Spawn Weight Adjustments</b>:\n"
         f"• Type <code>/spawnchance</code> to view and set custom rates."
     )
@@ -819,12 +819,12 @@ async def cmd_set_cover(message: Message):
         
     parts = message.text.split()
     if len(parts) < 2:
-        await message.answer("⚠️ Format: `/setcover <start/xo>`")
+        await message.answer("⚠️ Format: `/setcover <start/xo/pokedex>`")
         return
         
     key = parts[1].lower()
-    if key not in ["start", "xo"]:
-        await message.answer("❌ Invalid cover key. Choose either `start` or `xo`.")
+    if key not in ["start", "xo", "pokedex"]:
+        await message.answer("❌ Invalid cover key. Choose `start`, `xo`, or `pokedex`.")
         return
         
     active_cover_updates[message.from_user.id] = key
@@ -838,12 +838,12 @@ async def cmd_reset_cover(message: Message):
         
     parts = message.text.split()
     if len(parts) < 2:
-        await message.answer("⚠️ Format: `/resetcover <start/xo>`")
+        await message.answer("⚠️ Format: `/resetcover <start/xo/pokedex>`")
         return
         
     key = parts[1].lower()
-    if key not in ["start", "xo"]:
-        await message.answer("❌ Invalid cover key. Choose either `start` or `xo`.")
+    if key not in ["start", "xo", "pokedex"]:
+        await message.answer("❌ Invalid cover key. Choose `start`, `xo`, or `pokedex`.")
         return
         
     await delete_custom_cover(key)

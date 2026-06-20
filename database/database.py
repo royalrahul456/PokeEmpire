@@ -66,8 +66,9 @@ async def init_db():
         from database.models import User, Pokemon, UserPokemon, ActiveSpawn, GroupSetting, GlobalSetting
         await conn.run_sync(Base.metadata.create_all)
 
-    # Run migrations for existing databases (adds scribble_enabled and nameguess_enabled if missing)
+    # Run migrations for existing databases
     async with engine.begin() as conn:
+        # Group Settings toggles
         for col in ["scribble_enabled", "nameguess_enabled"]:
             try:
                 if "postgresql" in DATABASE_URL:
@@ -77,6 +78,35 @@ async def init_db():
                 print(f"✅ Migrated database: added {col} column to group_settings")
             except Exception:
                 pass
+
+        # Pokemon table custom media column
+        try:
+            if "postgresql" in DATABASE_URL:
+                await conn.execute(text("ALTER TABLE pokemon ADD COLUMN IF NOT EXISTS video_url VARCHAR(255)"))
+            else:
+                await conn.execute(text("ALTER TABLE pokemon ADD COLUMN video_url VARCHAR(255)"))
+            print("✅ Migrated database: added video_url column to pokemon")
+        except Exception:
+            pass
+
+        # User Pokemon table AMV indicator and serial number columns
+        try:
+            if "postgresql" in DATABASE_URL:
+                await conn.execute(text("ALTER TABLE user_pokemon ADD COLUMN IF NOT EXISTS is_amv BOOLEAN DEFAULT false"))
+            else:
+                await conn.execute(text("ALTER TABLE user_pokemon ADD COLUMN is_amv BOOLEAN DEFAULT false"))
+            print("✅ Migrated database: added is_amv column to user_pokemon")
+        except Exception:
+            pass
+
+        try:
+            if "postgresql" in DATABASE_URL:
+                await conn.execute(text("ALTER TABLE user_pokemon ADD COLUMN IF NOT EXISTS serial_number VARCHAR(20)"))
+            else:
+                await conn.execute(text("ALTER TABLE user_pokemon ADD COLUMN serial_number VARCHAR(20)"))
+            print("✅ Migrated database: added serial_number column to user_pokemon")
+        except Exception:
+            pass
 
 
     # Seed the Pokémon table if empty

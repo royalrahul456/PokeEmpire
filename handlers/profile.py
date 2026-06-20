@@ -1,3 +1,4 @@
+import os
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -9,6 +10,97 @@ from database.models import User, UserPokemon, Pokemon
 from utils.formatters import get_hp_bar, get_progress_bar, get_rarity_emoji, escape_md
 
 router = Router()
+
+async def get_player_cover_media(user_id: int, db: AsyncSession) -> tuple[str, str]:
+    """
+    Resolves the cover media for a trainer.
+    Returns (media_type, media_value)
+    """
+    from utils.favorite import get_favorite_id
+    from utils.settings import get_custom_cover
+    
+    fav_id = get_favorite_id(user_id)
+    media_type = None
+    media_value = None
+    
+    if fav_id:
+        # Check if they own an AMV version of this favorite species
+        amv_stmt = select(UserPokemon.is_amv).where(
+            UserPokemon.pokemon_id == fav_id,
+            UserPokemon.user_id == user_id,
+            UserPokemon.is_amv == True
+        ).limit(1)
+        amv_res = await db.execute(amv_stmt)
+        has_amv = amv_res.scalar() is not None
+        
+        # Get Pokemon details
+        poke_stmt = select(Pokemon).where(Pokemon.id == fav_id)
+        poke_res = await db.execute(poke_stmt)
+        pokemon = poke_res.scalar_one_or_none()
+        
+        if pokemon:
+            if has_amv and pokemon.video_url:
+                media_type = "video"
+                media_value = pokemon.video_url
+            else:
+                media_type = "photo"
+                media_value = pokemon.image_url
+                
+    if not media_value:
+        # Fallback 1: Random Pokémon from their bag
+        rand_stmt = select(UserPokemon).options(joinedload(UserPokemon.pokemon)).where(
+            UserPokemon.user_id == user_id
+        ).order_by(func.random()).limit(1)
+        rand_res = await db.execute(rand_stmt)
+        up = rand_res.scalar_one_or_none()
+        if up and up.pokemon:
+            if up.is_amv and up.pokemon.video_url:
+                media_type = "video"
+                media_value = up.pokemon.video_url
+            else:
+                media_type = "photo"
+                media_value = up.pokemon.image_url
+                
+    if not media_value:
+        # Fallback 2: Default pokedex cover configured by owner
+        media_type, media_value = get_custom_cover("pokedex")
+        
+    if not media_value:
+        # Fallback 3: Hardcoded default
+        media_type = "photo"
+        media_value = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/890.png"
+        
+    return media_type, media_value
+
+async def send_player_cover(chat_id: int, user_id: int, caption: str, reply_markup, bot, db: AsyncSession, message_to_reply=None):
+    media_type, media_value = await get_player_cover_media(user_id, db)
+    
+    from aiogram.types import FSInputFile
+    if isinstance(media_value, str) and os.path.exists(media_value):
+        media_value = FSInputFile(media_value)
+        
+    try:
+        if message_to_reply:
+            if media_type == "video":
+                return await message_to_reply.answer_video(video=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+            elif media_type == "animation":
+                return await message_to_reply.answer_animation(animation=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+            else:
+                return await message_to_reply.answer_photo(photo=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+        else:
+            if media_type == "video":
+                return await bot.send_video(chat_id, video=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+            elif media_type == "animation":
+                return await bot.send_animation(chat_id, animation=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+            else:
+                return await bot.send_photo(chat_id, photo=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+    except Exception as e:
+        print(f"Error sending player cover media: {e}")
+        # Final fallback: text only
+        if message_to_reply:
+            return await message_to_reply.answer(caption, reply_markup=reply_markup, parse_mode="HTML")
+        else:
+            return await bot.send_message(chat_id, caption, reply_markup=reply_markup, parse_mode="HTML")
 
 @router.message(Command("profile"))
 async def cmd_profile(message: Message, db: AsyncSession):
@@ -79,8 +171,8 @@ async def cmd_profile(message: Message, db: AsyncSession):
     profile_card = (
         f"╭──「 🏆 Trainer Profile 」\n"
         f"├─➩ 🏓 User: {escape_md(user_nickname)}\n"
-        f"├─➩ 🆔 ID: `{user.id}`\n"
-        f"├─➩ 💰 Balance: `{formatted_coins} coins`\n"
+        f"├─➩ 🆔 ID: <code>{user.id}</code>\n"
+        f"├─➩ 💰 Balance: <code>{formatted_coins} coins</code>\n"
         f"├─➩ ⚡ Pokémon: {unique_caught} (Total Catches: {total_caught})\n"
         f"├─➩ 🌍 Pokédex: {unique_caught}/{total_species} ({dex_pct:.3f}%)\n"
         f"├─➩ 🎁 Progress:\n"
@@ -99,7 +191,15 @@ async def cmd_profile(message: Message, db: AsyncSession):
     )
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="📖 View Pokédex", callback_data=f"pd_page_{user_id}_1_All"))
-    await message.answer(profile_card, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    await send_player_cover(
+        chat_id=message.chat.id,
+        user_id=user_id,
+        caption=profile_card,
+        reply_markup=builder.as_markup(),
+        bot=message.bot,
+        db=db,
+        message_to_reply=message
+    )
 
 @router.message(Command("pokemon"))
 async def cmd_pokemon_list(message: Message):
@@ -210,27 +310,11 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
     gen_totals_res = await db.execute(gen_totals_stmt)
     gen_totals = {gen: count for gen, count in gen_totals_res.all()}
 
-    # Determine Pokedex Cover Image
-    from utils.favorite import get_favorite_id
-    fav_id = get_favorite_id(user_id)
-    cover_image = None
-    if fav_id:
-        fav_stmt = select(Pokemon.image_url).join(UserPokemon, UserPokemon.pokemon_id == Pokemon.id).where(Pokemon.id == fav_id, UserPokemon.user_id == user_id)
-        fav_res = await db.execute(fav_stmt)
-        cover_image = fav_res.scalar_one_or_none()
-    
-    if not cover_image:
-        rand_stmt = select(Pokemon.image_url).join(UserPokemon, UserPokemon.pokemon_id == Pokemon.id).where(UserPokemon.user_id == user_id).order_by(func.random()).limit(1)
-        rand_res = await db.execute(rand_stmt)
-        cover_image = rand_res.scalar_one_or_none()
-
     percent = int((caught_count / total_species) * 100)
     bar = get_progress_bar(caught_count, total_species, 10, fill_char="█", empty_char="░")
 
-    cover_link = f"[​]({cover_image})" if cover_image else ""
     filter_label = f" ({rarity_filter})" if rarity_filter and rarity_filter != "All" else ""
     text = (
-        f"{cover_link}"
         f"⭐ **{escape_md(nickname)}'s Pokédex** ⭐{filter_label} — Page {page}/{max_page}\n"
         f"Completion: **{caught_count}/{total_species}** species (**{percent}%**)\n"
         f"`[{bar}]` 🔴\n"
@@ -332,7 +416,15 @@ async def cmd_pokedex(message: Message, db: AsyncSession):
         return
 
     kb = get_pokedex_keyboard(user_id, final_page, max_page, "All")
-    await message.answer(text, reply_markup=kb, parse_mode="Markdown")
+    await send_player_cover(
+        chat_id=message.chat.id,
+        user_id=user_id,
+        caption=text,
+        reply_markup=kb,
+        bot=message.bot,
+        db=db,
+        message_to_reply=message
+    )
 
 @router.callback_query(F.data.startswith("pd_tab_"))
 async def cb_pokedex_tab(callback: CallbackQuery, db: AsyncSession):
@@ -356,7 +448,7 @@ async def cb_pokedex_tab(callback: CallbackQuery, db: AsyncSession):
         builder.row(InlineKeyboardButton(text="🔙 Back to Collection", callback_data=f"pd_page_{user_id}_1_All"))
         
         try:
-            await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+            await callback.message.edit_caption(caption=text, reply_markup=builder.as_markup(), parse_mode="Markdown")
         except Exception:
             pass
         await callback.answer()
@@ -371,7 +463,7 @@ async def cb_pokedex_tab(callback: CallbackQuery, db: AsyncSession):
         kb = get_pokedex_keyboard(user_id, final_page, max_page, "All")
         
         try:
-            await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+            await callback.message.edit_caption(caption=text, reply_markup=kb, parse_mode="Markdown")
         except Exception:
             pass
         await callback.answer()
@@ -396,7 +488,7 @@ async def cb_pokedex_page(callback: CallbackQuery, db: AsyncSession):
     kb = get_pokedex_keyboard(user_id, final_page, max_page, rarity_filter)
     
     try:
-        await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+        await callback.message.edit_caption(caption=text, reply_markup=kb, parse_mode="Markdown")
     except Exception:
         pass
     await callback.answer()
@@ -420,7 +512,7 @@ async def cb_pokedex_rarity_menu(callback: CallbackQuery):
     kb = get_rarity_filter_keyboard(user_id, page, rarity_filter)
     
     try:
-        await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+        await callback.message.edit_caption(caption=text, reply_markup=kb, parse_mode="Markdown")
     except Exception:
         pass
     await callback.answer()
@@ -444,7 +536,7 @@ async def cb_pokedex_set_filter(callback: CallbackQuery, db: AsyncSession):
     kb = get_pokedex_keyboard(user_id, final_page, max_page, rarity_filter)
     
     try:
-        await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+        await callback.message.edit_caption(caption=text, reply_markup=kb, parse_mode="Markdown")
     except Exception:
         pass
     await callback.answer(f"Filtered by: {rarity_filter}")
@@ -867,11 +959,8 @@ async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
     builder.row(InlineKeyboardButton(text="📖 View Pokédex", callback_data=f"pd_page_{user_id}_1_All"))
     
     try:
-        await callback.message.edit_text(profile_card, reply_markup=builder.as_markup(), parse_mode="Markdown")
+        await callback.message.edit_caption(caption=profile_card, reply_markup=builder.as_markup(), parse_mode="HTML")
     except Exception:
-        try:
-            await callback.message.edit_caption(caption=profile_card, reply_markup=builder.as_markup(), parse_mode="Markdown")
-        except Exception:
-            pass
+        pass
     await callback.answer()
 

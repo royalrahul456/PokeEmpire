@@ -22,7 +22,8 @@ from handlers import (
     shop,
     trade,
     hunt,
-    xo
+    xo,
+    redeem
 )
 
 # Set up logging configuration
@@ -109,6 +110,7 @@ async def register_bot_commands(bot: Bot):
         BotCommand(command="trivia", description="Answer trivia for coins"),
         BotCommand(command="streak", description="View Catch Streak stats"),
         BotCommand(command="shop", description="Open Coin Shop"),
+        BotCommand(command="redeem", description="Claim a promo/gift code"),
         BotCommand(command="leaderboard", description="Global standings ranks"),
         BotCommand(command="help", description="Show complete guide instructions")
     ]
@@ -173,6 +175,7 @@ async def main():
     dp.include_router(trade.router)
     dp.include_router(hunt.router)
     dp.include_router(xo.router)
+    dp.include_router(redeem.router)
 
     logger.info("Bot handlers and routers registered.")
 

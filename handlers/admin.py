@@ -305,19 +305,16 @@ async def cmd_gift_pokemon(message: Message, db: AsyncSession):
     target_user = None
     poke_query = None
     is_shiny = False
-    is_amv = False
     
-    # Check if this is a reply: /giftpokemon <pokemon_name_or_id> [shiny] [amv]
+    # Check if this is a reply: /giftpokemon <pokemon_name_or_id> [shiny]
     if message.reply_to_message:
         if len(parts) < 2:
-            await message.answer("⚠️ Format: Reply to a user's message with `/giftpokemon <pokemon_name/id> [shiny] [amv]`")
+            await message.answer("⚠️ Format: Reply to a user's message with `/giftpokemon <pokemon_name/id> [shiny]`")
             return
         poke_query = parts[1].lower()
         extra_parts = [p.lower() for p in parts[2:]]
         if "shiny" in extra_parts or "s" in extra_parts:
             is_shiny = True
-        if "amv" in extra_parts:
-            is_amv = True
             
         target_tg_user = message.reply_to_message.from_user
         
@@ -334,9 +331,9 @@ async def cmd_gift_pokemon(message: Message, db: AsyncSession):
             db.add(target_user)
             await db.flush()
     else:
-        # Not a reply, parse: /giftpokemon <@username/user_id> <pokemon_name_or_id> [shiny] [amv]
+        # Not a reply, parse: /giftpokemon <@username/user_id> <pokemon_name_or_id> [shiny]
         if len(parts) < 3:
-            await message.answer("⚠️ Format: `/giftpokemon <@username/user_id> <pokemon_name/id> [shiny] [amv]` (or reply to their message)")
+            await message.answer("⚠️ Format: `/giftpokemon <@username/user_id> <pokemon_name/id> [shiny]` (or reply to their message)")
             return
             
         target_str = parts[1]
@@ -345,8 +342,6 @@ async def cmd_gift_pokemon(message: Message, db: AsyncSession):
         extra_parts = [p.lower() for p in parts[3:]]
         if "shiny" in extra_parts or "s" in extra_parts:
             is_shiny = True
-        if "amv" in extra_parts:
-            is_amv = True
             
         if target_str.isdigit():
             # Target by User ID
@@ -370,6 +365,14 @@ async def cmd_gift_pokemon(message: Message, db: AsyncSession):
             await message.answer("⚠️ Target must be a user ID or @username.")
             return
 
+    # Parse form index from decimal (e.g. 6.2)
+    form_index = 0
+    if "." in poke_query:
+        pq, fq = poke_query.split(".", 1)
+        if fq.isdigit():
+            form_index = int(fq)
+        poke_query = pq
+
     # Resolve Pokémon species
     if poke_query.isdigit():
         poke_stmt = select(Pokemon).where(Pokemon.id == int(poke_query))
@@ -383,22 +386,28 @@ async def cmd_gift_pokemon(message: Message, db: AsyncSession):
         await message.answer(f"❌ Pokémon '{poke_query}' not found in database.")
         return
 
-    if is_amv and not pokemon.video_url:
-        await message.answer(f"❌ Pokémon '{pokemon.name.title()}' does not have an AMV video edit set.\nUse `/setpokemedia {pokemon.id}` in private DM to configure its video first.")
-        return
+    # Validate that custom form media is configured for form_index > 0
+    if form_index > 0:
+        from database.models import PokemonFormMedia
+        media_stmt = select(PokemonFormMedia).where(
+            PokemonFormMedia.pokemon_id == pokemon.id,
+            PokemonFormMedia.form_index == form_index
+        )
+        media_res = await db.execute(media_stmt)
+        if media_res.scalar_one_or_none() is None:
+            await message.answer(f"❌ Form {form_index} is not configured for {pokemon.name.title()} yet!\nUse `/setpokemedia {pokemon.id}.{form_index}` first in private DM.")
+            return
 
-    # Roll stats/IVs
+    # Roll stats/IVs (stored in DB but hidden from message)
     import random
     iv_hp = random.randint(0, 31)
     iv_atk = random.randint(0, 31)
     iv_def = random.randint(0, 31)
     iv_spd = random.randint(0, 31)
-    iv_total = iv_hp + iv_atk + iv_def + iv_spd
-    iv_pct = int((iv_total / 124) * 100)
 
-    # Generate unique serial number if AMV
+    # Generate unique serial number if form index > 0
     serial_number = None
-    if is_amv:
+    if form_index > 0:
         serial_number = f"#{pokemon.id:03d}-{random.randint(1000, 9999)}"
 
     # Insert UserPokemon
@@ -406,7 +415,8 @@ async def cmd_gift_pokemon(message: Message, db: AsyncSession):
         user_id=target_user.id,
         pokemon_id=pokemon.id,
         is_shiny=is_shiny,
-        is_amv=is_amv,
+        is_amv=(form_index == 1),
+        form_index=form_index,
         serial_number=serial_number,
         level=1,
         xp=0,
@@ -418,13 +428,17 @@ async def cmd_gift_pokemon(message: Message, db: AsyncSession):
     db.add(new_poke)
     await db.commit()
 
-    hp_bar = get_progress_bar(iv_hp, 31, 5, fill_char="▰", empty_char="▱")
-    atk_bar = get_progress_bar(iv_atk, 31, 5, fill_char="▰", empty_char="▱")
-    def_bar = get_progress_bar(iv_def, 31, 5, fill_char="▰", empty_char="▱")
-    spd_bar = get_progress_bar(iv_spd, 31, 5, fill_char="▰", empty_char="▱")
-
+    # Form indicators
+    form_names = {
+        0: "",
+        1: "AMV ",
+        2: "Dmax ",
+        3: "Gmax ",
+        4: "Z-Move ",
+        5: "Terastal "
+    }
+    form_badge = form_names.get(form_index, f"Form {form_index} ")
     shiny_badge = "✨ Shiny " if is_shiny else ""
-    amv_badge = "🎬 AMV " if is_amv else ""
     serial_str = f"\n🎫 **Serial Number**: `{serial_number}`" if serial_number else ""
     r_emoji = get_rarity_emoji(pokemon.rarity)
     admin_name = message.from_user.first_name
@@ -434,15 +448,10 @@ async def cmd_gift_pokemon(message: Message, db: AsyncSession):
         f"───────────────\n"
         f"Bot Owner **{escape_md(admin_name)}** gifted a Pokémon!\n\n"
         f"👤 Recipient: **{escape_md(target_user.nickname)}**\n"
-        f"🎉 Unwrapped: {r_emoji} {shiny_badge}{amv_badge}**{pokemon.name.title()}** `(Lvl 1)`{serial_str}\n"
-        f"🧬 **IV Quality**: `🧬 {iv_pct}%`\n"
-        f"• HP IV: `[{hp_bar}]` `({iv_hp}/31)`\n"
-        f"• ATK IV: `[{atk_bar}]` `({iv_atk}/31)`\n"
-        f"• DEF IV: `[{def_bar}]` `({iv_def}/31)`\n"
-        f"• SPD IV: `[{spd_bar}]` `({iv_spd}/31)`\n"
+        f"🎉 Unwrapped: {r_emoji} {shiny_badge}{form_badge}**{pokemon.name.title()}**{serial_str}\n"
         f"───────────────"
     )
-    await message.answer(text, parse_mode="Markdown")
+    await message.answer(text, parse_mode="HTML")
 
 def update_env_admin_ids(new_ids):
     import os
@@ -717,45 +726,127 @@ async def cmd_set_poke_media(message: Message, db: AsyncSession):
         
     parts = message.text.split()
     if len(parts) < 2:
-        await message.answer("⚠️ Format: `/setpokemedia <pokemon_name/id>` or `/setpokemedia <pokemon_name/id> <std/amv> <file_id>`")
+        await message.answer("⚠️ Format: `/setpokemedia <pokemon_name/id>.<form_index>`")
         return
         
-    poke_query = parts[1].lower()
-    if poke_query.isdigit():
-        stmt = select(Pokemon).where(Pokemon.id == int(poke_query))
-    else:
-        stmt = select(Pokemon).where(Pokemon.name.ilike(poke_query))
-        
-    res = await db.execute(stmt)
-    pokemon = res.scalar_one_or_none()
+    query = parts[1].lower()
     
-    if not pokemon:
-        await message.answer(f"❌ Pokémon '{poke_query}' not found in database.")
-        return
-        
-    # Direct assignment
-    if len(parts) >= 4:
-        field_type = parts[2].lower()
-        file_id = parts[3]
-        if field_type not in ["std", "amv"]:
-            await message.answer("❌ Invalid media type. Choose `std` or `amv`.")
+    # Direct assignment: /setpokemedia <id>.<form> <file_id>
+    if len(parts) >= 3:
+        target_str = parts[1].lower()
+        form_index = 1
+        if "." in target_str:
+            pq, fq = target_str.split(".", 1)
+            if fq.isdigit():
+                form_index = int(fq)
+            target_str = pq
+            
+        # Resolve Pokemon
+        if target_str.isdigit():
+            stmt = select(Pokemon).where(Pokemon.id == int(target_str))
+        else:
+            stmt = select(Pokemon).where(Pokemon.name.ilike(target_str))
+        res = await db.execute(stmt)
+        pokemon = res.scalar_one_or_none()
+        if not pokemon:
+            await message.answer(f"❌ Pokémon '{target_str}' not found.")
             return
             
-        if field_type == "std":
+        file_id = parts[2]
+        media_prefix = "video:" if file_id.startswith("BAA") else "photo:"
+        db_media_value = f"{media_prefix}{file_id}"
+        
+        # Save
+        if form_index == 0:
             pokemon.image_url = file_id
-            await db.commit()
-            await message.answer(f"✅ Successfully updated standard photo for <b>{pokemon.name.title()}</b> directly!", parse_mode="HTML")
         else:
-            pokemon.video_url = file_id
-            await db.commit()
-            await message.answer(f"✅ Successfully updated AMV video for <b>{pokemon.name.title()}</b> directly!", parse_mode="HTML")
+            from database.models import PokemonFormMedia
+            media_stmt = select(PokemonFormMedia).where(
+                PokemonFormMedia.pokemon_id == pokemon.id,
+                PokemonFormMedia.form_index == form_index
+            )
+            media_res = await db.execute(media_stmt)
+            form_media = media_res.scalar_one_or_none()
+            if form_media:
+                form_media.media_value = db_media_value
+            else:
+                db.add(PokemonFormMedia(pokemon_id=pokemon.id, form_index=form_index, media_value=db_media_value))
+                
+            # Backwards compatibility
+            if form_index == 1:
+                pokemon.video_url = file_id
+            elif form_index == 2:
+                pokemon.dmax_url = file_id
+            elif form_index == 3:
+                pokemon.gmax_url = file_id
+            elif form_index == 4:
+                pokemon.zmove_url = file_id
+            elif form_index == 5:
+                pokemon.terastal_url = file_id
+                
+        await db.commit()
+        
+        # Post to updates channel if form_index > 0
+        by_user = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
+        if form_index > 0:
+            await post_media_update_to_channel(message.bot, pokemon, form_index, db_media_value, by_user)
+            
+        await message.answer(
+            f"✅ Successfully updated <b>Form {form_index}</b> for <b>{pokemon.name.title()}</b> directly!\n"
+            f"• Saved value: <code>{db_media_value}</code>\n"
+            f"📢 Announcement sent to {config.UPDATES_CHANNEL}!",
+            parse_mode="HTML"
+        )
         return
         
-    # Show inline options
+    # parse form_index if they provided e.g. /setpokemedia 6.2 without file_id
+    form_index = 1
+    target_str = query
+    if "." in query:
+        pq, fq = query.split(".", 1)
+        if fq.isdigit():
+            form_index = int(fq)
+        target_str = pq
+        
+    # Resolve Pokemon for inline options
+    if target_str.isdigit():
+        stmt = select(Pokemon).where(Pokemon.id == int(target_str))
+    else:
+        stmt = select(Pokemon).where(Pokemon.name.ilike(target_str))
+    res = await db.execute(stmt)
+    pokemon = res.scalar_one_or_none()
+    if not pokemon:
+        await message.answer(f"❌ Pokémon '{target_str}' not found.")
+        return
+
+    # If they typed the dot index directly (e.g. /setpokemedia 6.2)
+    if "." in parts[1]:
+        active_poke_media_updates[message.from_user.id] = (pokemon.id, form_index)
+        form_names = {
+            0: "Standard Photo",
+            1: "AMV / Art",
+            2: "Dynamax (Dmax)",
+            3: "Gigantamax (Gmax)",
+            4: "Z-Move",
+            5: "Terastal"
+        }
+        name = form_names.get(form_index, f"Form {form_index}")
+        await message.answer(
+            f"📥 <b>Ready to update {name} media for {pokemon.name.title()}!</b>\n\n"
+            f"Please send the photo, video, or animation (GIF) now.",
+            parse_mode="HTML"
+        )
+        return
+
+    # Show inline choices
     builder = InlineKeyboardBuilder()
-    builder.button(text="📸 Set Standard Photo", callback_data=f"setpm_std_{pokemon.id}_{message.from_user.id}")
-    builder.button(text="🎥 Set AMV Video", callback_data=f"setpm_amv_{pokemon.id}_{message.from_user.id}")
-    builder.adjust(1)
+    builder.button(text="📸 Standard Photo (6.0)", callback_data=f"setpm_0_{pokemon.id}_{message.from_user.id}")
+    builder.button(text="🎥 AMV / Art (6.1)", callback_data=f"setpm_1_{pokemon.id}_{message.from_user.id}")
+    builder.button(text="⚡ Dynamax Dmax (6.2)", callback_data=f"setpm_2_{pokemon.id}_{message.from_user.id}")
+    builder.button(text="💥 Gigantamax Gmax (6.3)", callback_data=f"setpm_3_{pokemon.id}_{message.from_user.id}")
+    builder.button(text="🌟 Z-Move (6.4)", callback_data=f"setpm_4_{pokemon.id}_{message.from_user.id}")
+    builder.button(text="💎 Terastal (6.5)", callback_data=f"setpm_5_{pokemon.id}_{message.from_user.id}")
+    builder.adjust(2)
     
     await message.answer(
         f"⚙️ <b>Configure Media for {pokemon.name.title()} (#{pokemon.id:03d})</b>\n\n"
@@ -764,11 +855,12 @@ async def cmd_set_poke_media(message: Message, db: AsyncSession):
         parse_mode="HTML"
     )
 
+
 @router.callback_query(F.data.startswith("setpm_"))
 async def cb_set_poke_media_choice(callback: CallbackQuery):
     parts = callback.data.split("_")
-    # Structure: setpm_<type>_<pokemon_id>_<owner_id>
-    m_type = parts[1]
+    # Structure: setpm_<form_index>_<pokemon_id>_<owner_id>
+    form_index = int(parts[1])
     pokemon_id = int(parts[2])
     owner_id = int(parts[3])
     
@@ -776,15 +868,25 @@ async def cb_set_poke_media_choice(callback: CallbackQuery):
         await callback.answer("❌ Denied.", show_alert=True)
         return
         
-    field = "image" if m_type == "std" else "video"
-    active_poke_media_updates[owner_id] = (pokemon_id, field)
+    active_poke_media_updates[owner_id] = (pokemon_id, form_index)
+    
+    form_names = {
+        0: "Standard Photo",
+        1: "AMV / Art",
+        2: "Dynamax (Dmax)",
+        3: "Gigantamax (Gmax)",
+        4: "Z-Move",
+        5: "Terastal"
+    }
+    name = form_names.get(form_index, f"Form {form_index}")
     
     await callback.message.edit_text(
-        f"📥 <b>Ready to update {field} media!</b>\n\n"
-        f"Please send the photo, video, or animation (GIF) now. The bot will save it directly to the database.",
+        f"📥 <b>Ready to update {name} media!</b>\n\n"
+        f"Please send the photo, video, or animation (GIF) now.",
         parse_mode="HTML"
     )
     await callback.answer()
+
 
 # Media receiver for owner pokemon edits
 @router.message(F.chat.type == "private", F.from_user.id.in_(config.ADMIN_IDS), lambda msg: msg.from_user.id in active_poke_media_updates)
@@ -794,18 +896,23 @@ async def on_poke_media_received(message: Message, db: AsyncSession):
     if not update_info:
         return
         
-    pokemon_id, field = update_info
+    pokemon_id, form_index = update_info
     
     # Check media type in the sent message
+    media_prefix = "video:"
     media_value = None
     
     if message.photo:
+        media_prefix = "photo:"
         media_value = message.photo[-1].file_id
     elif message.video:
+        media_prefix = "video:"
         media_value = message.video.file_id
     elif message.animation:
+        media_prefix = "animation:"
         media_value = message.animation.file_id
     elif message.document:
+        media_prefix = "video:"
         media_value = message.document.file_id
         
     if not media_value:
@@ -820,13 +927,52 @@ async def on_poke_media_received(message: Message, db: AsyncSession):
         await message.answer("❌ Pokémon no longer exists in database.")
         return
         
-    if field == "image":
+    # Save media value
+    db_media_value = f"{media_prefix}{media_value}"
+    
+    # Standard Form (form_index == 0) gets saved to pokemon.image_url directly
+    if form_index == 0:
         pokemon.image_url = media_value
     else:
-        pokemon.video_url = media_value
+        # Save to PokemonFormMedia
+        from database.models import PokemonFormMedia
+        media_stmt = select(PokemonFormMedia).where(
+            PokemonFormMedia.pokemon_id == pokemon_id,
+            PokemonFormMedia.form_index == form_index
+        )
+        media_res = await db.execute(media_stmt)
+        form_media = media_res.scalar_one_or_none()
         
+        if form_media:
+            form_media.media_value = db_media_value
+        else:
+            db.add(PokemonFormMedia(pokemon_id=pokemon_id, form_index=form_index, media_value=db_media_value))
+            
+        # Backwards compatibility: update Pokemon columns
+        if form_index == 1:
+            pokemon.video_url = media_value
+        elif form_index == 2:
+            pokemon.dmax_url = media_value
+        elif form_index == 3:
+            pokemon.gmax_url = media_value
+        elif form_index == 4:
+            pokemon.zmove_url = media_value
+        elif form_index == 5:
+            pokemon.terastal_url = media_value
+
     await db.commit()
-    await message.answer(f"✅ Successfully updated <b>{field}</b> for <b>{pokemon.name.title()}</b>!", parse_mode="HTML")
+    
+    # Post to updates channel if form_index > 0
+    by_user = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
+    if form_index > 0:
+        await post_media_update_to_channel(message.bot, pokemon, form_index, db_media_value, by_user)
+        
+    await message.answer(
+        f"✅ Successfully updated <b>Form {form_index}</b> for <b>{pokemon.name.title()}</b>!\n"
+        f"• Saved value: <code>{db_media_value}</code>\n"
+        f"📢 Announcement sent to {config.UPDATES_CHANNEL}!",
+        parse_mode="HTML"
+    )
 
 
 async def get_media_list_text(db: AsyncSession) -> str:
@@ -843,20 +989,31 @@ async def get_media_list_text(db: AsyncSession) -> str:
             cover_lines.append(f"• <b>{c.upper()} Cover:</b> <i>Not set (using default)</i>")
 
     # 2. Pokémon custom media
-    stmt = select(Pokemon).where(
-        (Pokemon.video_url.is_not(None)) | 
-        (~Pokemon.image_url.like("http%"))
-    )
+    from database.models import PokemonFormMedia
+    stmt = select(PokemonFormMedia, Pokemon).join(Pokemon).order_by(Pokemon.id, PokemonFormMedia.form_index)
     res = await db.execute(stmt)
-    custom_pokes = res.scalars().all()
-
+    records = res.all()
+    
+    poke_media = {}
+    for pfm, p in records:
+        if p not in poke_media:
+            poke_media[p] = []
+        poke_media[p].append(pfm)
+        
+    form_names = {
+        1: "AMV/Art",
+        2: "Dmax",
+        3: "Gmax",
+        4: "Z-Move",
+        5: "Terastal"
+    }
+    
     poke_lines = []
-    for p in custom_pokes:
+    for p, pfms in poke_media.items():
         details = []
-        if p.image_url and not p.image_url.startswith("http"):
-            details.append(f"Standard Photo: <code>{p.image_url}</code>")
-        if p.video_url:
-            details.append(f"AMV Video: <code>{p.video_url}</code>")
+        for pfm in pfms:
+            fname = form_names.get(pfm.form_index, f"Form {pfm.form_index}")
+            details.append(f"{fname} (.{pfm.form_index}): <code>{pfm.media_value}</code>")
         
         if details:
             details_str = "\n  - ".join(details)
@@ -900,3 +1057,104 @@ async def cb_owner_medialist(callback: CallbackQuery, db: AsyncSession):
     await callback.answer()
 
 
+@router.message(Command("emojiid"))
+async def cmd_emoji_id(message: Message):
+    if not config.ADMIN_IDS or message.from_user.id not in config.ADMIN_IDS:
+        await message.answer("❌ Denied. Owner only.")
+        return
+        
+    if not message.reply_to_message:
+        await message.answer("⚠️ Reply to a message containing a custom/premium emoji to get its ID.")
+        return
+        
+    entities = message.reply_to_message.entities or message.reply_to_message.caption_entities
+    if not entities:
+        await message.answer("❌ No custom/premium emojis detected in that message.")
+        return
+        
+    found = False
+    for ent in entities:
+        if ent.type == "custom_emoji":
+            await message.answer(
+                f"✨ <b>Custom Emoji Detected!</b>\n\n"
+                f"• ID: <code>{ent.custom_emoji_id}</code>\n"
+                f"• HTML Tag: <code>&lt;tg-emoji emoji-id=\"{ent.custom_emoji_id}\"&gt;😀&lt;/tg-emoji&gt;</code>",
+                parse_mode="HTML"
+            )
+            found = True
+            break
+            
+    if not found:
+        await message.answer("❌ No Telegram Premium/Custom emojis detected in that message.")
+
+
+async def post_media_update_to_channel(bot: Bot, pokemon: Pokemon, form_index: int, media_value: str, by_user: str):
+    from datetime import datetime, timezone, timedelta
+    
+    # 1. Resolve form index to name / rarity
+    form_names = {
+        0: "Standard",
+        1: "AMV",
+        2: "Dmax",
+        3: "Gmax",
+        4: "Z-Move",
+        5: "Terastal"
+    }
+    form_name = form_names.get(form_index, f"Form {form_index}")
+    
+    # Map to rarity label
+    rarity_label = form_name
+    if form_index == 1:
+        if media_value.startswith("photo:"):
+            rarity_label = "Art"
+        else:
+            rarity_label = "AMV"
+            
+    # Clean media value (strip prefix)
+    media_id = media_value
+    media_type = "video"
+    if media_value.startswith("video:"):
+        media_id = media_value.replace("video:", "")
+        media_type = "video"
+    elif media_value.startswith("photo:"):
+        media_id = media_value.replace("photo:", "")
+        media_type = "photo"
+    elif media_value.startswith("animation:"):
+        media_id = media_value.replace("animation:", "")
+        media_type = "animation"
+    else:
+        if media_value.startswith("http"):
+            media_type = "photo"
+        else:
+            media_type = "video"
+            
+    # Checkbox checks
+    is_img = "✅" if media_type == "photo" else "❌"
+    is_vid = "✅" if media_type in ["video", "animation"] else "❌"
+    
+    # Time in IST
+    utc_now = datetime.now(timezone.utc)
+    ist_time = utc_now + timedelta(hours=5, minutes=30)
+    time_str = ist_time.strftime("%d %b %Y, %I:%M %p IST")
+    
+    caption = (
+        f"✨ <b>NEW POKÉMON MEDIA ADDED!</b>\n\n"
+        f"🆔 <b>ID</b>: #{pokemon.id:03d}.{form_index}\n"
+        f"📛 <b>Name</b>: {pokemon.name.title()}\n"
+        f"📺 <b>Generation</b>: Gen {pokemon.generation}\n"
+        f"💎 <b>Rarity</b>: {rarity_label}\n"
+        f"🖼️ <b>Image</b>: {is_img}\n"
+        f"🎥 <b>Video</b>: {is_vid}\n"
+        f"👤 <b>By</b>: {by_user}\n"
+        f"⌛ <b>Time</b>: {time_str}"
+    )
+    
+    try:
+        if media_type == "video":
+            await bot.send_video(chat_id=config.UPDATES_CHANNEL, video=media_id, caption=caption, parse_mode="HTML")
+        elif media_type == "animation":
+            await bot.send_animation(chat_id=config.UPDATES_CHANNEL, animation=media_id, caption=caption, parse_mode="HTML")
+        else:
+            await bot.send_photo(chat_id=config.UPDATES_CHANNEL, photo=media_id, caption=caption, parse_mode="HTML")
+    except Exception as e:
+        print(f"⚠️ Failed to post update to channel {config.UPDATES_CHANNEL}: {e}")

@@ -481,9 +481,21 @@ async def cb_dm_dex(callback: CallbackQuery, db: AsyncSession):
         shiny_tag = " [✨]" if has_shiny else ""
         text += f"◈⌠{badge}⌡ #{p.id:03d} {p.name.title()}{shiny_tag} ×{total}\n"
 
-    text += "\n───────────────"
-
-    await callback.message.edit_text(text, reply_markup=get_dex_pagination_keyboard(page, max_page), parse_mode="Markdown")
+    from aiogram.types import InputMediaPhoto
+    try:
+        await callback.message.edit_media(
+            media=InputMediaPhoto(media=cover_image or "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/890.png", caption=text, parse_mode="Markdown"),
+            reply_markup=get_dex_pagination_keyboard(page, max_page)
+        )
+    except Exception as e:
+        print(f"Error in cb_dm_dex edit_media: {e}")
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=get_dex_pagination_keyboard(page, max_page), parse_mode="Markdown")
+        except Exception:
+            try:
+                await callback.message.edit_text(text, reply_markup=get_dex_pagination_keyboard(page, max_page), parse_mode="Markdown")
+            except Exception:
+                pass
     await callback.answer()
 
 @router.callback_query(F.data.startswith("dm_bag_"))

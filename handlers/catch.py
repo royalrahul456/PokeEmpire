@@ -188,12 +188,6 @@ async def cmd_catch(message: Message, db: AsyncSession):
             
         announcement += (
             f"💰 **Reward**: `💰 +{coins_won} coins`\n"
-            f"📊 **Level**: `Lvl 1`\n"
-            f"🧬 **IV Quality**: `🧬 {iv_pct}%`\n"
-            f"• HP IV: `[{hp_bar}]` `({iv_hp}/31)`\n"
-            f"• ATK IV: `[{atk_bar}]` `({iv_atk}/31)`\n"
-            f"• DEF IV: `[{def_bar}]` `({iv_def}/31)`\n"
-            f"• SPD IV: `[{spd_bar}]` `({iv_spd}/31)`\n"
             f"───────────────\n"
             f"{streak_msg}\n"
             f"───────────────"

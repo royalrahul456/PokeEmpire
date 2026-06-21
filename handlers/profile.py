@@ -102,6 +102,23 @@ async def send_player_cover(chat_id: int, user_id: int, caption: str, reply_mark
         else:
             return await bot.send_message(chat_id, caption, reply_markup=reply_markup, parse_mode="HTML")
 
+async def edit_player_cover_message(callback: CallbackQuery, user_id: int, caption: str, reply_markup, db: AsyncSession, parse_mode="Markdown"):
+    media_type, media_value = await get_player_cover_media(user_id, db)
+    from aiogram.types import InputMediaPhoto, InputMediaVideo
+    try:
+        if media_type == "video":
+            new_media = InputMediaVideo(media=media_value, caption=caption, parse_mode=parse_mode)
+        else:
+            new_media = InputMediaPhoto(media=media_value, caption=caption, parse_mode=parse_mode)
+            
+        await callback.message.edit_media(media=new_media, reply_markup=reply_markup)
+    except Exception as e:
+        print(f"Error editing player cover media: {e}")
+        try:
+            await callback.message.edit_caption(caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+        except Exception:
+            pass
+
 @router.message(Command("profile"))
 async def cmd_profile(message: Message, db: AsyncSession):
     user_id = message.from_user.id
@@ -310,12 +327,38 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
     gen_totals_res = await db.execute(gen_totals_stmt)
     gen_totals = {gen: count for gen, count in gen_totals_res.all()}
 
+    # Query owned sub-form indexes for the current page species to avoid N+1 queries
+    page_pokemon_ids = [p.id for p, _, _ in pairs]
+    owned_forms_stmt = select(UserPokemon.pokemon_id, UserPokemon.form_index).where(
+        UserPokemon.user_id == user_id,
+        UserPokemon.pokemon_id.in_(page_pokemon_ids),
+        UserPokemon.form_index > 0
+    )
+    res_forms = await db.execute(owned_forms_stmt)
+    owned_species_forms = {}
+    for pid, fidx in res_forms.all():
+        if pid not in owned_species_forms:
+            owned_species_forms[pid] = set()
+        owned_species_forms[pid].add(fidx)
+
+    # Fetch Trainer Cover Favorite ID
+    from utils.favorite import get_favorite_id
+    fav_id = get_favorite_id(user_id)
+    fav_str = ""
+    if fav_id:
+        fav_stmt = select(Pokemon).where(Pokemon.id == fav_id)
+        fav_res = await db.execute(fav_stmt)
+        fav_poke = fav_res.scalar_one_or_none()
+        if fav_poke:
+            fav_str = f"💖 Cover Fav: **{fav_poke.name.title()}** (`#{fav_poke.id:03d}`)\n"
+
     percent = int((caught_count / total_species) * 100)
     bar = get_progress_bar(caught_count, total_species, 10, fill_char="█", empty_char="░")
 
     filter_label = f" ({rarity_filter})" if rarity_filter and rarity_filter != "All" else ""
     text = (
         f"⭐ **{escape_md(nickname)}'s Pokédex** ⭐{filter_label} — Page {page}/{max_page}\n"
+        f"{fav_str}"
         f"Completion: **{caught_count}/{total_species}** species (**{percent}%**)\n"
         f"`[{bar}]` 🔴\n"
         f"───────────────\n"
@@ -330,6 +373,14 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
         "Mythical": "🌌"
     }
 
+    form_badges_map = {
+        1: "🎬",
+        2: "⚡",
+        3: "💥",
+        4: "🌟",
+        5: "💎"
+    }
+
     for p, total, has_shiny in pairs:
         if p.generation != current_gen:
             current_gen = p.generation
@@ -337,7 +388,13 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
             
         badge = rarity_badges.get(p.rarity, "⚪️")
         shiny_tag = " [✨]" if has_shiny else ""
-        text += f"◆ [ {badge} ] #{p.id:03d} {p.name.title()}{shiny_tag} x{total}\n"
+        
+        forms_owned = owned_species_forms.get(p.id, set())
+        form_tag = "".join([form_badges_map.get(f, "") for f in sorted(forms_owned)])
+        if form_tag:
+            form_tag = f" [{form_tag}]"
+            
+        text += f"◆ [ {badge} ] #{p.id:03d} {p.name.title()}{shiny_tag}{form_tag} x{total}\n"
 
     text += "\n───────────────"
     return text, page, max_page
@@ -462,10 +519,7 @@ async def cb_pokedex_tab(callback: CallbackQuery, db: AsyncSession):
         text, final_page, max_page = await get_pokedex_data(user_id, nickname, 1, "All", db)
         kb = get_pokedex_keyboard(user_id, final_page, max_page, "All")
         
-        try:
-            await callback.message.edit_caption(caption=text, reply_markup=kb, parse_mode="Markdown")
-        except Exception:
-            pass
+        await edit_player_cover_message(callback, user_id, text, kb, db, parse_mode="Markdown")
         await callback.answer()
 
 @router.callback_query(F.data.startswith("pd_page_"))
@@ -487,10 +541,7 @@ async def cb_pokedex_page(callback: CallbackQuery, db: AsyncSession):
     text, final_page, max_page = await get_pokedex_data(user_id, nickname, page, rarity_filter, db)
     kb = get_pokedex_keyboard(user_id, final_page, max_page, rarity_filter)
     
-    try:
-        await callback.message.edit_caption(caption=text, reply_markup=kb, parse_mode="Markdown")
-    except Exception:
-        pass
+    await edit_player_cover_message(callback, user_id, text, kb, db, parse_mode="Markdown")
     await callback.answer()
 
 @router.callback_query(F.data.startswith("pd_rarity_"))
@@ -535,10 +586,7 @@ async def cb_pokedex_set_filter(callback: CallbackQuery, db: AsyncSession):
     text, final_page, max_page = await get_pokedex_data(user_id, nickname, 1, rarity_filter, db)
     kb = get_pokedex_keyboard(user_id, final_page, max_page, rarity_filter)
     
-    try:
-        await callback.message.edit_caption(caption=text, reply_markup=kb, parse_mode="Markdown")
-    except Exception:
-        pass
+    await edit_player_cover_message(callback, user_id, text, kb, db, parse_mode="Markdown")
     await callback.answer(f"Filtered by: {rarity_filter}")
 
 @router.message(Command("check"))
@@ -798,8 +846,6 @@ async def cmd_search(message: Message, db: AsyncSession):
             f"⭐ Rarity: `{pokemon.rarity}`\n"
             f"🧬 Total Caught: `{len(user_catches)} caught`\n\n"
             f"🏆 **Your Best Pokémon**:\n"
-            f"• Level: `Lvl {best_up.level}`\n"
-            f"• IV Quality: `{best_iv_pct}%` (HP: {best_up.iv_hp}, ATK: {best_up.iv_atk}, DEF: {best_up.iv_def}, SPD: {best_up.iv_spd})\n"
             f"• Shiny: `{shiny_label}`\n"
             f"───────────────"
         )
@@ -958,9 +1004,428 @@ async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="📖 View Pokédex", callback_data=f"pd_page_{user_id}_1_All"))
     
-    try:
-        await callback.message.edit_caption(caption=profile_card, reply_markup=builder.as_markup(), parse_mode="HTML")
-    except Exception:
-        pass
+    await edit_player_cover_message(callback, user_id, profile_card, builder.as_markup(), db, parse_mode="HTML")
     await callback.answer()
+
+
+@router.message(Command("dex"))
+async def cmd_dex(message: Message, db: AsyncSession):
+    parts = message.text.split()
+    if len(parts) < 2:
+        await message.answer("⚠️ Format: `/dex <pokemon_name_or_id>`")
+        return
+        
+    query = " ".join(parts[1:]).strip().lower()
+    user_id = message.from_user.id
+    
+    # 1. Resolve Pokemon
+    if query.isdigit():
+        poke_stmt = select(Pokemon).where(Pokemon.id == int(query))
+    else:
+        poke_stmt = select(Pokemon).where(Pokemon.name.ilike(query))
+        
+    poke_res = await db.execute(poke_stmt)
+    pokemon = poke_res.scalar_one_or_none()
+    
+    if not pokemon:
+        await message.answer(f"❌ Pokémon '{escape_md(query)}' not found.")
+        return
+        
+    # 2. Get owned form indexes for this user and species
+    owned_stmt = select(UserPokemon.form_index).where(
+        UserPokemon.user_id == user_id,
+        UserPokemon.pokemon_id == pokemon.id
+    )
+    owned_res = await db.execute(owned_stmt)
+    owned_forms = set(owned_res.scalars().all())
+    
+    # 3. Check if they own any shiny version
+    shiny_stmt = select(UserPokemon.id).where(
+        UserPokemon.user_id == user_id,
+        UserPokemon.pokemon_id == pokemon.id,
+        UserPokemon.is_shiny == True
+    ).limit(1)
+    shiny_res = await db.execute(shiny_stmt)
+    has_shiny = shiny_res.scalar() is not None
+    
+    # 4. Get configured form media
+    from database.models import PokemonFormMedia
+    media_stmt = select(PokemonFormMedia.form_index, PokemonFormMedia.media_value).where(
+        PokemonFormMedia.pokemon_id == pokemon.id
+    )
+    media_res = await db.execute(media_stmt)
+    configured_media = {row[0]: row[1] for row in media_res.all()}
+    
+    # 5. Build Subtype Status list
+    form_names = {
+        0: "Standard",
+        1: "AMV/Art",
+        2: "Dmax",
+        3: "Gmax",
+        4: "Z-Move",
+        5: "Terastal"
+    }
+    form_badges = {
+        0: "📸",
+        1: "🎬",
+        2: "⚡",
+        3: "💥",
+        4: "🌟",
+        5: "💎"
+    }
+    
+    subtypes_text = ""
+    # We will list Form 0, and any other forms that are configured.
+    available_forms = [0] + sorted([f for f in configured_media.keys() if f > 0])
+    
+    builder = InlineKeyboardBuilder()
+    
+    for f in available_forms:
+        f_name = form_names.get(f, f"Form {f}")
+        f_badge = form_badges.get(f, "🌀")
+        is_owned = f in owned_forms
+        owned_status = "✅ Owned" if is_owned else "❌ Locked"
+        
+        # Rarity for subtypes
+        if f == 0:
+            rarity_lbl = pokemon.rarity
+        elif f == 1:
+            val = configured_media.get(1, "")
+            rarity_lbl = "Art" if val.startswith("photo:") else "AMV"
+        else:
+            rarity_lbl = f_name
+            
+        subtypes_text += f"• {f_badge} <b>{f_name}</b> (<code>{rarity_lbl}</code>): {owned_status}\n"
+        
+        if is_owned:
+            builder.button(text=f"▶️ View {f_name}", callback_data=f"dex_play_{user_id}_{pokemon.id}_{f}")
+            
+    builder.adjust(2)
+    
+    r_emoji = get_rarity_emoji(pokemon.rarity)
+    shiny_tag = " ✨" if has_shiny else ""
+    
+    caption = (
+        f"📖 <b>DEX ENTRY: #{pokemon.id:03d} {pokemon.name.title()}</b>{shiny_tag}\n"
+        f"───────────────\n"
+        f"Rarity: {r_emoji} <b>{pokemon.rarity}</b>\n"
+        f"Generation: <b>Gen {pokemon.generation}</b>\n\n"
+        f"🧬 <b>Subtype Collection</b>:\n"
+        f"{subtypes_text}"
+        f"───────────────"
+    )
+    
+    try:
+        await message.answer_photo(
+            photo=pokemon.image_url,
+            caption=caption,
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        print(f"Error sending dex entry: {e}")
+        await message.answer(caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+
+@router.callback_query(F.data.startswith("dex_play_"))
+async def cb_dex_play(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_")
+    user_id = int(parts[2])
+    pokemon_id = int(parts[3])
+    form_index = int(parts[4])
+    
+    if callback.from_user.id != user_id:
+        await callback.answer("❌ This is not your menu!", show_alert=True)
+        return
+        
+    stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
+    res = await db.execute(stmt)
+    pokemon = res.scalar_one_or_none()
+    if not pokemon:
+        await callback.answer("❌ Pokémon not found.", show_alert=True)
+        return
+        
+    from database.models import PokemonFormMedia
+    media_value = None
+    media_type = "photo"
+    
+    if form_index == 0:
+        media_value = pokemon.image_url
+        media_type = "photo"
+    else:
+        media_stmt = select(PokemonFormMedia).where(
+            PokemonFormMedia.pokemon_id == pokemon_id,
+            PokemonFormMedia.form_index == form_index
+        )
+        media_res = await db.execute(media_stmt)
+        form_media = media_res.scalar_one_or_none()
+        if form_media:
+            media_value = form_media.media_value
+            if media_value.startswith("video:"):
+                media_type = "video"
+                media_value = media_value.replace("video:", "")
+            elif media_value.startswith("photo:"):
+                media_type = "photo"
+                media_value = media_value.replace("photo:", "")
+            elif media_value.startswith("animation:"):
+                media_type = "animation"
+                media_value = media_value.replace("animation:", "")
+            else:
+                if media_value.startswith("http"):
+                    media_type = "photo"
+                else:
+                    media_type = "video"
+                    
+    if not media_value:
+        await callback.answer("❌ Media not configured for this form.", show_alert=True)
+        return
+        
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 Back to Dex Info", callback_data=f"dex_back_{user_id}_{pokemon_id}")
+    
+    from aiogram.types import InputMediaPhoto, InputMediaVideo
+    try:
+        if media_type in ["video", "animation"]:
+            new_media = InputMediaVideo(media=media_value, caption=f"🎥 Playing <b>{pokemon.name.title()} Form {form_index}</b>", parse_mode="HTML")
+        else:
+            new_media = InputMediaPhoto(media=media_value, caption=f"📸 Showing <b>{pokemon.name.title()} Form {form_index}</b>", parse_mode="HTML")
+            
+        await callback.message.edit_media(media=new_media, reply_markup=builder.as_markup())
+    except Exception as e:
+        print(f"Error playing form media: {e}")
+        await callback.answer("❌ Could not display media on this message.", show_alert=True)
+        
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("dex_back_"))
+async def cb_dex_back(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_")
+    user_id = int(parts[2])
+    pokemon_id = int(parts[3])
+    
+    if callback.from_user.id != user_id:
+        await callback.answer("❌ This is not your menu!", show_alert=True)
+        return
+        
+    stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
+    res = await db.execute(stmt)
+    pokemon = res.scalar_one_or_none()
+    if not pokemon:
+        await callback.answer("❌ Pokémon not found.", show_alert=True)
+        return
+        
+    owned_stmt = select(UserPokemon.form_index).where(
+        UserPokemon.user_id == user_id,
+        UserPokemon.pokemon_id == pokemon.id
+    )
+    owned_res = await db.execute(owned_stmt)
+    owned_forms = set(owned_res.scalars().all())
+    
+    shiny_stmt = select(UserPokemon.id).where(
+        UserPokemon.user_id == user_id,
+        UserPokemon.pokemon_id == pokemon.id,
+        UserPokemon.is_shiny == True
+    ).limit(1)
+    shiny_res = await db.execute(shiny_stmt)
+    has_shiny = shiny_res.scalar() is not None
+    
+    from database.models import PokemonFormMedia
+    media_stmt = select(PokemonFormMedia.form_index, PokemonFormMedia.media_value).where(
+        PokemonFormMedia.pokemon_id == pokemon.id
+    )
+    media_res = await db.execute(media_stmt)
+    configured_media = {row[0]: row[1] for row in media_res.all()}
+    
+    form_names = {
+        0: "Standard",
+        1: "AMV/Art",
+        2: "Dmax",
+        3: "Gmax",
+        4: "Z-Move",
+        5: "Terastal"
+    }
+    form_badges = {
+        0: "📸",
+        1: "🎬",
+        2: "⚡",
+        3: "💥",
+        4: "🌟",
+        5: "💎"
+    }
+    
+    subtypes_text = ""
+    available_forms = [0] + sorted([f for f in configured_media.keys() if f > 0])
+    builder = InlineKeyboardBuilder()
+    
+    for f in available_forms:
+        f_name = form_names.get(f, f"Form {f}")
+        f_badge = form_badges.get(f, "🌀")
+        is_owned = f in owned_forms
+        owned_status = "✅ Owned" if is_owned else "❌ Locked"
+        
+        if f == 0:
+            rarity_lbl = pokemon.rarity
+        elif f == 1:
+            val = configured_media.get(1, "")
+            rarity_lbl = "Art" if val.startswith("photo:") else "AMV"
+        else:
+            rarity_lbl = f_name
+            
+        subtypes_text += f"• {f_badge} <b>{f_name}</b> (<code>{rarity_lbl}</code>): {owned_status}\n"
+        
+        if is_owned:
+            builder.button(text=f"▶️ View {f_name}", callback_data=f"dex_play_{user_id}_{pokemon.id}_{f}")
+            
+    builder.adjust(2)
+    
+    r_emoji = get_rarity_emoji(pokemon.rarity)
+    shiny_tag = " ✨" if has_shiny else ""
+    
+    caption = (
+        f"📖 <b>DEX ENTRY: #{pokemon.id:03d} {pokemon.name.title()}</b>{shiny_tag}\n"
+        f"───────────────\n"
+        f"Rarity: {r_emoji} <b>{pokemon.rarity}</b>\n"
+        f"Generation: <b>Gen {pokemon.generation}</b>\n\n"
+        f"🧬 <b>Subtype Collection</b>:\n"
+        f"{subtypes_text}"
+        f"───────────────"
+    )
+    
+    from aiogram.types import InputMediaPhoto
+    try:
+        await callback.message.edit_media(
+            media=InputMediaPhoto(media=pokemon.image_url, caption=caption, parse_mode="HTML"),
+            reply_markup=builder.as_markup()
+        )
+    except Exception as e:
+        print(f"Error resetting media: {e}")
+        try:
+            await callback.message.edit_caption(caption=caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+        except Exception:
+            pass
+            
+    await callback.answer()
+
+@router.message(Command("gift"))
+async def cmd_gift(message: Message, db: AsyncSession):
+    parts = message.text.split()
+    target_user = None
+    gift_str = None
+    
+    # 1. Parse target and pokemon query
+    if message.reply_to_message:
+        if len(parts) < 2:
+            await message.answer("⚠️ Format (replying): `/gift <pokedex_id>[.form_index]`")
+            return
+        rep_user = message.reply_to_message.from_user
+        if rep_user.is_bot:
+            await message.answer("❌ You cannot gift Pokémon to a bot!")
+            return
+            
+        stmt = select(User).where(User.id == rep_user.id)
+        res = await db.execute(stmt)
+        target_user = res.scalar_one_or_none()
+        gift_str = parts[1]
+    else:
+        if len(parts) < 3:
+            await message.answer("⚠️ Format: `/gift <@username or user_id> <pokedex_id>[.form_index]`\n(or reply to their message with `/gift <pokedex_id>[.form_index]`)")
+            return
+            
+        target_str = parts[1]
+        gift_str = parts[2]
+        
+        if target_str.isdigit():
+            stmt = select(User).where(User.id == int(target_str))
+            res = await db.execute(stmt)
+            target_user = res.scalar_one_or_none()
+        elif target_str.startswith("@"):
+            uname = target_str.replace("@", "").strip()
+            stmt = select(User).where(User.username.ilike(uname))
+            res = await db.execute(stmt)
+            target_user = res.scalar_one_or_none()
+            
+    if not target_user:
+        await message.answer("❌ Target trainer not found. They must have started the bot first.")
+        return
+        
+    if target_user.id == message.from_user.id:
+        await message.answer("❌ You cannot gift Pokémon to yourself!")
+        return
+
+    # 2. Parse pokedex_id and form_index
+    form_index = 0
+    pokedex_str = gift_str
+    if "." in gift_str:
+        pq, fq = gift_str.split(".", 1)
+        if fq.isdigit():
+            form_index = int(fq)
+        pokedex_str = pq
+        
+    if not pokedex_str.isdigit():
+        await message.answer("❌ Invalid Pokédex ID. Must be a number.")
+        return
+    pokedex_id = int(pokedex_str)
+    
+    # 3. Find if user owns this species and form (prefer non-shiny first)
+    stmt = select(UserPokemon).options(joinedload(UserPokemon.pokemon)).where(
+        UserPokemon.user_id == message.from_user.id,
+        UserPokemon.pokemon_id == pokedex_id,
+        UserPokemon.form_index == form_index
+    ).order_by(UserPokemon.is_shiny.asc())
+    res = await db.execute(stmt)
+    up = res.scalars().first()
+    
+    if not up:
+        form_names = {
+            0: "Standard",
+            1: "AMV/Art",
+            2: "Dmax",
+            3: "Gmax",
+            4: "Z-Move",
+            5: "Terastal"
+        }
+        f_name = form_names.get(form_index, f"Form {form_index}")
+        await message.answer(f"❌ You do not own a <b>{f_name}</b> form of Pokédex #{pokedex_id:03d}!", parse_mode="HTML")
+        return
+        
+    # 4. Transfer ownership
+    old_user_id = up.user_id
+    up.user_id = target_user.id
+    
+    # Clear cover favorite if they gifted their last copy of this species
+    remain_stmt = select(UserPokemon.id).where(
+        UserPokemon.user_id == old_user_id,
+        UserPokemon.pokemon_id == pokedex_id
+    ).limit(1)
+    remain_res = await db.execute(remain_stmt)
+    if remain_res.scalar() is None:
+        from utils.favorite import get_favorite_id, set_favorite_id
+        if get_favorite_id(old_user_id) == pokedex_id:
+            set_favorite_id(old_user_id, None)
+            
+    await db.commit()
+    
+    # Success message
+    shiny_badge = "✨ Shiny " if up.is_shiny else ""
+    form_names = {
+        0: "",
+        1: "AMV ",
+        2: "Dmax ",
+        3: "Gmax ",
+        4: "Z-Move ",
+        5: "Terastal "
+    }
+    form_badge = form_names.get(form_index, f"Form {form_index} ")
+    r_emoji = get_rarity_emoji(up.pokemon.rarity)
+    
+    sender_name = message.from_user.first_name
+    receiver_name = target_user.nickname or "Trainer"
+    
+    text = (
+        f"🎁 <b>POKÉMON GIFTED!</b> 🎁\n"
+        f"───────────────\n"
+        f"Trainer <b>{escape_md(sender_name)}</b> gifted a Pokémon to <b>{escape_md(receiver_name)}</b>!\n\n"
+        f"💝 Pokémon: {r_emoji} {shiny_badge}{form_badge}<b>{up.pokemon.name.title()}</b>\n"
+        f"───────────────"
+    )
+    await message.answer(text, parse_mode="HTML")
 

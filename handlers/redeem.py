@@ -76,12 +76,16 @@ async def cmd_create_redeem(message: Message, db: AsyncSession):
         
     # Reward is a Pokémon name or id
     is_shiny = False
-    is_amv = False
     extra_parts = [p.lower() for p in parts[4:]]
     if "shiny" in extra_parts or "s" in extra_parts:
         is_shiny = True
-    if "amv" in extra_parts:
-        is_amv = True
+        
+    form_index = 0
+    if "." in reward_str:
+        pq, fq = reward_str.split(".", 1)
+        if fq.isdigit():
+            form_index = int(fq)
+        reward_str = pq
         
     if reward_str.isdigit():
         poke_stmt = select(Pokemon).where(Pokemon.id == int(reward_str))
@@ -95,9 +99,16 @@ async def cmd_create_redeem(message: Message, db: AsyncSession):
         await message.answer(f"❌ Pokémon '{reward_str}' not found in database.")
         return
         
-    if is_amv and not pokemon.video_url:
-        await message.answer(f"❌ Pokémon '{pokemon.name.title()}' does not have an AMV video edit set.\nUse <code>/setpokemedia {pokemon.id}</code> first in DM.", parse_mode="HTML")
-        return
+    if form_index > 0:
+        from database.models import PokemonFormMedia
+        media_stmt = select(PokemonFormMedia).where(
+            PokemonFormMedia.pokemon_id == pokemon.id,
+            PokemonFormMedia.form_index == form_index
+        )
+        media_res = await db.execute(media_stmt)
+        if media_res.scalar_one_or_none() is None:
+            await message.answer(f"❌ Form {form_index} is not configured for {pokemon.name.title()} yet!\nUse <code>/setpokemedia {pokemon.id}.{form_index}</code> first in DM.", parse_mode="HTML")
+            return
         
     # Check if code already exists
     exist_stmt = select(RedeemCode).where(RedeemCode.code == code)
@@ -111,20 +122,29 @@ async def cmd_create_redeem(message: Message, db: AsyncSession):
         reward_type="pokemon",
         reward_value=pokemon.id,
         reward_is_shiny=is_shiny,
-        reward_is_amv=is_amv,
+        reward_is_amv=(form_index == 1),
+        reward_form_index=form_index,
         usage_limit=limit
     )
     db.add(new_code)
     await db.commit()
     
+    form_names = {
+        0: "",
+        1: "AMV ",
+        2: "Dmax ",
+        3: "Gmax ",
+        4: "Z-Move ",
+        5: "Terastal "
+    }
+    form_badge = form_names.get(form_index, f"Form {form_index} ")
     shiny_tag = "✨ Shiny " if is_shiny else ""
-    amv_tag = "🎬 AMV " if is_amv else ""
     r_emoji = get_rarity_emoji(pokemon.rarity)
     
     await message.answer(
         f"✅ <b>Redeem Code Created!</b>\n"
         f"• Code: <code>{code}</code>\n"
-        f"• Reward: {r_emoji} {shiny_tag}{amv_tag}<b>{pokemon.name.title()}</b>\n"
+        f"• Reward: {r_emoji} {shiny_tag}{form_badge}<b>{pokemon.name.title()}</b>\n"
         f"• Limit: 👥 <code>{limit} redeems</code>",
         parse_mode="HTML"
     )
@@ -209,15 +229,17 @@ async def cmd_redeem(message: Message, db: AsyncSession):
             iv_total = iv_hp + iv_atk + iv_def + iv_spd
             iv_pct = int((iv_total / 124) * 100)
             
+            form_index = code.reward_form_index
             serial_number = None
-            if code.reward_is_amv:
+            if form_index > 0:
                 serial_number = f"#{pokemon.id:03d}-{random.randint(1000, 9999)}"
                 
             new_poke = UserPokemon(
                 user_id=user_id,
                 pokemon_id=pokemon.id,
                 is_shiny=code.reward_is_shiny,
-                is_amv=code.reward_is_amv,
+                is_amv=(form_index == 1),
+                form_index=form_index,
                 serial_number=serial_number,
                 level=1,
                 xp=0,
@@ -229,13 +251,16 @@ async def cmd_redeem(message: Message, db: AsyncSession):
             db.add(new_poke)
             await db.commit()
             
-            hp_bar = get_progress_bar(iv_hp, 31, 5, fill_char="▰", empty_char="▱")
-            atk_bar = get_progress_bar(iv_atk, 31, 5, fill_char="▰", empty_char="▱")
-            def_bar = get_progress_bar(iv_def, 31, 5, fill_char="▰", empty_char="▱")
-            spd_bar = get_progress_bar(iv_spd, 31, 5, fill_char="▰", empty_char="▱")
-            
+            form_names = {
+                0: "",
+                1: "AMV ",
+                2: "Dmax ",
+                3: "Gmax ",
+                4: "Z-Move ",
+                5: "Terastal "
+            }
+            form_badge = form_names.get(form_index, f"Form {form_index} ")
             shiny_badge = "✨ Shiny " if code.reward_is_shiny else ""
-            amv_badge = "🎬 AMV " if code.reward_is_amv else ""
             serial_str = f"\n🎫 **Serial Number**: `{serial_number}`" if serial_number else ""
             r_emoji = get_rarity_emoji(pokemon.rarity)
             
@@ -243,12 +268,7 @@ async def cmd_redeem(message: Message, db: AsyncSession):
                 f"🎉 <b>REDEEM SUCCESSFUL!</b> 🎉\n"
                 f"───────────────\n"
                 f"Trainer <b>{escape_md(user.nickname or 'Trainer')}</b> claimed code <code>{code.code}</code>!\n\n"
-                f"🎁 Reward: {r_emoji} {shiny_badge}{amv_badge}<b>{pokemon.name.title()}</b> `(Lvl 1)`{serial_str}\n"
-                f"🧬 **IV Quality**: `🧬 {iv_pct}%`\n"
-                f"• HP IV: `[{hp_bar}]` `({iv_hp}/31)`\n"
-                f"• ATK IV: `[{atk_bar}]` `({iv_atk}/31)`\n"
-                f"• DEF IV: `[{def_bar}]` `({iv_def}/31)`\n"
-                f"• SPD IV: `[{spd_bar}]` `({iv_spd}/31)`\n"
+                f"🎁 Reward: {r_emoji} {shiny_badge}{form_badge}<b>{pokemon.name.title()}</b>{serial_str}\n"
                 f"───────────────"
             )
             await message.answer(text, parse_mode="HTML")

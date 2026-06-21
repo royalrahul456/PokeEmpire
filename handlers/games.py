@@ -1121,6 +1121,7 @@ async def cb_dm_games(callback: CallbackQuery, db: AsyncSession):
         f"🪙 **Coinflip**: `/coinflip <bet> <heads/tails>`\n"
         f"✊ **Rock-Paper-Scissors**: `/rps <bet> <rock/paper/scissors>`\n"
         f"✏️ **Pokémon Scribble**: Unscramble species names!\n"
+        f"💣 **Mines**: `/mines <bet> [mines]` (avoid mines in 5x5 grid!)\n"
         f"───────────────"
     )
     builder = InlineKeyboardBuilder()
@@ -1132,9 +1133,29 @@ async def cb_dm_games(callback: CallbackQuery, db: AsyncSession):
         InlineKeyboardButton(text="❓ Start Trivia", callback_data="play_trivia"),
         InlineKeyboardButton(text="✏️ Start Scribble", callback_data="play_scribble")
     )
-    builder.row(InlineKeyboardButton(text="🔙 Back to Hub Menu", callback_data="dm_home"))
+    builder.row(
+        InlineKeyboardButton(text="💣 Start Mines", callback_data="play_mines"),
+        InlineKeyboardButton(text="🔙 Back to Hub Menu", callback_data="dm_home")
+    )
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    await callback.answer()
+
+@router.callback_query(F.data == "play_mines")
+async def cb_play_mines(callback: CallbackQuery):
+    text = (
+        f"💣 **MINES GAME** 💣\n"
+        f"───────────────\n"
+        f"Test your luck in a 5x5 grid! Place a bet, choose how many mines (1-24) to hide, and reveal tiles. "
+        f"Each diamond you find increases your multiplier. Cash out before hitting a mine!\n\n"
+        f"👉 **To start playing, send**:\n"
+        f"• `/mines <bet> [mines_count]` in DM\n"
+        f"  _(e.g. <code>/mines 100 3</code> starts a game with a 100 coin bet and 3 hidden mines)_\n\n"
+        f"⚠️ Default mines count is 3. Bets must be between 10 and 100,000 coins."
+    )
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🔙 Back to Games", callback_data="dm_games"))
+    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
     await callback.answer()
 
 @router.callback_query(F.data == "play_daily")

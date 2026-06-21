@@ -26,6 +26,10 @@ class Pokemon(Base):
     generation = Column(Integer, default=1, nullable=False)
     image_url = Column(String(255), nullable=False)
     video_url = Column(String(255), nullable=True)
+    dmax_url = Column(String(255), nullable=True)
+    gmax_url = Column(String(255), nullable=True)
+    zmove_url = Column(String(255), nullable=True)
+    terastal_url = Column(String(255), nullable=True)
 
     # Relationships
     user_captures = relationship("UserPokemon", back_populates="pokemon")
@@ -40,6 +44,7 @@ class UserPokemon(Base):
     nickname = Column(String(100), nullable=True)
     is_shiny = Column(Boolean, default=False, nullable=False)
     is_amv = Column(Boolean, default=False, nullable=False)
+    form_index = Column(Integer, default=0, nullable=False)
     serial_number = Column(String(20), nullable=True)
     level = Column(Integer, default=1, nullable=False)
     xp = Column(Integer, default=0, nullable=False)
@@ -91,6 +96,7 @@ class RedeemCode(Base):
     reward_value = Column(Integer, nullable=True)     # coin amount or pokemon_id
     reward_is_shiny = Column(Boolean, default=False, nullable=False)
     reward_is_amv = Column(Boolean, default=False, nullable=False)
+    reward_form_index = Column(Integer, default=0, nullable=False)
     usage_limit = Column(Integer, default=1, nullable=False)
     usage_count = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)
@@ -103,4 +109,12 @@ class RedeemClaim(Base):
     user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     code_id = Column(Integer, ForeignKey("redeem_codes.id", ondelete="CASCADE"), nullable=False)
     claimed_at = Column(DateTime, default=func.now(), nullable=False)
+
+
+class PokemonFormMedia(Base):
+    __tablename__ = "pokemon_form_media"
+
+    pokemon_id = Column(Integer, ForeignKey("pokemon.id", ondelete="CASCADE"), primary_key=True)
+    form_index = Column(Integer, primary_key=True)
+    media_value = Column(String(255), nullable=False)
 

@@ -257,7 +257,7 @@ async def cmd_xo(message: Message, db: AsyncSession):
         f"🎲 <b>Tic Tac Toe</b>\n\n"
         f"🟢 Easy — +150 coins\n"
         f"🟡 Medium — +300 coins\n"
-        f"🔴 Hard — +20,000 coins 💀\n"
+        f"🔴 Hard — +20,000,000 coins 💀\n"
         f"⚠️ <i>(Genuinely unbeatable AI — good luck!)</i>\n\n"
         f"👥 PvP — Challenge a friend"
     )
@@ -268,7 +268,7 @@ async def cmd_xo(message: Message, db: AsyncSession):
         InlineKeyboardButton(text="🟡 Medium (+300)", callback_data=f"xo_ai_start_medium_{user_id}")
     )
     builder.row(
-        InlineKeyboardButton(text="🔴 Hard (+20k 💀)", callback_data=f"xo_ai_start_hard_{user_id}")
+        InlineKeyboardButton(text="🔴 Hard (+20M 💀)", callback_data=f"xo_ai_start_hard_{user_id}")
     )
     builder.row(
         InlineKeyboardButton(text="👥 PvP Mode Info", callback_data=f"xo_pvp_info_{user_id}")
@@ -315,7 +315,7 @@ async def cb_xo_menu_back(callback: CallbackQuery):
         f"🎲 <b>Tic Tac Toe</b>\n\n"
         f"🟢 Easy — +150 coins\n"
         f"🟡 Medium — +300 coins\n"
-        f"🔴 Hard — +20,000 coins 💀\n"
+        f"🔴 Hard — +20,000,000 coins 💀\n"
         f"⚠️ <i>(Genuinely unbeatable AI — good luck!)</i>\n\n"
         f"👥 PvP — Challenge a friend"
     )
@@ -325,7 +325,7 @@ async def cb_xo_menu_back(callback: CallbackQuery):
         InlineKeyboardButton(text="🟡 Medium (+300)", callback_data=f"xo_ai_start_medium_{user_id}")
     )
     builder.row(
-        InlineKeyboardButton(text="🔴 Hard (+20k 💀)", callback_data=f"xo_ai_start_hard_{user_id}")
+        InlineKeyboardButton(text="🔴 Hard (+20M 💀)", callback_data=f"xo_ai_start_hard_{user_id}")
     )
     builder.row(
         InlineKeyboardButton(text="👥 PvP Mode Info", callback_data=f"xo_pvp_info_{user_id}")
@@ -442,7 +442,7 @@ async def handle_ai_game_over(callback: CallbackQuery, game_id: str, winner: str
     
     if winner == "X":
         # Player won!
-        rewards = {"easy": 150, "medium": 300, "hard": 20000}
+        rewards = {"easy": 150, "medium": 300, "hard": 20000000}
         reward = rewards.get(difficulty, 150)
         
         # Credit user

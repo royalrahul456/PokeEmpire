@@ -63,7 +63,7 @@ SEED_POKEMON = [
 async def init_db():
     """Initialize the SQLite database, creating all tables and seeding Pokémon list if empty."""
     async with engine.begin() as conn:
-        from database.models import User, Pokemon, UserPokemon, ActiveSpawn, GroupSetting, GlobalSetting
+        from database.models import User, Pokemon, UserPokemon, ActiveSpawn, GroupSetting, GlobalSetting, PokemonFormMedia
         await conn.run_sync(Base.metadata.create_all)
 
     # Run migrations for existing databases
@@ -89,6 +89,17 @@ async def init_db():
         except Exception:
             pass
 
+        # Pokemon table new form media columns
+        for col in ["dmax_url", "gmax_url", "zmove_url", "terastal_url"]:
+            try:
+                if "postgresql" in DATABASE_URL:
+                    await conn.execute(text(f"ALTER TABLE pokemon ADD COLUMN IF NOT EXISTS {col} VARCHAR(255)"))
+                else:
+                    await conn.execute(text(f"ALTER TABLE pokemon ADD COLUMN {col} VARCHAR(255)"))
+                print(f"✅ Migrated database: added {col} column to pokemon")
+            except Exception:
+                pass
+
         # User Pokemon table AMV indicator and serial number columns
         try:
             if "postgresql" in DATABASE_URL:
@@ -101,12 +112,57 @@ async def init_db():
 
         try:
             if "postgresql" in DATABASE_URL:
+                await conn.execute(text("ALTER TABLE user_pokemon ADD COLUMN IF NOT EXISTS form_index INTEGER DEFAULT 0"))
+            else:
+                await conn.execute(text("ALTER TABLE user_pokemon ADD COLUMN form_index INTEGER DEFAULT 0"))
+            print("✅ Migrated database: added form_index column to user_pokemon")
+        except Exception:
+            pass
+
+        try:
+            if "postgresql" in DATABASE_URL:
                 await conn.execute(text("ALTER TABLE user_pokemon ADD COLUMN IF NOT EXISTS serial_number VARCHAR(20)"))
             else:
                 await conn.execute(text("ALTER TABLE user_pokemon ADD COLUMN serial_number VARCHAR(20)"))
             print("✅ Migrated database: added serial_number column to user_pokemon")
         except Exception:
             pass
+
+        # Redeem Codes table reward_form_index column
+        try:
+            if "postgresql" in DATABASE_URL:
+                await conn.execute(text("ALTER TABLE redeem_codes ADD COLUMN IF NOT EXISTS reward_form_index INTEGER DEFAULT 0"))
+            else:
+                await conn.execute(text("ALTER TABLE redeem_codes ADD COLUMN reward_form_index INTEGER DEFAULT 0"))
+            print("✅ Migrated database: added reward_form_index column to redeem_codes")
+        except Exception:
+            pass
+
+    # Migrate existing AMV data to pokemon_form_media
+    async with SessionLocal() as session:
+        try:
+            from database.models import Pokemon, PokemonFormMedia, UserPokemon
+            stmt = select(Pokemon).where(Pokemon.video_url.is_not(None))
+            res = await session.execute(stmt)
+            pokes_with_amv = res.scalars().all()
+            for p in pokes_with_amv:
+                media_stmt = select(PokemonFormMedia).where(PokemonFormMedia.pokemon_id == p.id, PokemonFormMedia.form_index == 1)
+                media_res = await session.execute(media_stmt)
+                if media_res.scalar_one_or_none() is None:
+                    val = p.video_url
+                    if not val.startswith("video:") and not val.startswith("photo:"):
+                        val = f"video:{val}"
+                    session.add(PokemonFormMedia(pokemon_id=p.id, form_index=1, media_value=val))
+            
+            up_stmt = select(UserPokemon).where(UserPokemon.is_amv == True, UserPokemon.form_index == 0)
+            up_res = await session.execute(up_stmt)
+            ups_to_migrate = up_res.scalars().all()
+            for up in ups_to_migrate:
+                up.form_index = 1
+                
+            await session.commit()
+        except Exception as e:
+            print(f"⚠️ AMV migration error: {e}")
 
 
     # Seed the Pokémon table if empty

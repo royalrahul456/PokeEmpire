@@ -464,17 +464,18 @@ def get_rarity_filter_keyboard(user_id: int, current_page: int, current_filter: 
     
     builder.row(
         InlineKeyboardButton(text="⚪ Common", callback_data=f"pd_setfilter_{user_id}_Common"),
-        InlineKeyboardButton(text="🔵 Rare", callback_data=f"pd_setfilter_{user_id}_Rare")
+        InlineKeyboardButton(text="🟢 Uncommon", callback_data=f"pd_setfilter_{user_id}_Uncommon")
     )
     builder.row(
-        InlineKeyboardButton(text="🟣 Epic", callback_data=f"pd_setfilter_{user_id}_Epic"),
-        InlineKeyboardButton(text="🟡 Legendary", callback_data=f"pd_setfilter_{user_id}_Legendary")
+        InlineKeyboardButton(text="🟣 Rare", callback_data=f"pd_setfilter_{user_id}_Rare"),
+        InlineKeyboardButton(text="🔮 Epic", callback_data=f"pd_setfilter_{user_id}_Epic")
     )
     builder.row(
-        InlineKeyboardButton(text="🌌 Mythical", callback_data=f"pd_setfilter_{user_id}_Mythical"),
-        InlineKeyboardButton(text="🌍 All", callback_data=f"pd_setfilter_{user_id}_All")
+        InlineKeyboardButton(text="🌟 Legendary", callback_data=f"pd_setfilter_{user_id}_Legendary"),
+        InlineKeyboardButton(text="🌌 Mythical", callback_data=f"pd_setfilter_{user_id}_Mythical")
     )
     builder.row(
+        InlineKeyboardButton(text="🌍 All", callback_data=f"pd_setfilter_{user_id}_All"),
         InlineKeyboardButton(text="🔙 Back", callback_data=f"pd_page_{user_id}_{current_page}_{current_filter}")
     )
     
@@ -524,11 +525,11 @@ async def cb_pokedex_tab(callback: CallbackQuery, db: AsyncSession):
         
     if tab == "cov":
         text = (
-            f"🖼️ <b>Pokédex Cover Favorite</b>\n"
+            f"💟 <b>AMV Cover Favorite</b>\n"
             f"───────────────\n\n"
-            f"Set your favorite Pokémon as the Pokédex cover illustration!\n\n"
-            f"👉 <b>How to set</b>: Type <code>/fav &lt;pokedex_id&gt;</code> in chat.\n"
-            f"<i>(e.g., <code>/fav 251</code> to set Celebi as cover)</i>"
+            f"Set your favorite Pokémon AMV / Art as the Pokédex cover illustration!\n\n"
+            f"👉 <b>How to set</b>: Type <code>/fav &lt;pokedex_id&gt;.&lt;form_index&gt;</code> in chat.\n"
+            f"<i>(e.g., <code>/fav 6.1</code> to set Charizard AMV as cover)</i>"
         )
         builder = InlineKeyboardBuilder()
         builder.row(InlineKeyboardButton(text="🔙 Back to Collection", callback_data=f"pd_page_{user_id}_1_All"))
@@ -989,7 +990,6 @@ async def cmd_search(message: Message, db: AsyncSession):
         
         form_suffix = f" (Form {form_filter})" if form_filter is not None else ""
         text = (
-            f"{cover_link}"
             f"🔍 **SEARCH RESULTS** 🔍\n"
             f"───────────────\n"
             f"🎉 Species: {r_emoji} **{pokemon.name.title()}** {r_emoji}\n"
@@ -1001,10 +1001,29 @@ async def cmd_search(message: Message, db: AsyncSession):
             f"• Shiny: `{shiny_label}`\n"
             f"───────────────"
         )
+        
+        # Resolve variant media
+        if best_up and best_up.form_index > 0:
+            from database.models import PokemonFormMedia
+            media_stmt = select(PokemonFormMedia.media_value).where(
+                PokemonFormMedia.pokemon_id == pokemon.id,
+                PokemonFormMedia.form_index == best_up.form_index
+            ).limit(1)
+            media_res = await db.execute(media_stmt)
+            media_val_db = media_res.scalar()
+            
+            if media_val_db:
+                if ":" in media_val_db:
+                    mtype, mval = media_val_db.split(":", 1)
+                    if mtype in ["photo", "video", "animation"]:
+                        media_type = mtype
+                        media_value = mval
+                else:
+                    media_type = "video"
+                    media_value = media_val_db
     else:
         form_suffix = f" of Form {form_filter}" if form_filter is not None else ""
         text = (
-            f"{cover_link}"
             f"🔍 **SEARCH RESULTS** 🔍\n"
             f"───────────────\n"
             f"🎉 Species: {r_emoji} **{pokemon.name.title()}** {r_emoji}\n"
@@ -1014,7 +1033,20 @@ async def cmd_search(message: Message, db: AsyncSession):
             f"───────────────"
         )
         
-    await message.answer(text, reply_markup=kb, parse_mode="Markdown")
+    from aiogram.types import FSInputFile
+    if isinstance(media_value, str) and os.path.exists(media_value):
+        media_value = FSInputFile(media_value)
+        
+    try:
+        if media_type == "video":
+            await message.answer_video(video=media_value, caption=text, reply_markup=kb, parse_mode="Markdown")
+        elif media_type == "animation":
+            await message.answer_animation(animation=media_value, caption=text, reply_markup=kb, parse_mode="Markdown")
+        else:
+            await message.answer_photo(photo=media_value, caption=text, reply_markup=kb, parse_mode="Markdown")
+    except Exception as e:
+        print(f"Error sending search media: {e}")
+        await message.answer(text, reply_markup=kb, parse_mode="Markdown")
 
 @router.callback_query(F.data.startswith("show_owners_"))
 async def cb_show_owners(callback: CallbackQuery, db: AsyncSession):

@@ -33,7 +33,7 @@ async def cmd_catch(message: Message, db: AsyncSession):
 
     if not spawn:
         if message.chat.type == "private":
-            await message.answer("⚠️ No wild Pokémon in your DM! Use `/hunt` to find one.", parse_mode="Markdown")
+            await message.answer("⚠️ Wild Pokémon only spawn in group chats during active conversations.", parse_mode="Markdown")
         else:
             await message.answer("⚠️ There are no active wild Pokémon here! Keep chatting to spawn one.")
         return

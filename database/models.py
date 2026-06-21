@@ -118,3 +118,18 @@ class PokemonFormMedia(Base):
     form_index = Column(Integer, primary_key=True)
     media_value = Column(String(255), nullable=False)
 
+
+class PvpBattle(Base):
+    __tablename__ = "pvp_battles"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    chat_id = Column(BigInteger, nullable=False)
+    message_id = Column(BigInteger, nullable=False)
+    challenger_id = Column(BigInteger, nullable=False)
+    opponent_id = Column(BigInteger, nullable=False)
+    bet = Column(Integer, default=0, nullable=False)
+    format_type = Column(Integer, default=3, nullable=False)  # 3 or 6 Pokemon
+    status = Column(String(50), default="WAITING", nullable=False)
+    draft_json = Column(String(4000), nullable=True)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+
+

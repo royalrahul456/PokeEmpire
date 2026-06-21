@@ -1894,32 +1894,6 @@ async def cb_dm_trade_info(callback: CallbackQuery):
     await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
     await callback.answer()
 
-@router.callback_query(F.data == "dm_hunt_info")
-async def cb_dm_hunt_info(callback: CallbackQuery):
-    text = (
-        "\ud83c� **HUNT**\n"
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n"
-        "Track a specific Pok\u00e9mon you want to catch!\n\n"
-        "\ud83d\udc49 **Commands:**\n"
-        "\u2022 `/hunt <Pokemon name>` \u2014 Set your hunt target\n"
-        "\u2022 `/hunt` \u2014 View current hunt target\n"
-    )
-    await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
-    await callback.answer()
-
-@router.callback_query(F.data == "dm_clan_menu")
-async def cb_dm_clan_menu(callback: CallbackQuery):
-    text = (
-        "\ud83d\udee1\ufe0f **CLANS**\n"
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n"
-        "Join or create a clan with other trainers!\n\n"
-        "\ud83d\udc49 **Commands:**\n"
-        "\u2022 `/clan` \u2014 View your clan info\n"
-        "\u2022 `/createclan <name>` \u2014 Create a new clan\n"
-    )
-    await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
-    await callback.answer()
-
 @router.callback_query(F.data == "dm_redeem_info")
 async def cb_dm_redeem_info(callback: CallbackQuery):
     text = (

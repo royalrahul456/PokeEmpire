@@ -597,8 +597,31 @@ async def cmd_check_pokemon(message: Message, db: AsyncSession):
         return
 
     query = " ".join(parts[1:]).strip().lower()
+    await check_pokemon_variants(message, db, query, page=1)
 
-    # Query species
+
+@router.callback_query(F.data.startswith("check_page_"))
+async def cb_check_page(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_")
+    try:
+        pokemon_id = int(parts[2])
+        page = int(parts[3])
+    except (IndexError, ValueError):
+        await callback.answer("⚠️ Invalid page.")
+        return
+
+    poke_stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
+    poke_res = await db.execute(poke_stmt)
+    pokemon = poke_res.scalar_one_or_none()
+    if not pokemon:
+        await callback.answer("⚠️ Pokémon not found.")
+        return
+
+    await check_pokemon_variants(callback.message, db, str(pokemon_id), page=page, edit=True)
+    await callback.answer()
+
+
+async def check_pokemon_variants(message: Message, db: AsyncSession, query: str, page: int = 1, edit: bool = False):
     if query.isdigit():
         poke_stmt = select(Pokemon).where(Pokemon.id == int(query))
     else:
@@ -608,48 +631,87 @@ async def cmd_check_pokemon(message: Message, db: AsyncSession):
     pokemon = poke_res.scalar_one_or_none()
 
     if not pokemon:
-        await message.answer(f"❌ Pokémon '{escape_md(query)}' not found in database.")
+        text = f"❌ Pokémon '{escape_md(query)}' not found in database."
+        if edit:
+            await message.edit_text(text)
+        else:
+            await message.answer(text)
         return
 
-    # Query owners list
-    owners_stmt = (
-        select(User.nickname, User.username, func.count(UserPokemon.id))
-        .join(UserPokemon, UserPokemon.user_id == User.id)
-        .where(UserPokemon.pokemon_id == pokemon.id)
-        .group_by(User.id)
-        .order_by(func.count(UserPokemon.id).desc())
-    )
-    owners_res = await db.execute(owners_stmt)
-    owners = owners_res.all()
+    from database.models import PokemonFormMedia
+    media_stmt = select(PokemonFormMedia.form_index).where(PokemonFormMedia.pokemon_id == pokemon.id).order_by(PokemonFormMedia.form_index)
+    media_res = await db.execute(media_stmt)
+    db_forms = media_res.scalars().all()
 
-    # Format owner list
-    if owners:
-        owner_rows = []
-        for idx, (nickname, username, count) in enumerate(owners):
-            num = idx + 1
-            username_str = f" (@{escape_md(username)})" if username else ""
-            owner_rows.append(f"**{num}.** **{escape_md(nickname)}**{username_str} `x{count}`")
-        owners_list = "\n".join(owner_rows)
+    all_forms = [0] + list(db_forms)
+    all_forms = sorted(list(set(all_forms)))
+
+    total_variants = len(all_forms)
+    page_size = 8
+    total_pages = max(1, (total_variants + page_size - 1) // page_size)
+
+    if page < 1:
+        page = 1
+    if page > total_pages:
+        page = total_pages
+
+    start_idx = (page - 1) * page_size
+    end_idx = start_idx + page_size
+    page_forms = all_forms[start_idx:end_idx]
+
+    cover_link = f"[​]({pokemon.image_url})"
+    text_lines = [
+        f"{cover_link}📛 **{pokemon.name.title()}**",
+        f"┣━ 📺 Gen {pokemon.generation}",
+        f"┣━ 📊 Total variants: {total_variants} — Page {page}/{total_pages}",
+        ""
+    ]
+
+    form_names = {
+        0: pokemon.rarity,
+        1: "AMV",
+        2: "Dmax",
+        3: "Gmax",
+        4: "Z-Move",
+        5: "Terastal"
+    }
+
+    form_emojis = {
+        0: get_rarity_emoji(pokemon.rarity),
+        1: "🎬",
+        2: "⚡",
+        3: "💥",
+        4: "🌀",
+        5: "🔮"
+    }
+
+    for f in page_forms:
+        f_name = form_names.get(f, f"Form {f}")
+        f_emoji = form_emojis.get(f, "🌟")
+        text_lines.append(f"┣━ {f_emoji} {f_name} | ID: `{pokemon.id}.{f}`")
+
+    text = "\n".join(text_lines)
+
+    kb_rows = []
+    if total_pages > 1:
+        prev_page = page - 1 if page > 1 else total_pages
+        next_page = page + 1 if page < total_pages else 1
+        kb_rows.append([
+            InlineKeyboardButton(text="⬅️ Prev", callback_data=f"check_page_{pokemon.id}_{prev_page}"),
+            InlineKeyboardButton(text=f"{page}/{total_pages}", callback_data="check_page_info_noop"),
+            InlineKeyboardButton(text="Next ➡️", callback_data=f"check_page_{pokemon.id}_{next_page}")
+        ])
+
+    kb_rows.append([
+        InlineKeyboardButton(text="👥 View Owners", callback_data=f"show_owners_{pokemon.id}")
+    ])
+
+    reply_markup = InlineKeyboardMarkup(inline_keyboard=kb_rows)
+
+    if edit:
+        await message.edit_text(text, reply_markup=reply_markup, parse_mode="Markdown")
     else:
-        owners_list = "• *No trainer owns this species yet.*"
-
-    r_emoji = get_rarity_emoji(pokemon.rarity)
-    
-    text = (
-        f"[​]({pokemon.image_url})"
-        f"🔍 **SPECIES CHECK** 🔍\n"
-        f"───────────────\n"
-        f"🎉 Species: {r_emoji} **{pokemon.name.title()}** {r_emoji}\n"
-        f"• **National ID**: `#{pokemon.id:03d}`\n"
-        f"• **Rarity**: `{pokemon.rarity}`\n"
-        f"• **Generation**: `{pokemon.generation}`\n"
-        f"───────────────\n"
-        f"👤 **OWNERS LIST:**\n"
-        f"{owners_list}\n"
-        f"───────────────"
-    )
-
-    await message.answer(text, parse_mode="Markdown")
+        await message.answer(text, reply_markup=reply_markup, parse_mode="Markdown")
 
 async def get_leaderboard_text(lb_type: str, db: AsyncSession) -> str:
     if lb_type == "coins":
@@ -836,6 +898,15 @@ async def cmd_search(message: Message, db: AsyncSession):
                 best_iv_pct = iv_pct
                 best_up = up
                 
+        form_names_search = {
+            0: "Standard",
+            1: "AMV",
+            2: "Dmax",
+            3: "Gmax",
+            4: "Z-Move",
+            5: "Terastal"
+        }
+        best_form_name = form_names_search.get(best_up.form_index, f"Form {best_up.form_index}")
         shiny_label = "✨ Yes" if best_up.is_shiny else "❌ No"
         text = (
             f"{cover_link}"
@@ -846,6 +917,7 @@ async def cmd_search(message: Message, db: AsyncSession):
             f"⭐ Rarity: `{pokemon.rarity}`\n"
             f"🧬 Total Caught: `{len(user_catches)} caught`\n\n"
             f"🏆 **Your Best Pokémon**:\n"
+            f"• Form: `{best_form_name} | ID: {pokemon.id}.{best_up.form_index}`\n"
             f"• Shiny: `{shiny_label}`\n"
             f"───────────────"
         )

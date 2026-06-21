@@ -1,696 +1,688 @@
 import json
 import random
-from typing import Optional
-from aiogram import Router, F
+import asyncio
+from typing import Optional, Dict, Any, List
+
+from aiogram import Router, F, Bot
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import select, update, desc, func
+
 import config
-from database.models import User, UserMonster, Battle
-from keyboards.inline import get_battle_keyboard, get_duel_invite_keyboard, get_main_menu_keyboard
-from services.battle_engine import BattleEngine
-from services.quest_system import QuestSystem
-from services.spawn_system import SpawnSystem
-from utils.formatters import get_hp_bar, format_card_title
+from database.models import User, UserPokemon, PvpBattle, Pokemon
+from utils.formatters import escape_md, get_rarity_emoji
 
 router = Router()
-spawn_system = SpawnSystem()
-quest_system = QuestSystem()
 
-async def get_healthy_monster(db: AsyncSession, user_id: int) -> Optional[UserMonster]:
-    """Helper to query the first healthy monster in a user's active squad."""
-    stmt = select(UserMonster).where(
-        UserMonster.user_id == user_id,
-        UserMonster.is_in_team == True
-    ).order_by(UserMonster.team_slot)
-    res = await db.execute(stmt)
-    squad = res.scalars().all()
+def get_pokemon_moves(pokemon_name: str) -> list:
+    name = pokemon_name.lower()
+    if any(x in name for x in ["char", "fire", "burn", "flare", "growlithe", "moltres"]):
+        return [
+            {"name": "Flamethrower", "power": 90, "accuracy": 1.0},
+            {"name": "Fire Blast", "power": 110, "accuracy": 0.85},
+            {"name": "Dragon Claw", "power": 80, "accuracy": 1.0},
+            {"name": "Slash", "power": 70, "accuracy": 1.0}
+        ]
+    elif any(x in name for x in ["squirt", "water", "aqua", "hydro", "blastoise", "gyarados"]):
+        return [
+            {"name": "Hydro Pump", "power": 110, "accuracy": 0.85},
+            {"name": "Surf", "power": 90, "accuracy": 1.0},
+            {"name": "Ice Beam", "power": 90, "accuracy": 1.0},
+            {"name": "Skull Bash", "power": 100, "accuracy": 1.0}
+        ]
+    elif any(x in name for x in ["bulb", "saur", "grass", "vine", "leaf", "oddish"]):
+        return [
+            {"name": "Solar Beam", "power": 120, "accuracy": 1.0},
+            {"name": "Razor Leaf", "power": 55, "accuracy": 0.95},
+            {"name": "Sludge Bomb", "power": 90, "accuracy": 1.0},
+            {"name": "Body Slam", "power": 85, "accuracy": 1.0}
+        ]
+    elif any(x in name for x in ["pika", "electric", "spark", "thunder", "zapdos"]):
+        return [
+            {"name": "Thunderbolt", "power": 90, "accuracy": 1.0},
+            {"name": "Thunder", "power": 110, "accuracy": 0.7},
+            {"name": "Iron Tail", "power": 100, "accuracy": 0.75},
+            {"name": "Quick Attack", "power": 40, "accuracy": 1.0}
+        ]
+    elif any(x in name for x in ["gengar", "ghost", "shadow", "gastly"]):
+        return [
+            {"name": "Shadow Ball", "power": 80, "accuracy": 1.0},
+            {"name": "Dark Pulse", "power": 80, "accuracy": 1.0},
+            {"name": "Psychic", "power": 90, "accuracy": 1.0},
+            {"name": "Sludge Wave", "power": 95, "accuracy": 1.0}
+        ]
+    else:
+        return [
+            {"name": "Hyper Beam", "power": 150, "accuracy": 0.9},
+            {"name": "Double Edge", "power": 120, "accuracy": 1.0},
+            {"name": "Swift", "power": 60, "accuracy": 1.0},
+            {"name": "Tackle", "power": 40, "accuracy": 1.0}
+        ]
+
+def get_hp_bar_battle(current: int, max_hp: int, length: int = 10) -> str:
+    if max_hp <= 0:
+        return "░" * length
     
-    for mon in squad:
-        if mon.current_hp > 0:
-            return mon
-    return None
-
-async def reward_victory_pve(db: AsyncSession, user: User, player_mon: UserMonster, enemy_mon_level: int) -> str:
-    """Grants XP and Coins for a PvE win, checking for monster level ups."""
-    coins_reward = random.randint(50, 120)
-    user.coins += coins_reward
+    percent = max(0.0, min(1.0, current / max_hp))
+    filled_len = int(round(length * percent))
+    if current > 0 and filled_len == 0:
+        filled_len = 1
+    elif current <= 0:
+        filled_len = 0
+        
+    bar = "█" * filled_len + "░" * (length - filled_len)
     
-    # Calculate monster XP reward
-    xp_reward = int(enemy_mon_level * 15)
-    player_mon.xp += xp_reward
+    color_emoji = "🟢"
+    if percent <= 0.2:
+        color_emoji = "🔴"
+    elif percent <= 0.5:
+        color_emoji = "🟡"
+        
+    return f"`[{bar}]` {color_emoji} **{current}/{max_hp}**"
+
+@router.message(Command("battle"))
+@router.message(Command("duel"))
+async def cmd_battle(message: Message, db: AsyncSession):
+    if message.chat.type == "private":
+        await message.answer("⚠️ PvP Battles can only be started in group chats.")
+        return
+
+    parts = message.text.split()
+    if len(parts) < 3:
+        await message.answer(
+            "⚠️ **Format**: `/battle <bet_amount/nocoin> <@username>`\n"
+            "(e.g., `/battle 1000 @opponent` or `/battle nocoin @opponent`)"
+        )
+        return
+
+    # Flexible arg parsing
+    bet = 0
+    opponent_username = ""
     
-    # Level up checks: threshold = level * 60
-    level_up = False
-    old_lvl = player_mon.level
-    while player_mon.xp >= (player_mon.level * 60):
-        player_mon.xp -= (player_mon.level * 60)
-        player_mon.level += 1
-        level_up = True
-
-    msg = f"🏆 **Victory!** 🏆\n\n"
-    msg += f"• You earned: 🪙 **{coins_reward} Coins**\n"
-    msg += f"• **{player_mon.name}** gained: 📈 **{xp_reward} XP**\n"
+    if parts[1].startswith("@"):
+        opponent_username = parts[1]
+        bet_part = parts[2]
+    else:
+        bet_part = parts[1]
+        opponent_username = parts[2]
+        
+    opponent_username = opponent_username.replace("@", "").strip()
     
-    if level_up:
-        msg += f"🎉 **LEVEL UP!** {player_mon.name} reached Level **{player_mon.level}**! (HP fully restored)\n"
-        # Recover HP to new max HP
-        monster_spec = spawn_system.monsters_db.get(player_mon.monster_id)
-        if monster_spec:
-            base_hp = monster_spec["base_stats"]["hp"]
-            max_hp = ((2 * base_hp + player_mon.hp_iv) * player_mon.level) // 100 + player_mon.level + 10
-            player_mon.current_hp = max_hp
-            
-            # Check if monster can evolve by level
-            next_evo = monster_spec.get("next_evolution")
-            evo_level = monster_spec.get("evolution_level")
-            if next_evo and evo_level and player_mon.level >= evo_level:
-                msg += f"✨ **{player_mon.name}** is ready to evolve! Visit **My Bag** -> **Stones/Use Items** to evolve them!\n"
+    # Parse bet_part
+    if bet_part.isdigit():
+        bet = int(bet_part)
+    elif bet_part.lower() in ["nocoin", "friendly", "0", "free", "no"]:
+        bet = 0
+    else:
+        await message.answer("⚠️ Invalid bet amount. Use a positive number or `nocoin`.")
+        return
 
-    # Track Quest Battle Win
-    completed_quests = await quest_system.track_progress(db, user.id, "battle_win")
-    if completed_quests:
-        msg += "\n" + "\n".join([f"🎉 **Quest Completed!** _{name}_" for name in completed_quests])
+    # Check for active battle involvements
+    active_stmt = select(PvpBattle).where(
+        (PvpBattle.challenger_id == message.from_user.id) | (PvpBattle.opponent_id == message.from_user.id)
+    ).where(PvpBattle.status.in_(["WAITING", "DRAFTING", "SIMULATING"]))
+    active_res = await db.execute(active_stmt)
+    if active_res.scalars().first():
+        await message.answer("⚠️ You are already involved in an active battle challenge, draft, or simulation!")
+        return
 
-    return msg
-
-@router.message(Command("battlebot"))
-async def cmd_battle_bot(message: Message, db: AsyncSession):
-    user_id = message.from_user.id
-    
-    # Check registration
-    stmt = select(User).where(User.id == user_id)
-    res = await db.execute(stmt)
-    user = res.scalar_one_or_none()
-    if not user:
+    # Check challenger registration & coins
+    challenger_stmt = select(User).where(User.id == message.from_user.id)
+    challenger_res = await db.execute(challenger_stmt)
+    challenger = challenger_res.scalar_one_or_none()
+    if not challenger:
         await message.answer("⚠️ You must register first with /start")
         return
-
-    # Check healthy active monster
-    player_mon = await get_healthy_monster(db, user_id)
-    if not player_mon:
-        await message.answer("⚠️ You have no healthy monsters in your active team! Heal them or set team in /bag first.")
+        
+    if challenger.coins < bet:
+        await message.answer(f"❌ You do not have enough coins! You only have 🪙 **{challenger.coins} Coins**.")
         return
 
-    # Generate Bot opponent monster
-    # Levels will scale similarly to player's monster
-    bot_level = max(1, player_mon.level + random.randint(-2, 2))
-    
-    # Pick a random monster species
-    bot_species_id = random.choice(list(spawn_system.monsters_db.keys()))
-    bot_spec = spawn_system.monsters_db[bot_species_id]
-    
-    bot_hp_iv = random.randint(5, 25)
-    bot_atk_iv = random.randint(5, 25)
-    bot_def_iv = random.randint(5, 25)
-    bot_spd_iv = random.randint(5, 25)
-    bot_sp_atk_iv = random.randint(5, 25)
-    bot_sp_def_iv = random.randint(5, 25)
-
-    bot_base_hp = bot_spec["base_stats"]["hp"]
-    bot_max_hp = ((2 * bot_base_hp + bot_hp_iv) * bot_level) // 100 + bot_level + 10
-
-    # Load stats for player's monster
-    p_spec = spawn_system.monsters_db[player_mon.monster_id]
-    p_base_stats = p_spec["base_stats"]
-    p_ivs = {"hp": player_mon.hp_iv, "atk": player_mon.atk_iv, "def": player_mon.def_iv, "spd": player_mon.spd_iv, "sp_atk": player_mon.sp_atk_iv, "sp_def": player_mon.sp_def_iv}
-    p_stats = SpawnSystem.calculate_stats(p_base_stats, p_ivs, player_mon.level)
-    
-    # Load stats for bot monster
-    bot_base_stats = bot_spec["base_stats"]
-    bot_ivs = {"hp": bot_hp_iv, "atk": bot_atk_iv, "def": bot_def_iv, "spd": bot_spd_iv, "sp_atk": bot_sp_atk_iv, "sp_def": bot_sp_def_iv}
-    bot_stats = SpawnSystem.calculate_stats(bot_base_stats, bot_ivs, bot_level)
-
-    # Initialize battle state structures
-    p1_state = {
-        "user_id": user_id,
-        "name": player_mon.name,
-        "monster_db_id": player_mon.id,
-        "types": p_spec["types"],
-        "level": player_mon.level,
-        "current_hp": player_mon.current_hp,
-        "max_hp": p_stats["hp"],
-        "atk": p_stats["atk"],
-        "def": p_stats["def"],
-        "spd": p_stats["spd"],
-        "sp_atk": p_stats["sp_atk"],
-        "sp_def": p_stats["sp_def"],
-        "status": None,
-        "is_shiny": player_mon.is_shiny,
-        "is_guarding": False,
-        "atk_mult": 1.0,
-        "def_mult": 1.0,
-        "sp_atk_mult": 1.0,
-        "sp_def_mult": 1.0
-    }
-
-    p2_state = {
-        "user_id": 0,  # 0 indicates Bot
-        "name": f"Wild {bot_spec['name']}",
-        "monster_db_id": None,
-        "types": bot_spec["types"],
-        "level": bot_level,
-        "current_hp": bot_max_hp,
-        "max_hp": bot_max_hp,
-        "atk": bot_stats["atk"],
-        "def": bot_stats["def"],
-        "spd": bot_stats["spd"],
-        "sp_atk": bot_stats["sp_atk"],
-        "sp_def": bot_stats["sp_def"],
-        "status": None,
-        "is_shiny": False,
-        "is_guarding": False,
-        "atk_mult": 1.0,
-        "def_mult": 1.0,
-        "sp_atk_mult": 1.0,
-        "sp_def_mult": 1.0
-    }
-
-    # Determine initiative turn
-    p_speed = p1_state["spd"]
-    b_speed = p2_state["spd"]
-    # 50% speed reduction if paralyzed
-    if p1_state["status"] == "PARALYZED": p_speed *= 0.5
-    if p2_state["status"] == "PARALYZED": b_speed *= 0.5
-
-    active_turn_user_id = user_id if p_speed >= b_speed else 0
-
-    battle_data = {
-        "p1": p1_state,
-        "p2": p2_state,
-        "active_id": active_turn_user_id,
-        "logs": ["⚔️ Battle Started! Choose your action:"]
-    }
-
-    # If Bot is faster, it attacks first immediately
-    if active_turn_user_id == 0:
-        bot_move = random.choice(["Strike", "Special", "Guard", "Debuff"])
-        bot_log = BattleEngine.execute_move(bot_move, battle_data["p2"], battle_data["p1"])
-        battle_data["logs"].append(bot_log)
+    # Look up opponent
+    opponent_stmt = select(User).where(User.username.ilike(opponent_username))
+    opponent_res = await db.execute(opponent_stmt)
+    opponent = opponent_res.scalar_one_or_none()
+    if not opponent:
+        await message.answer(f"❌ Trainer **@{opponent_username}** not found in database. Make sure they have registered with /start.")
+        return
         
-        # Apply end of round status if any
-        status_log = BattleEngine.apply_end_of_round_status(battle_data["p1"])
-        if status_log:
-            battle_data["logs"].append(status_log)
-            
-        # Switch turn back to player
-        battle_data["active_id"] = user_id
+    if opponent.id == challenger.id:
+        await message.answer("❌ You cannot battle yourself!")
+        return
+        
+    if opponent.coins < bet:
+        await message.answer(f"❌ Opponent **@{opponent_username}** does not have enough coins to cover this bet! (Required: 🪙 **{bet}**)")
+        return
 
-    # Create Battle record in Database
-    new_battle = Battle(
-        battle_type="PvE",
-        player1_id=user_id,
-        player2_id=0,
-        battle_state=json.dumps(battle_data),
-        is_finished=False
-    )
-    db.add(new_battle)
-    await db.commit()
-
-    # Form text and display
-    hp_bar_p1 = get_hp_bar(battle_data["p1"]["current_hp"], battle_data["p1"]["max_hp"])
-    hp_bar_p2 = get_hp_bar(battle_data["p2"]["current_hp"], battle_data["p2"]["max_hp"])
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="⚔️ Accept 3v3", callback_data=f"pvp_accept_3_{challenger.id}_{opponent.id}_{bet}"),
+            InlineKeyboardButton(text="⚔️ Accept 6v6", callback_data=f"pvp_accept_6_{challenger.id}_{opponent.id}_{bet}")
+        ],
+        [
+            InlineKeyboardButton(text="❌ Decline", callback_data=f"pvp_decline_{challenger.id}_{opponent.id}")
+        ]
+    ])
     
+    wager_str = f"🪙 `{bet:,} Coins`" if bet > 0 else "`None (Friendly)`"
     text = (
-        f"⚔️ **PvE Training Battle** ⚔️\n\n"
-        f"🔴 **{battle_data['p1']['name']}** (Lvl {battle_data['p1']['level']})\n"
-        f"{hp_bar_p1}\n\n"
-        f"🔵 **{battle_data['p2']['name']}** (Lvl {battle_data['p2']['level']})\n"
-        f"{hp_bar_p2}\n\n"
-        f"**LOGS**:\n" + "\n".join(battle_data["logs"][-3:]) + "\n\n"
-        f"Make your move:"
+        f"⚔️ **PVP BATTLE CHALLENGE** ⚔️\n"
+        f"───────────────\n"
+        f"👤 **Challenger**: {escape_md(challenger.nickname or message.from_user.first_name)} (@{escape_md(challenger.username)})\n"
+        f"👤 **Opponent**: {escape_md(opponent.nickname or opponent_username)} (@{escape_md(opponent.username)})\n"
+        f"💰 **Wager**: {wager_str}\n"
+        f"───────────────\n"
+        f"@{opponent.username}, do you accept this challenge?"
     )
+    
+    await message.answer(text, reply_markup=kb, parse_mode="Markdown")
 
-    await message.answer(text, reply_markup=get_battle_keyboard(new_battle.id), parse_mode="Markdown")
-
-@router.callback_query(F.data.startswith("bat_move_"))
-async def callback_battle_move(callback: CallbackQuery, db: AsyncSession):
-    user_id = callback.from_user.id
+@router.callback_query(F.data.startswith("pvp_decline_"))
+async def cb_pvp_decline(callback: CallbackQuery, db: AsyncSession):
     parts = callback.data.split("_")
-    battle_id = int(parts[2])
-    move_choice = parts[3]
-
-    # Query battle record
-    stmt = select(Battle).where(Battle.id == battle_id)
-    res = await db.execute(stmt)
-    battle = res.scalar_one_or_none()
-
-    if not battle or battle.is_finished:
-        await callback.answer("⚠️ This battle has already concluded.", show_alert=True)
-        return
-
-    battle_data = json.loads(battle.battle_state)
+    opponent_id = int(parts[3])
     
-    # Verify active player
-    if battle_data["active_id"] != user_id:
-        await callback.answer("⚠️ It's not your turn!", show_alert=True)
-        return
-
-    is_pve = (battle_data["p2"]["user_id"] == 0)
-    logs = []
-
-    # 1. PvE Battle Resolution
-    if is_pve:
-        # Player attacks Bot
-        player_move_log = BattleEngine.execute_move(move_choice, battle_data["p1"], battle_data["p2"])
-        logs.append(player_move_log)
-
-        # Check if Bot fainted
-        if battle_data["p2"]["current_hp"] <= 0:
-            battle.is_finished = True
-            battle.winner_id = user_id
-            
-            user_stmt = select(User).where(User.id == user_id)
-            user_res = await db.execute(user_stmt)
-            user_obj = user_res.scalar_one()
-            
-            mon_stmt = select(UserMonster).where(UserMonster.id == battle_data["p1"]["monster_db_id"])
-            mon_res = await db.execute(mon_stmt)
-            mon_obj = mon_res.scalar_one()
-            
-            mon_obj.current_hp = battle_data["p1"]["current_hp"]
-            rewards_msg = await reward_victory_pve(db, user_obj, mon_obj, battle_data["p2"]["level"])
-            await db.commit()
-            
-            hp_bar_p1 = get_hp_bar(battle_data["p1"]["current_hp"], battle_data["p1"]["max_hp"])
-            text = (
-                f"⚔️ **Battle Concluded!** ⚔️\n\n"
-                f"🔴 **{battle_data['p1']['name']}**: {hp_bar_p1}\n"
-                f"🔵 **{battle_data['p2']['name']}**: Fainted 💀\n\n"
-                f"**LOGS**:\n" + "\n".join(logs) + "\n\n" + rewards_msg
-            )
-            await callback.message.edit_text(text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
-            await callback.answer("Victory!")
-            return
-
-        # Bot attacks Player
-        bot_choices = ["Strike", "Special"]
-        if battle_data["p1"]["status"] is None:
-            bot_choices.append("Debuff")
-        if not battle_data["p2"]["is_guarding"]:
-            bot_choices.append("Guard")
-
-        bot_move = random.choice(bot_choices)
-        bot_move_log = BattleEngine.execute_move(bot_move, battle_data["p2"], battle_data["p1"])
-        logs.append(bot_move_log)
-
-        # Apply end of round status
-        p1_status_log = BattleEngine.apply_end_of_round_status(battle_data["p1"])
-        p2_status_log = BattleEngine.apply_end_of_round_status(battle_data["p2"])
-        if p1_status_log: logs.append(p1_status_log)
-        if p2_status_log: logs.append(p2_status_log)
-
-        # Check if Player fainted
-        if battle_data["p1"]["current_hp"] <= 0:
-            battle.is_finished = True
-            battle.winner_id = 0
-            
-            mon_stmt = select(UserMonster).where(UserMonster.id == battle_data["p1"]["monster_db_id"])
-            mon_res = await db.execute(mon_stmt)
-            mon_obj = mon_res.scalar_one()
-            mon_obj.current_hp = 0
-            await db.commit()
-            
-            text = (
-                f"💀 **Defeat!** 💀\n\n"
-                f"🔴 **{battle_data['p1']['name']}**: Fainted 💀\n"
-                f"🔵 **{battle_data['p2']['name']}**: {get_hp_bar(battle_data['p2']['current_hp'], battle_data['p2']['max_hp'])}\n\n"
-                f"**LOGS**:\n" + "\n".join(logs) + "\n\n"
-                f"Your monster fainted! Heal it in **My Bag**."
-            )
-            await callback.message.edit_text(text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
-            await callback.answer("Defeat.")
-            return
-
-        # Update PvE State
-        battle_data["logs"].extend(logs)
-        battle.battle_state = json.dumps(battle_data)
-        
-        # Save HP
-        mon_stmt = select(UserMonster).where(UserMonster.id == battle_data["p1"]["monster_db_id"])
-        mon_res = await db.execute(mon_stmt)
-        mon_obj = mon_res.scalar_one()
-        mon_obj.current_hp = battle_data["p1"]["current_hp"]
-        await db.commit()
-
-        hp_bar_p1 = get_hp_bar(battle_data["p1"]["current_hp"], battle_data["p1"]["max_hp"])
-        hp_bar_p2 = get_hp_bar(battle_data["p2"]["current_hp"], battle_data["p2"]["max_hp"])
-        text = (
-            f"⚔️ **PvE Training Battle** ⚔️\n\n"
-            f"🔴 **{battle_data['p1']['name']}** (Lvl {battle_data['p1']['level']})\n"
-            f"{hp_bar_p1}\n\n"
-            f"🔵 **{battle_data['p2']['name']}** (Lvl {battle_data['p2']['level']})\n"
-            f"{hp_bar_p2}\n\n"
-            f"**LOGS**:\n" + "\n".join(battle_data["logs"][-3:]) + "\n\n"
-            f"Make your move:"
-        )
-        await callback.message.edit_text(text, reply_markup=get_battle_keyboard(battle.id), parse_mode="Markdown")
-        await callback.answer()
-
-    # 2. PvP Battle Resolution
-    else:
-        # Determine who is attacker and defender
-        if user_id == battle_data["p1"]["user_id"]:
-            attacker = battle_data["p1"]
-            defender = battle_data["p2"]
-            next_active_id = battle_data["p2"]["user_id"]
-        else:
-            attacker = battle_data["p2"]
-            defender = battle_data["p1"]
-            next_active_id = battle_data["p1"]["user_id"]
-
-        move_log = BattleEngine.execute_move(move_choice, attacker, defender)
-        logs.append(move_log)
-
-        # Apply end of turn status damage to the attacker
-        status_log = BattleEngine.apply_end_of_round_status(attacker)
-        if status_log:
-            logs.append(status_log)
-
-        # Check if defender fainted
-        if defender["current_hp"] <= 0:
-            battle.is_finished = True
-            battle.winner_id = user_id
-
-            # Save HPs to database
-            p1_mon_stmt = select(UserMonster).where(UserMonster.id == battle_data["p1"]["monster_db_id"])
-            p1_mon_res = await db.execute(p1_mon_stmt)
-            p1_mon = p1_mon_res.scalar_one()
-            p1_mon.current_hp = max(0, battle_data["p1"]["current_hp"])
-
-            p2_mon_stmt = select(UserMonster).where(UserMonster.id == battle_data["p2"]["monster_db_id"])
-            p2_mon_res = await db.execute(p2_mon_stmt)
-            p2_mon = p2_mon_res.scalar_one()
-            p2_mon.current_hp = max(0, battle_data["p2"]["current_hp"])
-
-            # Reward winner and loser
-            winner_user_stmt = select(User).where(User.id == user_id)
-            winner_user_res = await db.execute(winner_user_stmt)
-            winner_user = winner_user_res.scalar_one()
-            winner_user.coins += 200
-
-            loser_user_id = battle_data["p2"]["user_id"] if user_id == battle_data["p1"]["user_id"] else battle_data["p1"]["user_id"]
-            loser_user_stmt = select(User).where(User.id == loser_user_id)
-            loser_user_res = await db.execute(loser_user_stmt)
-            loser_user = loser_user_res.scalar_one()
-            loser_user.coins += 50
-
-            # Award XP to winner's monster
-            winner_mon = p1_mon if user_id == battle_data["p1"]["user_id"] else p2_mon
-            xp_reward = int(defender["level"] * 20)
-            winner_mon.xp += xp_reward
-            
-            # Level up check
-            level_up = False
-            while winner_mon.xp >= (winner_mon.level * 60):
-                winner_mon.xp -= (winner_mon.level * 60)
-                winner_mon.level += 1
-                level_up = True
-                # Recover HP
-                mon_spec = spawn_system.monsters_db.get(winner_mon.monster_id)
-                if mon_spec:
-                    base_hp = mon_spec["base_stats"]["hp"]
-                    winner_mon.current_hp = ((2 * base_hp + winner_mon.hp_iv) * winner_mon.level) // 100 + winner_mon.level + 10
-
-            await db.commit()
-
-            winner_name = attacker["name"]
-            loser_name = defender["name"]
-            
-            win_msg = (
-                f"🏆 **Duel Concluded! {winner_name} wins!** 🏆\n\n"
-                f"• **{winner_name}** earned: 🪙 **200 Coins**\n"
-                f"• **{loser_name}** earned: 🪙 **50 Coins**\n"
-                f"• Winner's Monster gained: 📈 **{xp_reward} XP**\n"
-            )
-            if level_up:
-                win_msg += f"🎉 **LEVEL UP!** Winner's monster reached Level **{winner_mon.level}**!\n"
-
-            text = (
-                f"⚔️ **PvP Duel Battle** ⚔️\n\n"
-                f"🔴 **{battle_data['p1']['name']}**: {get_hp_bar(battle_data['p1']['current_hp'], battle_data['p1']['max_hp'])}\n"
-                f"🔵 **{battle_data['p2']['name']}**: {get_hp_bar(battle_data['p2']['current_hp'], battle_data['p2']['max_hp'])}\n\n"
-                f"**LOGS**:\n" + "\n".join(logs) + "\n\n" + win_msg
-            )
-            await callback.message.edit_text(text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
-            await callback.answer("PvP Duel Concluded!")
-            return
-
-        # Check if attacker fainted from self status damage
-        if attacker["current_hp"] <= 0:
-            battle.is_finished = True
-            battle.winner_id = next_active_id
-
-            # Save HPs to database
-            p1_mon_stmt = select(UserMonster).where(UserMonster.id == battle_data["p1"]["monster_db_id"])
-            p1_mon_res = await db.execute(p1_mon_stmt)
-            p1_mon = p1_mon_res.scalar_one()
-            p1_mon.current_hp = max(0, battle_data["p1"]["current_hp"])
-
-            p2_mon_stmt = select(UserMonster).where(UserMonster.id == battle_data["p2"]["monster_db_id"])
-            p2_mon_res = await db.execute(p2_mon_stmt)
-            p2_mon = p2_mon_res.scalar_one()
-            p2_mon.current_hp = max(0, battle_data["p2"]["current_hp"])
-
-            await db.commit()
-
-            text = (
-                f"⚔️ **PvP Duel Battle** ⚔️\n\n"
-                f"🔴 **{battle_data['p1']['name']}**: {get_hp_bar(battle_data['p1']['current_hp'], battle_data['p1']['max_hp'])}\n"
-                f"🔵 **{battle_data['p2']['name']}**: {get_hp_bar(battle_data['p2']['current_hp'], battle_data['p2']['max_hp'])}\n\n"
-                f"**LOGS**:\n" + "\n".join(logs) + "\n\n"
-                f"💀 **{attacker['name']}** fainted from status damage! **{defender['name']}** wins the duel!"
-            )
-            await callback.message.edit_text(text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
-            await callback.answer("PvP Duel Concluded!")
-            return
-
-        # Update PvP state
-        battle_data["logs"].extend(logs)
-        battle_data["active_id"] = next_active_id
-        battle.battle_state = json.dumps(battle_data)
-
-        # Save current HP for both players
-        p1_mon_stmt = select(UserMonster).where(UserMonster.id == battle_data["p1"]["monster_db_id"])
-        p1_mon_res = await db.execute(p1_mon_stmt)
-        p1_mon = p1_mon_res.scalar_one()
-        p1_mon.current_hp = battle_data["p1"]["current_hp"]
-
-        p2_mon_stmt = select(UserMonster).where(UserMonster.id == battle_data["p2"]["monster_db_id"])
-        p2_mon_res = await db.execute(p2_mon_stmt)
-        p2_mon = p2_mon_res.scalar_one()
-        p2_mon.current_hp = battle_data["p2"]["current_hp"]
-
-        await db.commit()
-
-        # Redraw
-        hp_bar_p1 = get_hp_bar(battle_data["p1"]["current_hp"], battle_data["p1"]["max_hp"])
-        hp_bar_p2 = get_hp_bar(battle_data["p2"]["current_hp"], battle_data["p2"]["max_hp"])
-        next_active_name = battle_data["p1"]["name"] if next_active_id == battle_data["p1"]["user_id"] else battle_data["p2"]["name"]
-
-        text = (
-            f"⚔️ **PVP DUEL BATTLE** ⚔️\n\n"
-            f"🔴 **{battle_data['p1']['name']}** (Lvl {battle_data['p1']['level']}):\n{hp_bar_p1}\n\n"
-            f"🔵 **{battle_data['p2']['name']}** (Lvl {battle_data['p2']['level']}):\n{hp_bar_p2}\n\n"
-            f"**LOGS**:\n" + "\n".join(battle_data["logs"][-3:]) + "\n\n"
-            f"👉 **It is {next_active_name}'s turn!** Choose your move:"
-        )
-
-        await callback.message.edit_text(text, reply_markup=get_battle_keyboard(battle.id), parse_mode="Markdown")
-        await callback.answer()
-
-
-@router.callback_query(F.data.startswith("bat_run_"))
-async def callback_battle_flee(callback: CallbackQuery, db: AsyncSession):
-    battle_id = int(callback.data.split("_")[2])
-    stmt = select(Battle).where(Battle.id == battle_id)
-    res = await db.execute(stmt)
-    battle = res.scalar_one_or_none()
-
-    if battle and not battle.is_finished:
-        battle.is_finished = True
-        battle_data = json.loads(battle.battle_state)
-        
-        # Persist HP as is
-        mon_stmt = select(UserMonster).where(UserMonster.id == battle_data["p1"]["monster_db_id"])
-        mon_res = await db.execute(mon_stmt)
-        mon_obj = mon_res.scalar_one_or_none()
-        if mon_obj:
-            mon_obj.current_hp = battle_data["p1"]["current_hp"]
-            
-        await db.commit()
-
-    await callback.message.edit_text("🏳️ You surrendered from the battle. You earned no rewards.", reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
-    await callback.answer("Surrendered.")
-
-# ==================== PVP CHALLENGE SYSTEM ====================
-@router.message(Command("duel"))
-async def cmd_duel(message: Message, db: AsyncSession):
-    challenger_id = message.from_user.id
-    
-    # Need user mention or username to challenge
-    if not message.text or len(message.text.split()) < 2:
-        await message.answer("⚠️ Format: `/duel @username` (challenge another player in this group)")
-        return
-
-    target_mention = message.text.split()[1]
-    if not target_mention.startswith("@"):
-        await message.answer("⚠️ You must mention the target user starting with @ (e.g. `/duel @username`).")
+    if callback.from_user.id != opponent_id:
+        await callback.answer("❌ You are not the challenged opponent!", show_alert=True)
         return
         
-    target_username = target_mention.replace("@", "")
-
-    # Look up target user in DB
-    target_stmt = select(User).where(User.username == target_username)
-    target_res = await db.execute(target_stmt)
-    target_user = target_res.scalar_one_or_none()
-
-    if not target_user:
-        await message.answer(f"❌ Trainer {target_mention} is not registered in PokeEmpire. Ask them to run /start first!")
-        return
-
-    if target_user.id == challenger_id:
-        await message.answer("❌ You cannot duel yourself!")
-        return
-
-    # Verify challenger has healthy monster
-    challenger_mon = await get_healthy_monster(db, challenger_id)
-    if not challenger_mon:
-        await message.answer("⚠️ You don't have a healthy monster equipped! Heal them in /bag first.")
-        return
-
-    # Verify target has healthy monster
-    target_mon = await get_healthy_monster(db, target_user.id)
-    if not target_mon:
-        await message.answer(f"⚠️ {target_user.nickname} does not have any healthy monsters equipped on their squad.")
-        return
-
-    text = (
-        f"⚔️ **PVP DUEL CHALLENGE** ⚔️\n"
-        f"Trainer **{message.from_user.first_name}** has challenged Trainer **{target_user.nickname}** to a duel!\n\n"
-        f"Active Monster matchups:\n"
-        f"🔴 **{challenger_mon.name}** (Lvl {challenger_mon.level}) vs 🔵 **{target_mon.name}** (Lvl {target_mon.level})\n\n"
-        f"Accept the invitation below:"
-    )
-
-    await message.answer(text, reply_markup=get_duel_invite_keyboard(challenger_id), parse_mode="Markdown")
+    await callback.message.edit_text("❌ Battle challenge was declined.", reply_markup=None)
+    await callback.answer()
 
 @router.callback_query(F.data.startswith("pvp_accept_"))
-async def callback_pvp_accept(callback: CallbackQuery, db: AsyncSession):
-    challenger_id = int(callback.data.split("_")[2])
-    receiver_id = callback.from_user.id
-
-    if challenger_id == receiver_id:
-        await callback.answer("⚠️ You cannot accept your own challenge!", show_alert=True)
+async def cb_pvp_accept(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_")
+    format_type = int(parts[2])
+    challenger_id = int(parts[3])
+    opponent_id = int(parts[4])
+    bet = int(parts[5])
+    
+    if callback.from_user.id != opponent_id:
+        await callback.answer("❌ You are not the challenged opponent!", show_alert=True)
         return
-
-    # Query player entities
+        
+    # Re-verify coins
     c_stmt = select(User).where(User.id == challenger_id)
     c_res = await db.execute(c_stmt)
     challenger = c_res.scalar_one_or_none()
-
-    r_stmt = select(User).where(User.id == receiver_id)
-    r_res = await db.execute(r_stmt)
-    receiver = r_res.scalar_one_or_none()
-
-    if not challenger or not receiver:
-        await callback.answer("⚠️ Challenger session not found.", show_alert=True)
+    
+    o_stmt = select(User).where(User.id == opponent_id)
+    o_res = await db.execute(o_stmt)
+    opponent = o_res.scalar_one_or_none()
+    
+    if not challenger or not opponent:
+        await callback.answer("⚠️ Player data not found.")
+        return
+        
+    if challenger.coins < bet or opponent.coins < bet:
+        await callback.message.edit_text("❌ Challenge cancelled: One of the players no longer has enough coins.", reply_markup=None)
+        await callback.answer()
         return
 
-    # Fetch active healthy monsters
-    c_mon = await get_healthy_monster(db, challenger_id)
-    r_mon = await get_healthy_monster(db, receiver_id)
-
-    if not c_mon or not r_mon:
-        await callback.answer("⚠️ Either you or the challenger does not have healthy monsters equipped.", show_alert=True)
+    # Check Pokémon counts
+    c_count = await db.scalar(select(func.count(UserPokemon.id)).where(UserPokemon.user_id == challenger_id))
+    o_count = await db.scalar(select(func.count(UserPokemon.id)).where(UserPokemon.user_id == opponent_id))
+    
+    if c_count < format_type:
+        await callback.message.edit_text(
+            f"❌ Challenge cancelled: {escape_md(challenger.nickname or 'Challenger')} does not own at least {format_type} Pokémon.",
+            reply_markup=None
+        )
+        await callback.answer()
+        return
+        
+    if o_count < format_type:
+        await callback.message.edit_text(
+            f"❌ Challenge cancelled: {escape_md(opponent.nickname or 'Opponent')} does not own at least {format_type} Pokémon.",
+            reply_markup=None
+        )
+        await callback.answer()
         return
 
-    # Load specs
-    c_spec = spawn_system.monsters_db[c_mon.monster_id]
-    r_spec = spawn_system.monsters_db[r_mon.monster_id]
-
-    c_stats = SpawnSystem.calculate_stats(c_spec["base_stats"], {"hp": c_mon.hp_iv, "atk": c_mon.atk_iv, "def": c_mon.def_iv, "spd": c_mon.spd_iv, "sp_atk": c_mon.sp_atk_iv, "sp_def": c_mon.sp_def_iv}, c_mon.level)
-    r_stats = SpawnSystem.calculate_stats(r_spec["base_stats"], {"hp": r_mon.hp_iv, "atk": r_mon.atk_iv, "def": r_mon.def_iv, "spd": r_mon.spd_iv, "sp_atk": r_mon.sp_atk_iv, "sp_def": r_mon.sp_def_iv}, r_mon.level)
-
-    p1_state = {
-        "user_id": challenger_id,
-        "name": challenger.nickname,
-        "monster_db_id": c_mon.id,
-        "types": c_spec["types"],
-        "level": c_mon.level,
-        "current_hp": c_mon.current_hp,
-        "max_hp": c_stats["hp"],
-        "atk": c_stats["atk"],
-        "def": c_stats["def"],
-        "spd": c_stats["spd"],
-        "sp_atk": c_stats["sp_atk"],
-        "sp_def": c_stats["sp_def"],
-        "status": None,
-        "is_shiny": c_mon.is_shiny,
-        "is_guarding": False,
-        "atk_mult": 1.0,
-        "def_mult": 1.0,
-        "sp_atk_mult": 1.0,
-        "sp_def_mult": 1.0
-    }
-
-    p2_state = {
-        "user_id": receiver_id,
-        "name": receiver.nickname,
-        "monster_db_id": r_mon.id,
-        "types": r_spec["types"],
-        "level": r_mon.level,
-        "current_hp": r_mon.current_hp,
-        "max_hp": r_stats["hp"],
-        "atk": r_stats["atk"],
-        "def": r_stats["def"],
-        "spd": r_stats["spd"],
-        "sp_atk": r_stats["sp_atk"],
-        "sp_def": r_stats["sp_def"],
-        "status": None,
-        "is_shiny": r_mon.is_shiny,
-        "is_guarding": False,
-        "atk_mult": 1.0,
-        "def_mult": 1.0,
-        "sp_atk_mult": 1.0,
-        "sp_def_mult": 1.0
-    }
-
-    # Decide initiative speed
-    c_spd = p1_state["spd"]
-    r_spd = p2_state["spd"]
-    active_turn_user_id = challenger_id if c_spd >= r_spd else receiver_id
-
-    battle_data = {
-        "p1": p1_state,
-        "p2": p2_state,
-        "active_id": active_turn_user_id,
-        "logs": ["⚔️ PvP Duel Initiated! Let combat begin!"]
-    }
-
-    new_battle = Battle(
-        battle_type="PvP",
-        player1_id=challenger_id,
-        player2_id=receiver_id,
-        battle_state=json.dumps(battle_data),
-        is_finished=False
+    # Create PvpBattle record
+    battle = PvpBattle(
+        chat_id=callback.message.chat.id,
+        message_id=callback.message.message_id,
+        challenger_id=challenger_id,
+        opponent_id=opponent_id,
+        bet=bet,
+        format_type=format_type,
+        status="DRAFTING",
+        draft_json=json.dumps({
+            "challenger": {
+                "drafted": [],
+                "selecting_up_id": None
+            },
+            "opponent": {
+                "drafted": [],
+                "selecting_up_id": None
+            }
+        })
     )
-    db.add(new_battle)
+    db.add(battle)
     await db.commit()
-
-    # Redraw PvP screen
-    hp_bar_p1 = get_hp_bar(battle_data["p1"]["current_hp"], battle_data["p1"]["max_hp"])
-    hp_bar_p2 = get_hp_bar(battle_data["p2"]["current_hp"], battle_data["p2"]["max_hp"])
-    active_name = challenger.nickname if active_turn_user_id == challenger_id else receiver.nickname
-
-    text = (
-        f"⚔️ **PVP DUEL BATTLE** ⚔️\n\n"
-        f"🔴 **{battle_data['p1']['name']}** ({battle_data['p1']['level']}):\n{hp_bar_p1}\n\n"
-        f"🔵 **{battle_data['p2']['name']}** ({battle_data['p2']['level']}):\n{hp_bar_p2}\n\n"
-        f"👉 **It is {active_name}'s turn!** Choose your move:"
+    
+    await callback.message.edit_text(
+        f"📝 **DRAFT STAGE ACTIVE** 📝\n"
+        f"───────────────\n"
+        f"Challenger and Opponent, please check your private DMs to draft your **{format_type}** Pokémon!",
+        reply_markup=None
     )
+    await callback.answer()
+    
+    # Send draft menus in DM
+    await send_draft_menu(callback.bot, db, battle.id, challenger_id, page=1)
+    await send_draft_menu(callback.bot, db, battle.id, opponent_id, page=1)
 
-    await callback.message.edit_text(text, reply_markup=get_battle_keyboard(new_battle.id), parse_mode="Markdown")
-    await callback.answer("Duel accepted!")
+async def send_draft_menu(bot: Bot, db: AsyncSession, battle_id: int, user_id: int, page: int = 1, edit_message_id: Optional[int] = None):
+    battle_stmt = select(PvpBattle).where(PvpBattle.id == battle_id)
+    battle_res = await db.execute(battle_stmt)
+    battle = battle_res.scalar_one_or_none()
+    if not battle: return
+        
+    draft_data = json.loads(battle.draft_json)
+    player_role = "challenger" if user_id == battle.challenger_id else "opponent"
+    drafted_count = len(draft_data[player_role]["drafted"])
+    
+    poke_stmt = select(UserPokemon, Pokemon).join(Pokemon).where(UserPokemon.user_id == user_id).order_by(UserPokemon.caught_at.desc())
+    poke_res = await db.execute(poke_stmt)
+    user_pokes = poke_res.all()
+    
+    already_drafted_ids = [d["up_id"] for d in draft_data[player_role]["drafted"]]
+    available_pokes = [t for t in user_pokes if t[0].id not in already_drafted_ids]
+    
+    total_avail = len(available_pokes)
+    page_size = 5
+    total_pages = max(1, (total_avail + page_size - 1) // page_size)
+    
+    if page < 1: page = 1
+    if page > total_pages: page = total_pages
+    
+    start_idx = (page - 1) * page_size
+    end_idx = start_idx + page_size
+    page_pokes = available_pokes[start_idx:end_idx]
+    
+    text = (
+        f"📥 **PVP DRAFT SELECTION** ({drafted_count + 1}/{battle.format_type}) 📥\n"
+        f"───────────────\n"
+        f"Select Pokémon **#{drafted_count + 1}** for your team:\n"
+    )
+    
+    kb_rows = []
+    form_names_button = {
+        0: "Standard",
+        1: "AMV",
+        2: "Dmax",
+        3: "Gmax",
+        4: "Z-Move",
+        5: "Terastal"
+    }
+    
+    for up, p in page_pokes:
+        f_name = form_names_button.get(up.form_index, f"Form {up.form_index}")
+        shiny_tag = "✨ " if up.is_shiny else ""
+        button_text = f"{shiny_tag}{p.name.title()} ({f_name})"
+        kb_rows.append([
+            InlineKeyboardButton(
+                text=button_text,
+                callback_data=f"pvpdraft_sel_{battle_id}_{up.id}"
+            )
+        ])
+        
+    if total_pages > 1:
+        prev_p = page - 1 if page > 1 else total_pages
+        next_p = page + 1 if page < total_pages else 1
+        kb_rows.append([
+            InlineKeyboardButton(text="⬅️ Prev", callback_data=f"pvpdraft_page_{battle_id}_{prev_p}"),
+            InlineKeyboardButton(text=f"{page}/{total_pages}", callback_data="pvpdraft_noop"),
+            InlineKeyboardButton(text="Next ➡️", callback_data=f"pvpdraft_page_{battle_id}_{next_p}")
+        ])
+        
+    reply_markup = InlineKeyboardMarkup(inline_keyboard=kb_rows)
+    
+    if edit_message_id:
+        try:
+            await bot.edit_message_text(
+                text=text,
+                chat_id=user_id,
+                message_id=edit_message_id,
+                reply_markup=reply_markup,
+                parse_mode="Markdown"
+            )
+        except Exception:
+            await bot.send_message(chat_id=user_id, text=text, reply_markup=reply_markup, parse_mode="Markdown")
+    else:
+        await bot.send_message(chat_id=user_id, text=text, reply_markup=reply_markup, parse_mode="Markdown")
+
+@router.callback_query(F.data.startswith("pvpdraft_page_"))
+async def cb_pvpdraft_page(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_")
+    battle_id = int(parts[2])
+    page = int(parts[3])
+    user_id = callback.from_user.id
+    
+    await send_draft_menu(callback.bot, db, battle_id, user_id, page=page, edit_message_id=callback.message.message_id)
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("pvpdraft_sel_"))
+async def cb_pvpdraft_sel(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_")
+    battle_id = int(parts[2])
+    up_id = int(parts[3])
+    user_id = callback.from_user.id
+    
+    battle_stmt = select(PvpBattle).where(PvpBattle.id == battle_id)
+    battle_res = await db.execute(battle_stmt)
+    battle = battle_res.scalar_one_or_none()
+    if not battle or battle.status != "DRAFTING":
+        await callback.answer("⚠️ Battle draft is no longer active.")
+        return
+        
+    draft_data = json.loads(battle.draft_json)
+    player_role = "challenger" if user_id == battle.challenger_id else "opponent"
+    
+    draft_data[player_role]["selecting_up_id"] = up_id
+    battle.draft_json = json.dumps(draft_data)
+    await db.commit()
+    
+    up_stmt = select(UserPokemon, Pokemon).join(Pokemon).where(UserPokemon.id == up_id)
+    up_res = await db.execute(up_stmt)
+    up_data = up_res.first()
+    if not up_data:
+        await callback.answer("⚠️ Pokémon not found.")
+        return
+        
+    up, p = up_data
+    
+    moves = get_pokemon_moves(p.name)
+    kb_rows = []
+    for m in moves:
+        kb_rows.append([
+            InlineKeyboardButton(
+                text=f"{m['name']} (Pwr: {m['power']})",
+                callback_data=f"pvpdraft_mov_{battle_id}_{m['name']}"
+            )
+        ])
+        
+    reply_markup = InlineKeyboardMarkup(inline_keyboard=kb_rows)
+    await callback.message.edit_text(
+        text=f"⚔️ **SELECT MOVE** ⚔️\nSelect a primary move for your **{p.name.title()}**:",
+        reply_markup=reply_markup,
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("pvpdraft_mov_"))
+async def cb_pvpdraft_mov(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_")
+    battle_id = int(parts[2])
+    move_name = parts[3]
+    user_id = callback.from_user.id
+    
+    battle_stmt = select(PvpBattle).where(PvpBattle.id == battle_id)
+    battle_res = await db.execute(battle_stmt)
+    battle = battle_res.scalar_one_or_none()
+    if not battle or battle.status != "DRAFTING":
+        await callback.answer("⚠️ Battle draft is no longer active.")
+        return
+        
+    draft_data = json.loads(battle.draft_json)
+    player_role = "challenger" if user_id == battle.challenger_id else "opponent"
+    
+    up_id = draft_data[player_role]["selecting_up_id"]
+    if not up_id:
+        await callback.answer("⚠️ No active Pokémon selection found.")
+        return
+        
+    up_stmt = select(UserPokemon, Pokemon).join(Pokemon).where(UserPokemon.id == up_id)
+    up_res = await db.execute(up_stmt)
+    up_data = up_res.first()
+    if not up_data:
+        await callback.answer("⚠️ Pokémon details not found.")
+        return
+        
+    up, p = up_data
+    
+    # Calculate stats
+    from services.spawn_system import SpawnSystem
+    spawn_sys = SpawnSystem()
+    p_spec = spawn_sys.monsters_db.get(p.name.lower(), {
+        "base_stats": {"hp": 60, "atk": 60, "def": 60, "spd": 60, "sp_atk": 60, "sp_def": 60}
+    })
+    
+    ivs = {"hp": up.iv_hp, "atk": up.iv_atk, "def": up.iv_def, "spd": up.iv_spd}
+    stats = SpawnSystem.calculate_stats(p_spec["base_stats"], ivs, up.level)
+    max_hp = stats["hp"]
+    
+    drafted_poke = {
+        "up_id": up.id,
+        "pokemon_id": p.id,
+        "name": p.name.title(),
+        "move": move_name,
+        "level": up.level,
+        "hp": max_hp,
+        "max_hp": max_hp,
+        "atk": stats["atk"],
+        "def": stats["def"],
+        "spd": stats["spd"],
+        "image_url": p.image_url
+    }
+    
+    draft_data[player_role]["drafted"].append(drafted_poke)
+    draft_data[player_role]["selecting_up_id"] = None
+    battle.draft_json = json.dumps(draft_data)
+    await db.commit()
+    
+    await callback.answer(f"Added {p.name.title()}!")
+    
+    if len(draft_data[player_role]["drafted"]) >= battle.format_type:
+        await callback.message.edit_text(
+            f"✅ **DRAFT COMPLETED!**\n"
+            f"You have selected all **{battle.format_type}** Pokémon.\n"
+            f"Waiting for your opponent to complete their draft...",
+            reply_markup=None
+        )
+        
+        opponent_role = "opponent" if player_role == "challenger" else "challenger"
+        if len(draft_data[opponent_role]["drafted"]) >= battle.format_type:
+            battle.status = "SIMULATING"
+            await db.commit()
+            
+            asyncio.create_task(run_battle_simulation(callback.bot, battle.id))
+    else:
+        await send_draft_menu(callback.bot, db, battle_id, user_id, page=1, edit_message_id=callback.message.message_id)
+
+async def run_battle_simulation(bot: Bot, battle_id: int):
+    from database.database import SessionLocal
+    async with SessionLocal() as db:
+        battle_stmt = select(PvpBattle).where(PvpBattle.id == battle_id)
+        battle_res = await db.execute(battle_stmt)
+        battle = battle_res.scalar_one_or_none()
+        if not battle: return
+            
+        draft_data = json.loads(battle.draft_json)
+        challenger_id = battle.challenger_id
+        opponent_id = battle.opponent_id
+        chat_id = battle.chat_id
+        message_id = battle.message_id
+        bet = battle.bet
+        format_type = battle.format_type
+        
+        c_stmt = select(User).where(User.id == challenger_id)
+        c_res = await db.execute(c_stmt)
+        challenger = c_res.scalar_one_or_none()
+        
+        o_stmt = select(User).where(User.id == opponent_id)
+        o_res = await db.execute(o_stmt)
+        opponent = o_res.scalar_one_or_none()
+        
+        c_name = escape_md(challenger.nickname or "Challenger")
+        o_name = escape_md(opponent.nickname or "Opponent")
+        
+        if bet > 0:
+            challenger.coins -= bet
+            opponent.coins -= bet
+            await db.commit()
+            
+        c_team = draft_data["challenger"]["drafted"]
+        o_team = draft_data["opponent"]["drafted"]
+        
+        c_team_text = "\n".join([f"• {p['name']} (Move: {p['move']})" for p in c_team])
+        o_team_text = "\n".join([f"• {p['name']} (Move: {p['move']})" for p in o_team])
+        
+        try:
+            await bot.send_message(chat_id=challenger_id, text=f"📋 **OPPONENT'S TEAM:**\n{o_name} sent out:\n{o_team_text}")
+        except Exception: pass
+        try:
+            await bot.send_message(chat_id=opponent_id, text=f"📋 **OPPONENT'S TEAM:**\n{c_name} sent out:\n{c_team_text}")
+        except Exception: pass
+        
+        p1_idx = 0
+        p2_idx = 0
+        logs = ["Battle begins!"]
+        round_num = 1
+        
+        while p1_idx < format_type and p2_idx < format_type:
+            p1_mon = c_team[p1_idx]
+            p2_mon = o_team[p2_idx]
+            
+            p1_first = True
+            if p1_mon["spd"] > p2_mon["spd"]:
+                p1_first = True
+            elif p2_mon["spd"] > p1_mon["spd"]:
+                p1_first = False
+            else:
+                p1_first = random.choice([True, False])
+                
+            async def execute_attack(attacker, defender):
+                move_name = attacker["move"]
+                move_spec = {"power": 80, "accuracy": 0.95}
+                for m in get_pokemon_moves(attacker["name"]):
+                    if m["name"] == move_name:
+                        move_spec = m
+                        break
+                        
+                if random.random() > move_spec["accuracy"]:
+                    return f"💨 {attacker['name']} used **{move_name}** but missed!"
+                    
+                atk_stat = attacker["atk"]
+                def_stat = defender["def"]
+                level = attacker["level"]
+                power = move_spec["power"]
+                
+                crit = random.random() < 0.0625
+                crit_multiplier = 1.5 if crit else 1.0
+                
+                base_damage = (((2 * level / 5 + 2) * power * atk_stat / def_stat / 50) + 2)
+                damage = int(base_damage * crit_multiplier * random.uniform(0.85, 1.0))
+                damage = max(1, damage)
+                
+                defender["hp"] = max(0, defender["hp"] - damage)
+                
+                msg = f"⚔️ {attacker['name']} used **{move_name}**! Deals **{damage}** damage."
+                if crit:
+                    msg = f"💥 **Critical Hit!** {attacker['name']} used **{move_name}**! Deals **{damage}** damage."
+                return msg
+                
+            if p1_first:
+                log = await execute_attack(p1_mon, p2_mon)
+                logs.append(log)
+                if p2_mon["hp"] <= 0:
+                    logs.append(f"💀 **{p2_mon['name']}** fainted!")
+                    p2_idx += 1
+                    if p2_idx < format_type:
+                        logs.append(f"👉 {o_name} sent out **{o_team[p2_idx]['name']}**!")
+                else:
+                    log = await execute_attack(p2_mon, p1_mon)
+                    logs.append(log)
+                    if p1_mon["hp"] <= 0:
+                        logs.append(f"💀 **{p1_mon['name']}** fainted!")
+                        p1_idx += 1
+                        if p1_idx < format_type:
+                            logs.append(f"👉 {c_name} sent out **{c_team[p1_idx]['name']}**!")
+            else:
+                log = await execute_attack(p2_mon, p1_mon)
+                logs.append(log)
+                if p1_mon["hp"] <= 0:
+                    logs.append(f"💀 **{p1_mon['name']}** fainted!")
+                    p1_idx += 1
+                    if p1_idx < format_type:
+                        logs.append(f"👉 {c_name} sent out **{c_team[p1_idx]['name']}**!")
+                else:
+                    log = await execute_attack(p1_mon, p2_mon)
+                    logs.append(log)
+                    if p2_mon["hp"] <= 0:
+                        logs.append(f"💀 **{p2_mon['name']}** fainted!")
+                        p2_idx += 1
+                        if p2_idx < format_type:
+                            logs.append(f"👉 {o_name} sent out **{o_team[p2_idx]['name']}**!")
+                            
+            await render_battle_frame(bot, chat_id, message_id, c_name, o_name, c_team, o_team, p1_idx, p2_idx, logs, round_num)
+            round_num += 1
+            await asyncio.sleep(1.5)
+            
+        winner_id = challenger_id if p1_idx < format_type else opponent_id
+        winner_name = c_name if winner_id == challenger_id else o_name
+        winner_user = challenger if winner_id == challenger_id else opponent
+        
+        if bet > 0:
+            pot = 2 * bet
+            winner_user.coins += pot
+            await db.commit()
+            win_msg = f"🏆 **{winner_name} wins the battle and takes the pot of 🪙 {pot:,} Coins!**"
+        else:
+            win_msg = f"🏆 **{winner_name} wins the friendly battle!**"
+            
+        logs.append(win_msg)
+        await render_battle_frame(bot, chat_id, message_id, c_name, o_name, c_team, o_team, p1_idx, p2_idx, logs, round_num, finished=True)
+        
+        battle.status = "COMPLETED"
+        await db.commit()
+
+async def render_battle_frame(bot: Bot, chat_id: int, message_id: int, c_name: str, o_name: str, c_team: list, o_team: list, p1_idx: int, p2_idx: int, logs: list, round_num: int, finished: bool = False):
+    format_type = len(c_team)
+    
+    c_active = c_team[min(p1_idx, format_type - 1)]
+    o_active = o_team[min(p2_idx, format_type - 1)]
+    
+    c_hp_bar = get_hp_bar_battle(c_active["hp"], c_active["max_hp"])
+    o_hp_bar = get_hp_bar_battle(o_active["hp"], o_active["max_hp"])
+    
+    c_active_status = "💀 Fainted" if p1_idx >= format_type else f"{c_active['name']}"
+    o_active_status = "💀 Fainted" if p2_idx >= format_type else f"{o_active['name']}"
+    
+    c_dots = "".join(["🔴" if i < p1_idx else "🟢" for i in range(format_type)])
+    o_dots = "".join(["🔴" if i < p2_idx else "🟢" for i in range(format_type)])
+    
+    scroll_logs = logs[-4:]
+    log_text = "\n".join(scroll_logs)
+    
+    title = "⚔️ **PVP BATTLE IN PROGRESS** ⚔️" if not finished else "🏁 **PVP BATTLE FINISHED** 🏁"
+    
+    text = (
+        f"{title}\n"
+        f"───────────────\n"
+        f"👤 **{c_name}** {c_dots}\n"
+        f"⭐ Active: **{c_active_status}**\n"
+        f"HP: {c_hp_bar}\n"
+        f"───────────────\n"
+        f"👤 **{o_name}** {o_dots}\n"
+        f"⭐ Active: **{o_active_status}**\n"
+        f"HP: {o_hp_bar}\n"
+        f"───────────────\n"
+        f"📜 **Battle Logs (Turn {round_num})**:\n"
+        f"{log_text}\n"
+        f"───────────────"
+    )
+    
+    try:
+        await bot.edit_message_text(
+            text=text,
+            chat_id=chat_id,
+            message_id=message_id,
+            parse_mode="Markdown"
+        )
+    except Exception:
+        pass

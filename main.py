@@ -21,7 +21,7 @@ from handlers import (
     games,
     shop,
     trade,
-    hunt,
+    battle,
     xo,
     redeem,
     mines
@@ -175,7 +175,7 @@ async def main():
     dp.include_router(games.router)
     dp.include_router(shop.router)
     dp.include_router(trade.router)
-    dp.include_router(hunt.router)
+    dp.include_router(battle.router)
     dp.include_router(xo.router)
     dp.include_router(redeem.router)
     dp.include_router(mines.router)

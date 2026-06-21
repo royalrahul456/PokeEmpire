@@ -19,10 +19,6 @@ def get_dm_menu_keyboard() -> InlineKeyboardMarkup:
     )
     builder.row(
         InlineKeyboardButton(text="🔄 Trade", callback_data="dm_trade_info"),
-        InlineKeyboardButton(text="🏹 Hunt", callback_data="dm_hunt_info")
-    )
-    builder.row(
-        InlineKeyboardButton(text="🛡️ Clan", callback_data="dm_clan_menu"),
         InlineKeyboardButton(text="🎁 Redeem", callback_data="dm_redeem_info")
     )
     builder.row(

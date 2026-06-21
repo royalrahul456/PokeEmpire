@@ -20,33 +20,58 @@ async def get_player_cover_media(user_id: int, db: AsyncSession) -> tuple[str, s
     from utils.favorite import get_favorite_id
     from utils.settings import get_custom_cover
     
-    fav_id = get_favorite_id(user_id)
+    fav_val = get_favorite_id(user_id)
     media_type = None
     media_value = None
     
-    if fav_id:
-        # Check if they own an AMV version of this favorite species
-        amv_stmt = select(UserPokemon.is_amv).where(
-            UserPokemon.pokemon_id == fav_id,
-            UserPokemon.user_id == user_id,
-            UserPokemon.is_amv == True
-        ).limit(1)
-        amv_res = await db.execute(amv_stmt)
-        has_amv = amv_res.scalar() is not None
-        
-        # Get Pokemon details
-        poke_stmt = select(Pokemon).where(Pokemon.id == fav_id)
-        poke_res = await db.execute(poke_stmt)
-        pokemon = poke_res.scalar_one_or_none()
-        
-        if pokemon:
-            if has_amv and pokemon.video_url:
-                media_type = "video"
-                media_value = pokemon.video_url
-            else:
-                media_type = "photo"
-                media_value = pokemon.image_url
+    if fav_val:
+        pokemon_id = None
+        form_index = 0
+        if "." in fav_val:
+            pq, fq = fav_val.split(".", 1)
+            if pq.isdigit() and fq.isdigit():
+                pokemon_id = int(pq)
+                form_index = int(fq)
+        elif fav_val.isdigit():
+            pokemon_id = int(fav_val)
+            
+        if pokemon_id:
+            # Check if they own this species
+            stmt = select(UserPokemon).where(
+                UserPokemon.pokemon_id == pokemon_id,
+                UserPokemon.user_id == user_id
+            ).limit(1)
+            res = await db.execute(stmt)
+            owned = res.scalar() is not None
+            
+            if owned:
+                poke_stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
+                poke_res = await db.execute(poke_stmt)
+                pokemon = poke_res.scalar_one_or_none()
                 
+                if pokemon:
+                    if form_index == 0:
+                        media_type = "photo"
+                        media_value = pokemon.image_url
+                    else:
+                        from database.models import PokemonFormMedia
+                        media_stmt = select(PokemonFormMedia.media_value).where(
+                            PokemonFormMedia.pokemon_id == pokemon_id,
+                            PokemonFormMedia.form_index == form_index
+                        ).limit(1)
+                        media_res = await db.execute(media_stmt)
+                        media_val_db = media_res.scalar()
+                        
+                        if media_val_db:
+                            if ":" in media_val_db:
+                                mtype, mval = media_val_db.split(":", 1)
+                                if mtype in ["photo", "video", "animation"]:
+                                    media_type = mtype
+                                    media_value = mval
+                            else:
+                                media_type = "video"
+                                media_value = media_val_db
+                                
     if not media_value:
         # Fallback 1: Random Pokémon from their bag
         rand_stmt = select(UserPokemon).options(joinedload(UserPokemon.pokemon)).where(
@@ -55,10 +80,26 @@ async def get_player_cover_media(user_id: int, db: AsyncSession) -> tuple[str, s
         rand_res = await db.execute(rand_stmt)
         up = rand_res.scalar_one_or_none()
         if up and up.pokemon:
-            if up.is_amv and up.pokemon.video_url:
-                media_type = "video"
-                media_value = up.pokemon.video_url
-            else:
+            if up.form_index > 0:
+                from database.models import PokemonFormMedia
+                media_stmt = select(PokemonFormMedia.media_value).where(
+                    PokemonFormMedia.pokemon_id == up.pokemon_id,
+                    PokemonFormMedia.form_index == up.form_index
+                ).limit(1)
+                media_res = await db.execute(media_stmt)
+                media_val_db = media_res.scalar()
+                
+                if media_val_db:
+                    if ":" in media_val_db:
+                        mtype, mval = media_val_db.split(":", 1)
+                        if mtype in ["photo", "video", "animation"]:
+                            media_type = mtype
+                            media_value = mval
+                    else:
+                        media_type = "video"
+                        media_value = media_val_db
+            
+            if not media_value:
                 media_type = "photo"
                 media_value = up.pokemon.image_url
                 
@@ -610,8 +651,16 @@ async def cb_check_page(callback: CallbackQuery, db: AsyncSession):
 
 
 async def check_pokemon_variants(message: Message, db: AsyncSession, query: str, page: int = 1, edit: bool = False):
-    if query.isdigit():
-        poke_stmt = select(Pokemon).where(Pokemon.id == int(query))
+    pokemon_id = None
+    if "." in query:
+        pq, fq = query.split(".", 1)
+        if pq.isdigit():
+            pokemon_id = int(pq)
+    elif query.isdigit():
+        pokemon_id = int(query)
+        
+    if pokemon_id is not None:
+        poke_stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
     else:
         poke_stmt = select(Pokemon).where(Pokemon.name.ilike(query))
 
@@ -795,31 +844,53 @@ async def cb_leaderboard_type(callback: CallbackQuery, db: AsyncSession):
 async def cmd_fav(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     parts = message.text.split()
-    if len(parts) < 2 or not parts[1].isdigit():
-        await message.answer("⚠️ Format: `/fav <pokedex_id>`\n(e.g., `/fav 251` to set Celebi as your favorite)")
+    if len(parts) < 2:
+        await message.answer("⚠️ Format: `/fav <pokedex_id>[.form_index]`\n(e.g., `/fav 251` or `/fav 6.1` to set Charizard AMV as your favorite cover)")
+        return
+        
+    fav_str = parts[1].strip()
+    pokemon_id = None
+    form_index = 0
+    if "." in fav_str:
+        pq, fq = fav_str.split(".", 1)
+        if pq.isdigit() and fq.isdigit():
+            pokemon_id = int(pq)
+            form_index = int(fq)
+    elif fav_str.isdigit():
+        pokemon_id = int(fav_str)
+        
+    if pokemon_id is None:
+        await message.answer("⚠️ Format: `/fav <pokedex_id>[.form_index]`\n(e.g., `/fav 251` or `/fav 6.1` to set Charizard AMV as your favorite cover)")
         return
     
-    pokedex_id = int(parts[1])
-    
-    # Verify user owns at least one Pokémon of this species
-    stmt = select(UserPokemon).options(joinedload(UserPokemon.pokemon)).where(
-        UserPokemon.pokemon_id == pokedex_id,
-        UserPokemon.user_id == user_id
-    ).limit(1)
+    # Verify user owns at least one Pokémon of this species/form
+    if form_index > 0:
+        stmt = select(UserPokemon).options(joinedload(UserPokemon.pokemon)).where(
+            UserPokemon.pokemon_id == pokemon_id,
+            UserPokemon.user_id == user_id,
+            UserPokemon.form_index == form_index
+        ).limit(1)
+    else:
+        stmt = select(UserPokemon).options(joinedload(UserPokemon.pokemon)).where(
+            UserPokemon.pokemon_id == pokemon_id,
+            UserPokemon.user_id == user_id
+        ).limit(1)
+        
     res = await db.execute(stmt)
     up = res.scalar()
     
     if not up:
-        await message.answer("❌ You don't own a Pokémon with that Pokédex ID in your collection!")
+        form_suffix = f" (Form {form_index})" if form_index > 0 else ""
+        await message.answer(f"❌ You don't own a Pokémon with that Pokédex ID{form_suffix} in your collection!")
         return
         
     p = up.pokemon
     from utils.favorite import set_favorite_id
-    set_favorite_id(user_id, pokedex_id)
+    set_favorite_id(user_id, fav_str)
     
     # Check if they own any shiny version of this species
     shiny_stmt = select(UserPokemon.is_shiny).where(
-        UserPokemon.pokemon_id == pokedex_id,
+        UserPokemon.pokemon_id == pokemon_id,
         UserPokemon.user_id == user_id,
         UserPokemon.is_shiny == True
     ).limit(1)
@@ -827,7 +898,8 @@ async def cmd_fav(message: Message, db: AsyncSession):
     has_shiny = shiny_res.scalar() is not None
     
     shiny_tag = "✨ Shiny " if has_shiny else ""
-    await message.answer(f"⭐ **{shiny_tag}{p.name.title()}** (Pokédex ID: #{pokedex_id:03d}) has been set as your Pokédex cover favorite!")
+    form_suffix = f" (Form {form_index})" if form_index > 0 else ""
+    await message.answer(f"🌟 <b>{shiny_tag}{p.name.title()}</b>{form_suffix} (Pokédex ID: {fav_str}) has been set as your Pokédex cover favorite!", parse_mode="HTML")
 
 @router.message(Command("unfav"))
 async def cmd_unfav(message: Message):
@@ -842,14 +914,24 @@ async def cmd_search(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     parts = message.text.split()
     if len(parts) < 2:
-        await message.answer("⚠️ Format: `/search <pokemon_name_or_id>`\n(e.g., `/search bulbasaur` or `/search 1`)")
+        await message.answer("⚠️ Format: `/search <pokemon_name_or_id>[.form_index]`\n(e.g., `/search bulbasaur` or `/search 6.1`)")
         return
         
     query = " ".join(parts[1:]).strip().lower()
     
+    pokemon_id = None
+    form_filter = None
+    if "." in query:
+        pq, fq = query.split(".", 1)
+        if pq.isdigit() and fq.isdigit():
+            pokemon_id = int(pq)
+            form_filter = int(fq)
+    elif query.isdigit():
+        pokemon_id = int(query)
+        
     # Query species
-    if query.isdigit():
-        poke_stmt = select(Pokemon).where(Pokemon.id == int(query))
+    if pokemon_id is not None:
+        poke_stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
     else:
         poke_stmt = select(Pokemon).where(Pokemon.name.ilike(query))
         
@@ -860,11 +942,19 @@ async def cmd_search(message: Message, db: AsyncSession):
         await message.answer(f"❌ Pokémon '{escape_md(query)}' not found in database.")
         return
         
-    # Query player's own catches of this species
-    catches_stmt = select(UserPokemon).where(
-        UserPokemon.user_id == user_id,
-        UserPokemon.pokemon_id == pokemon.id
-    ).order_by(UserPokemon.caught_at.desc())
+    # Query player's own catches of this species (applying form filter if provided)
+    if form_filter is not None:
+        catches_stmt = select(UserPokemon).where(
+            UserPokemon.user_id == user_id,
+            UserPokemon.pokemon_id == pokemon.id,
+            UserPokemon.form_index == form_filter
+        ).order_by(UserPokemon.caught_at.desc())
+    else:
+        catches_stmt = select(UserPokemon).where(
+            UserPokemon.user_id == user_id,
+            UserPokemon.pokemon_id == pokemon.id
+        ).order_by(UserPokemon.caught_at.desc())
+        
     catches_res = await db.execute(catches_stmt)
     user_catches = catches_res.scalars().all()
     
@@ -896,6 +986,8 @@ async def cmd_search(message: Message, db: AsyncSession):
         }
         best_form_name = form_names_search.get(best_up.form_index, f"Form {best_up.form_index}")
         shiny_label = "✨ Yes" if best_up.is_shiny else "❌ No"
+        
+        form_suffix = f" (Form {form_filter})" if form_filter is not None else ""
         text = (
             f"{cover_link}"
             f"🔍 **SEARCH RESULTS** 🔍\n"
@@ -903,13 +995,14 @@ async def cmd_search(message: Message, db: AsyncSession):
             f"🎉 Species: {r_emoji} **{pokemon.name.title()}** {r_emoji}\n"
             f"🆔 Pokédex ID: `#{pokemon.id:03d}`\n"
             f"⭐ Rarity: `{pokemon.rarity}`\n"
-            f"🧬 Total Caught: `{len(user_catches)} caught`\n\n"
+            f"🧬 Total Caught{form_suffix}: `{len(user_catches)} caught`\n\n"
             f"🏆 **Your Best Pokémon**:\n"
             f"• Form: `{best_form_name} | ID: {pokemon.id}.{best_up.form_index}`\n"
             f"• Shiny: `{shiny_label}`\n"
             f"───────────────"
         )
     else:
+        form_suffix = f" of Form {form_filter}" if form_filter is not None else ""
         text = (
             f"{cover_link}"
             f"🔍 **SEARCH RESULTS** 🔍\n"
@@ -917,7 +1010,7 @@ async def cmd_search(message: Message, db: AsyncSession):
             f"🎉 Species: {r_emoji} **{pokemon.name.title()}** {r_emoji}\n"
             f"🆔 Pokédex ID: `#{pokemon.id:03d}`\n"
             f"⭐ Rarity: `{pokemon.rarity}`\n"
-            f"🧬 Total Caught: `0 caught` (You haven't caught this species yet!)\n"
+            f"🧬 Total Caught: `0 caught` (You haven't caught this species{form_suffix} yet!)\n"
             f"───────────────"
         )
         
@@ -1459,7 +1552,8 @@ async def cmd_gift(message: Message, db: AsyncSession):
     remain_res = await db.execute(remain_stmt)
     if remain_res.scalar() is None:
         from utils.favorite import get_favorite_id, set_favorite_id
-        if get_favorite_id(old_user_id) == pokedex_id:
+        fav_val = get_favorite_id(old_user_id)
+        if fav_val and (fav_val == str(pokedex_id) or fav_val.startswith(f"{pokedex_id}.")):
             set_favorite_id(old_user_id, None)
             
     await db.commit()

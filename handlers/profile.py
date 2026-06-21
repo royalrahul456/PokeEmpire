@@ -29,9 +29,22 @@ FORM_LABELS = {
     5: "Terastal",
 }
 
-FORM_FILTER_LABELS = {
-    "AMV": "AMV / Art",
-}
+def parse_form_filter(form_str: str) -> int | None:
+    form_str = form_str.strip().lower()
+    if form_str.isdigit():
+        return int(form_str)
+    mapping = {
+        "amv": 1,
+        "art": 1,
+        "dmax": 2,
+        "gmax": 3,
+        "z-move": 4,
+        "zmove": 4,
+        "z": 4,
+        "terastal": 5,
+        "tera": 5,
+    }
+    return mapping.get(form_str)
 
 
 def get_filter_display_label(rarity_filter: str) -> str:
@@ -896,23 +909,30 @@ async def cb_check_page(callback: CallbackQuery, db: AsyncSession):
 
 async def check_pokemon_variants(message: Message, db: AsyncSession, query: str, page: int = 1, edit: bool = False):
     pokemon_id = None
+    pokemon_name_query = None
     if "." in query:
         pq, fq = query.split(".", 1)
+        pq = pq.strip()
         if pq.isdigit():
             pokemon_id = int(pq)
+        else:
+            pokemon_name_query = pq
     elif query.isdigit():
         pokemon_id = int(query)
+    else:
+        pokemon_name_query = query
 
     if pokemon_id is not None:
         poke_stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
     else:
-        poke_stmt = select(Pokemon).where(Pokemon.name.ilike(query))
+        poke_stmt = select(Pokemon).where(Pokemon.name.ilike(pokemon_name_query))
 
     poke_res = await db.execute(poke_stmt)
     pokemon = poke_res.scalar_one_or_none()
 
     if not pokemon:
-        text = f"Pokemon '{escape_md(query)}' not found in database."
+        searched_term = pokemon_name_query if pokemon_name_query else str(pokemon_id)
+        text = f"Pokemon '{escape_md(searched_term)}' not found in database."
         if edit:
             await message.edit_text(text)
         else:
@@ -1169,6 +1189,13 @@ async def build_search_result_payload(user_id: int, pokemon: Pokemon, form_filte
     media_value = pokemon.image_url
     pokemon_name = escape_md(pokemon.name.title())
 
+    # If the user requested a specific form filter, show that form's media directly if available
+    if form_filter is not None and requested_form_media:
+        resolved_media_type, resolved_media_value = parse_stored_media_value(requested_form_media)
+        if resolved_media_value:
+            media_type = resolved_media_type
+            media_value = resolved_media_value
+
     if user_catches:
         best_up = None
         best_iv_pct = -1
@@ -1179,13 +1206,15 @@ async def build_search_result_payload(user_id: int, pokemon: Pokemon, form_filte
                 best_iv_pct = iv_pct
                 best_up = up
 
-        best_form_media = None
-        if best_up and best_up.form_index > 0:
-            best_form_media = await get_single_form_media_value(db, pokemon.id, best_up.form_index)
-            resolved_media_type, resolved_media_value = parse_stored_media_value(best_form_media)
-            if resolved_media_value:
-                media_type = resolved_media_type
-                media_value = resolved_media_value
+        # Only override with best catch media if no specific form filter was requested
+        if form_filter is None:
+            best_form_media = None
+            if best_up and best_up.form_index > 0:
+                best_form_media = await get_single_form_media_value(db, pokemon.id, best_up.form_index)
+                resolved_media_type, resolved_media_value = parse_stored_media_value(best_form_media)
+                if resolved_media_value:
+                    media_type = resolved_media_type
+                    media_value = resolved_media_value
 
         best_form_label = get_form_label(best_up.form_index, best_form_media)
         best_form_id = f"{pokemon.id}.{best_up.form_index}" if best_up.form_index > 0 else str(pokemon.id)
@@ -1282,24 +1311,36 @@ async def cmd_search(message: Message, db: AsyncSession):
 
     pokemon_id = None
     form_filter = None
+    pokemon_name_query = None
+
     if "." in query:
         pq, fq = query.split(".", 1)
-        if pq.isdigit() and fq.isdigit():
+        pq = pq.strip()
+        fq = fq.strip()
+        
+        if pq.isdigit():
             pokemon_id = int(pq)
-            form_filter = int(fq)
-    elif query.isdigit():
-        pokemon_id = int(query)
+        else:
+            pokemon_name_query = pq
+            
+        form_filter = parse_form_filter(fq)
+    else:
+        if query.isdigit():
+            pokemon_id = int(query)
+        else:
+            pokemon_name_query = query
 
     if pokemon_id is not None:
         poke_stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
     else:
-        poke_stmt = select(Pokemon).where(Pokemon.name.ilike(query))
+        poke_stmt = select(Pokemon).where(Pokemon.name.ilike(pokemon_name_query))
 
     poke_res = await db.execute(poke_stmt)
     pokemon = poke_res.scalar_one_or_none()
 
     if not pokemon:
-        await message.answer(f"Pokemon '{escape_md(query)}' not found in database.", parse_mode="Markdown")
+        searched_term = pokemon_name_query if pokemon_name_query else str(pokemon_id)
+        await message.answer(f"Pokemon '{escape_md(searched_term)}' not found in database.", parse_mode="Markdown")
         return
 
     await send_search_result_message(message, user_id, pokemon, form_filter, db)

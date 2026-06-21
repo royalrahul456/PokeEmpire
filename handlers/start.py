@@ -365,139 +365,64 @@ async def cb_dm_help(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("dm_dex_"))
 async def cb_dm_dex(callback: CallbackQuery, db: AsyncSession):
     user_id = callback.from_user.id
-    
-    # Parse page number
+
     try:
         page = int(callback.data.split("_")[2])
     except (IndexError, ValueError):
         page = 1
 
-    # Count total species in database
-    total_stmt = select(func.count(Pokemon.id))
-    total_res = await db.execute(total_stmt)
-    total_species = total_res.scalar() or 1
-
-    # Count unique species caught by user
-    caught_count_stmt = select(func.count(distinct(UserPokemon.pokemon_id))).where(UserPokemon.user_id == user_id)
-    caught_count_res = await db.execute(caught_count_stmt)
-    caught_count = caught_count_res.scalar() or 0
-
-    # Get nickname
     u_stmt = select(User).where(User.id == user_id)
     u_res = await db.execute(u_stmt)
     user = u_res.scalar_one_or_none()
     nickname = user.nickname if (user and user.nickname) else (callback.from_user.first_name or "Trainer")
 
-    if caught_count == 0:
-        text = (
-            f"👑 **{escape_md(nickname)}'s Pokédex** 👑\n"
-            f"───────────────\n\n"
-            f"⚠️ **Your Pokédex is empty!**\n"
-            f"Catch wild Pokémon in a group chat first to register them in your Pokédex."
-        )
-        await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    from handlers.profile import get_pokedex_data, get_player_cover_media
+    text, final_page, max_page = await get_pokedex_data(user_id, nickname, page, "All", db)
+
+    if max_page == 0:
+        await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
         await callback.answer()
         return
 
-    per_page = 15
-    max_page = (caught_count + per_page - 1) // per_page
-    if page < 1: page = 1
-    if page > max_page: page = max_page
+    media_type, media_value = await get_player_cover_media(user_id, db)
 
-    offset = (page - 1) * per_page
+    from aiogram.types import FSInputFile, InputMediaAnimation, InputMediaPhoto, InputMediaVideo
+    if isinstance(media_value, str):
+        import os
+        if os.path.exists(media_value):
+            media_value = FSInputFile(media_value)
 
-    # Query unique caught species sorted by ID for the current page
-    poke_stmt = (
-        select(
-            Pokemon,
-            func.count(UserPokemon.id).label("total_caught"),
-            func.max(case((UserPokemon.is_shiny == True, 1), else_=0)).label("has_shiny")
-        )
-        .join(UserPokemon)
-        .where(UserPokemon.user_id == user_id)
-        .group_by(Pokemon.id)
-        .order_by(Pokemon.id)
-        .offset(offset)
-        .limit(per_page)
-    )
-    poke_res = await db.execute(poke_stmt)
-    pairs = poke_res.all()
-
-    # Query stats per generation
-    gen_stats_stmt = (
-        select(Pokemon.generation, func.count(distinct(UserPokemon.pokemon_id)))
-        .join(UserPokemon)
-        .where(UserPokemon.user_id == user_id)
-        .group_by(Pokemon.generation)
-    )
-    gen_stats_res = await db.execute(gen_stats_stmt)
-    gen_stats = {gen: count for gen, count in gen_stats_res.all()}
-
-    gen_totals_stmt = select(Pokemon.generation, func.count(Pokemon.id)).group_by(Pokemon.generation)
-    gen_totals_res = await db.execute(gen_totals_stmt)
-    gen_totals = {gen: count for gen, count in gen_totals_res.all()}
-
-    # Determine Pokedex Cover Image
-    from utils.favorite import get_favorite_id
-    fav_id = get_favorite_id(user_id)
-    cover_image = None
-    if fav_id:
-        fav_stmt = select(Pokemon.image_url).join(UserPokemon, UserPokemon.pokemon_id == Pokemon.id).where(Pokemon.id == fav_id, UserPokemon.user_id == user_id)
-        fav_res = await db.execute(fav_stmt)
-        cover_image = fav_res.scalar_one_or_none()
-    
-    if not cover_image:
-        rand_stmt = select(Pokemon.image_url).join(UserPokemon, UserPokemon.pokemon_id == Pokemon.id).where(UserPokemon.user_id == user_id).order_by(func.random()).limit(1)
-        rand_res = await db.execute(rand_stmt)
-        cover_image = rand_res.scalar_one_or_none()
-
-    percent = int((caught_count / total_species) * 100)
-    bar = get_progress_bar(caught_count, total_species, 10, fill_char="█", empty_char="░")
-
-    cover_link = f"[​]({cover_image})" if cover_image else ""
-    text = (
-        f"{cover_link}"
-        f"👑 **{escape_md(nickname)}'s Pokédex** 👑 — Page {page}/{max_page}\n"
-        f"Completion: **{caught_count}/{total_species}** species (**{percent}%**)\n"
-        f"`[{bar}]` 🔴\n"
-        f"───────────────\n"
-    )
-
-    current_gen = None
-    rarity_badges = {
-        "Common": "⚪️",
-        "Rare": "🔵",
-        "Epic": "🟣",
-        "Legendary": "🟡",
-        "Mythical": "🌌"
-    }
-
-    for p, total, has_shiny in pairs:
-        if p.generation != current_gen:
-            current_gen = p.generation
-            text += f"\n**Generation {current_gen}** {gen_stats.get(current_gen, 0)}/{gen_totals.get(current_gen, 0)}\n"
-            
-        badge = rarity_badges.get(p.rarity, "⚪️")
-        shiny_tag = " [✨]" if has_shiny else ""
-        text += f"◈⌠{badge}⌡ #{p.id:03d} {p.name.title()}{shiny_tag} ×{total}\n"
-
-    from aiogram.types import InputMediaPhoto
     try:
+        if media_type == "video":
+            media = InputMediaVideo(media=media_value, caption=text, parse_mode="HTML")
+        elif media_type == "animation":
+            media = InputMediaAnimation(media=media_value, caption=text, parse_mode="HTML")
+        else:
+            media = InputMediaPhoto(media=media_value, caption=text, parse_mode="HTML")
+
         await callback.message.edit_media(
-            media=InputMediaPhoto(media=cover_image or "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/890.png", caption=text, parse_mode="Markdown"),
-            reply_markup=get_dex_pagination_keyboard(page, max_page)
+            media=media,
+            reply_markup=get_dex_pagination_keyboard(final_page, max_page)
         )
     except Exception as e:
         print(f"Error in cb_dm_dex edit_media: {e}")
         try:
-            await callback.message.edit_caption(caption=text, reply_markup=get_dex_pagination_keyboard(page, max_page), parse_mode="Markdown")
+            await callback.message.edit_caption(
+                caption=text,
+                reply_markup=get_dex_pagination_keyboard(final_page, max_page),
+                parse_mode="HTML"
+            )
         except Exception:
             try:
-                await callback.message.edit_text(text, reply_markup=get_dex_pagination_keyboard(page, max_page), parse_mode="Markdown")
+                await callback.message.edit_text(
+                    text,
+                    reply_markup=get_dex_pagination_keyboard(final_page, max_page),
+                    parse_mode="HTML"
+                )
             except Exception:
                 pass
-    await callback.answer()
 
+    await callback.answer()
 @router.callback_query(F.data.startswith("dm_bag_"))
 async def cb_dm_bag(callback: CallbackQuery, db: AsyncSession):
     text = (
@@ -1069,4 +994,5 @@ async def cb_adm_toggle_nameguess(callback: CallbackQuery, db: AsyncSession):
     await set_nameguess_status(chat_id, not curr)
     await callback.answer(f"Nameguess {'enabled' if not curr else 'disabled'}.")
     await refresh_admin_console(callback, chat_id, db)
+
 

@@ -1,4 +1,5 @@
 import os
+import html
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -102,7 +103,7 @@ async def send_player_cover(chat_id: int, user_id: int, caption: str, reply_mark
         else:
             return await bot.send_message(chat_id, caption, reply_markup=reply_markup, parse_mode="HTML")
 
-async def edit_player_cover_message(callback: CallbackQuery, user_id: int, caption: str, reply_markup, db: AsyncSession, parse_mode="Markdown"):
+async def edit_player_cover_message(callback: CallbackQuery, user_id: int, caption: str, reply_markup, db: AsyncSession, parse_mode="HTML"):
     media_type, media_value = await get_player_cover_media(user_id, db)
     from aiogram.types import InputMediaPhoto, InputMediaVideo
     try:
@@ -253,9 +254,9 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
     if caught_count == 0:
         filter_str = f" ({rarity_filter})" if rarity_filter and rarity_filter != "All" else ""
         text = (
-            f"⭐ **{escape_md(nickname)}'s Pokédex** ⭐{filter_str}\n"
+            f"🌟 <b>{html.escape(nickname)}'s Pokédex</b> 🌟{filter_str}\n"
             f"───────────────\n\n"
-            f"⚠️ **Your Pokédex is empty!**\n"
+            f"⚠️ <b>Your Pokédex is empty!</b>\n"
             f"Catch wild Pokémon in a group chat first to register them in your Pokédex."
         )
         return text, 0, 0
@@ -341,35 +342,16 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
             owned_species_forms[pid] = set()
         owned_species_forms[pid].add(fidx)
 
-    # Fetch Trainer Cover Favorite ID
-    from utils.favorite import get_favorite_id
-    fav_id = get_favorite_id(user_id)
-    fav_str = ""
-    if fav_id:
-        fav_stmt = select(Pokemon).where(Pokemon.id == fav_id)
-        fav_res = await db.execute(fav_stmt)
-        fav_poke = fav_res.scalar_one_or_none()
-        if fav_poke:
-            fav_str = f"💖 Cover Fav: **{fav_poke.name.title()}** (`#{fav_poke.id:03d}`)\n"
-
-    percent = int((caught_count / total_species) * 100)
-    bar = get_progress_bar(caught_count, total_species, 10, fill_char="█", empty_char="░")
-
+    # 5. Build header caption text (no extra stars, no progress bar, matching mockup)
     filter_label = f" ({rarity_filter})" if rarity_filter and rarity_filter != "All" else ""
-    text = (
-        f"⭐ **{escape_md(nickname)}'s Pokédex** ⭐{filter_label} — Page {page}/{max_page}\n"
-        f"{fav_str}"
-        f"Completion: **{caught_count}/{total_species}** species (**{percent}%**)\n"
-        f"`[{bar}]` 🔴\n"
-        f"───────────────\n"
-    )
+    text = f"🌟 <b>{html.escape(nickname)}'s Pokédex</b> 🌟{filter_label} — Page {page}/{max_page}\n"
 
     current_gen = None
     rarity_badges = {
         "Common": "⚪️",
-        "Rare": "🔵",
-        "Epic": "🟣",
-        "Legendary": "🟡",
+        "Rare": "🟣",
+        "Epic": "🔮",
+        "Legendary": "🌟",
         "Mythical": "🌌"
     }
 
@@ -377,14 +359,18 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
         1: "🎬",
         2: "⚡",
         3: "💥",
-        4: "🌟",
-        5: "💎"
+        4: "🌀",
+        5: "🔮"
     }
 
+    first_group = True
     for p, total, has_shiny in pairs:
         if p.generation != current_gen:
             current_gen = p.generation
-            text += f"\n**Generation {current_gen}** {gen_stats.get(current_gen, 0)}/{gen_totals.get(current_gen, 0)}\n"
+            if not first_group:
+                text += "\n"
+            first_group = False
+            text += f"Generation {current_gen} {gen_stats.get(current_gen, 0)}/{gen_totals.get(current_gen, 0)}\n"
             
         badge = rarity_badges.get(p.rarity, "⚪️")
         shiny_tag = " [✨]" if has_shiny else ""
@@ -394,30 +380,32 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
         if form_tag:
             form_tag = f" [{form_tag}]"
             
-        text += f"◆ [ {badge} ] #{p.id:03d} {p.name.title()}{shiny_tag}{form_tag} x{total}\n"
+        text += f"◆ [ {badge} ] {p.id} {p.name.title()}{shiny_tag}{form_tag} ×{total}\n"
 
-    text += "\n───────────────"
     return text, page, max_page
 
 def get_pokedex_keyboard(user_id: int, page: int, max_page: int, rarity_filter: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     
-    # Row 1: Tab Switches
+    # Row 1: Tab Switches (Clean, no extra stars, matching mockup)
     builder.row(
-        InlineKeyboardButton(text="⭐ Collection", callback_data=f"pd_tab_{user_id}_col"),
-        InlineKeyboardButton(text="🖼️ Cover Info", callback_data=f"pd_tab_{user_id}_cov")
+        InlineKeyboardButton(text="Collection", callback_data=f"pd_tab_{user_id}_col"),
+        InlineKeyboardButton(text="💟 AMV", callback_data=f"pd_tab_{user_id}_cov")
     )
     
-    # Row 2: Pagination Buttons
-    prev_page = page - 1 if page > 1 else max_page
-    next_page = page + 1 if page < max_page else 1
-    
-    builder.row(
-        InlineKeyboardButton(text="⬅️", callback_data=f"pd_page_{user_id}_{prev_page}_{rarity_filter}"),
-        InlineKeyboardButton(text=f"{page}/{max_page}", callback_data="pd_page_info"),
-        InlineKeyboardButton(text="➡️", callback_data=f"pd_page_{user_id}_{next_page}_{rarity_filter}")
-    )
-    
+    # Row 2: Dynamic Pagination Buttons (no wrapping, only show arrows if next/prev page exists)
+    if max_page > 1:
+        nav_row = []
+        if page > 1:
+            nav_row.append(InlineKeyboardButton(text="⬅️", callback_data=f"pd_page_{user_id}_{page-1}_{rarity_filter}"))
+        
+        nav_row.append(InlineKeyboardButton(text=f"{page}/{max_page}", callback_data="pd_page_info_noop"))
+        
+        if page < max_page:
+            nav_row.append(InlineKeyboardButton(text="➡️", callback_data=f"pd_page_{user_id}_{page+1}_{rarity_filter}"))
+            
+        builder.row(*nav_row)
+        
     # Row 3: Filter by Rarity Button
     builder.row(
         InlineKeyboardButton(text="🔍 Filter by Rarity", callback_data=f"pd_rarity_{user_id}_{page}_{rarity_filter}")
@@ -469,7 +457,7 @@ async def cmd_pokedex(message: Message, db: AsyncSession):
     text, final_page, max_page = await get_pokedex_data(user_id, nickname, page, "All", db)
     
     if max_page == 0:
-        await message.answer(text, parse_mode="Markdown")
+        await message.answer(text, parse_mode="HTML")
         return
 
     kb = get_pokedex_keyboard(user_id, final_page, max_page, "All")
@@ -495,17 +483,17 @@ async def cb_pokedex_tab(callback: CallbackQuery, db: AsyncSession):
         
     if tab == "cov":
         text = (
-            f"🖼️ **Pokédex Cover Favorite**\n"
+            f"🖼️ <b>Pokédex Cover Favorite</b>\n"
             f"───────────────\n\n"
             f"Set your favorite Pokémon as the Pokédex cover illustration!\n\n"
-            f"👉 **How to set**: Type `/fav <pokedex_id>` in chat.\n"
-            f"*(e.g., `/fav 251` to set Celebi as cover)*"
+            f"👉 <b>How to set</b>: Type <code>/fav &lt;pokedex_id&gt;</code> in chat.\n"
+            f"<i>(e.g., <code>/fav 251</code> to set Celebi as cover)</i>"
         )
         builder = InlineKeyboardBuilder()
         builder.row(InlineKeyboardButton(text="🔙 Back to Collection", callback_data=f"pd_page_{user_id}_1_All"))
         
         try:
-            await callback.message.edit_caption(caption=text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+            await callback.message.edit_caption(caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
         except Exception:
             pass
         await callback.answer()
@@ -519,7 +507,7 @@ async def cb_pokedex_tab(callback: CallbackQuery, db: AsyncSession):
         text, final_page, max_page = await get_pokedex_data(user_id, nickname, 1, "All", db)
         kb = get_pokedex_keyboard(user_id, final_page, max_page, "All")
         
-        await edit_player_cover_message(callback, user_id, text, kb, db, parse_mode="Markdown")
+        await edit_player_cover_message(callback, user_id, text, kb, db, parse_mode="HTML")
         await callback.answer()
 
 @router.callback_query(F.data.startswith("pd_page_"))
@@ -541,7 +529,7 @@ async def cb_pokedex_page(callback: CallbackQuery, db: AsyncSession):
     text, final_page, max_page = await get_pokedex_data(user_id, nickname, page, rarity_filter, db)
     kb = get_pokedex_keyboard(user_id, final_page, max_page, rarity_filter)
     
-    await edit_player_cover_message(callback, user_id, text, kb, db, parse_mode="Markdown")
+    await edit_player_cover_message(callback, user_id, text, kb, db, parse_mode="HTML")
     await callback.answer()
 
 @router.callback_query(F.data.startswith("pd_rarity_"))
@@ -556,14 +544,14 @@ async def cb_pokedex_rarity_menu(callback: CallbackQuery):
         return
         
     text = (
-        f"🔍 **Filter Pokédex by Rarity**\n"
+        f"🔍 <b>Filter Pokédex by Rarity</b>\n"
         f"───────────────\n\n"
         f"Choose a rarity tier below to filter your species list:"
     )
     kb = get_rarity_filter_keyboard(user_id, page, rarity_filter)
     
     try:
-        await callback.message.edit_caption(caption=text, reply_markup=kb, parse_mode="Markdown")
+        await callback.message.edit_caption(caption=text, reply_markup=kb, parse_mode="HTML")
     except Exception:
         pass
     await callback.answer()
@@ -586,7 +574,7 @@ async def cb_pokedex_set_filter(callback: CallbackQuery, db: AsyncSession):
     text, final_page, max_page = await get_pokedex_data(user_id, nickname, 1, rarity_filter, db)
     kb = get_pokedex_keyboard(user_id, final_page, max_page, rarity_filter)
     
-    await edit_player_cover_message(callback, user_id, text, kb, db, parse_mode="Markdown")
+    await edit_player_cover_message(callback, user_id, text, kb, db, parse_mode="HTML")
     await callback.answer(f"Filtered by: {rarity_filter}")
 
 @router.message(Command("check"))
@@ -687,7 +675,7 @@ async def check_pokemon_variants(message: Message, db: AsyncSession, query: str,
 
     for f in page_forms:
         f_name = form_names.get(f, f"Form {f}")
-        f_emoji = form_emojis.get(f, "🌟")
+        f_emoji = form_emojis.get(f, "🟢")
         text_lines.append(f"┣━ {f_emoji} {f_name} | ID: `{pokemon.id}.{f}`")
 
     text = "\n".join(text_lines)
@@ -1142,8 +1130,8 @@ async def cmd_dex(message: Message, db: AsyncSession):
         1: "🎬",
         2: "⚡",
         3: "💥",
-        4: "🌟",
-        5: "💎"
+        4: "🌀",
+        5: "🔮"
     }
     
     subtypes_text = ""
@@ -1320,8 +1308,8 @@ async def cb_dex_back(callback: CallbackQuery, db: AsyncSession):
         1: "🎬",
         2: "⚡",
         3: "💥",
-        4: "🌟",
-        5: "💎"
+        4: "🌀",
+        5: "🔮"
     }
     
     subtypes_text = ""

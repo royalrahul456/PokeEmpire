@@ -844,8 +844,8 @@ async def cmd_set_poke_media(message: Message, db: AsyncSession):
     builder.button(text="🎥 AMV / Art (6.1)", callback_data=f"setpm_1_{pokemon.id}_{message.from_user.id}")
     builder.button(text="⚡ Dynamax Dmax (6.2)", callback_data=f"setpm_2_{pokemon.id}_{message.from_user.id}")
     builder.button(text="💥 Gigantamax Gmax (6.3)", callback_data=f"setpm_3_{pokemon.id}_{message.from_user.id}")
-    builder.button(text="🌟 Z-Move (6.4)", callback_data=f"setpm_4_{pokemon.id}_{message.from_user.id}")
-    builder.button(text="💎 Terastal (6.5)", callback_data=f"setpm_5_{pokemon.id}_{message.from_user.id}")
+    builder.button(text="🌀 Z-Move (6.4)", callback_data=f"setpm_4_{pokemon.id}_{message.from_user.id}")
+    builder.button(text="🔮 Terastal (6.5)", callback_data=f"setpm_5_{pokemon.id}_{message.from_user.id}")
     builder.adjust(2)
     
     await message.answer(

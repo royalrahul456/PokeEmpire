@@ -27,14 +27,14 @@ def get_hp_bar(current: int, max_hp: int, length: int = 10) -> str:
 def get_rarity_emoji(tier: str) -> str:
     """Returns a representative emoji for a rarity tier."""
     emojis = {
-        "Common": "⚪",
+        "Common": "⚪️",
         "Uncommon": "🟢",
-        "Rare": "💎",
+        "Rare": "🟣",
         "Epic": "🔮",
-        "Legendary": "👑",
+        "Legendary": "🌟",
         "Mythical": "🌌"
     }
-    return emojis.get(tier, "⚪")
+    return emojis.get(tier, "⚪️")
 
 def format_monster_stats(base_stats: Dict[str, int], ivs: Optional[Dict[str, int]] = None) -> str:
     """Formats a beautiful grid of stats, including IV adjustments if provided."""

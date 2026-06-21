@@ -105,20 +105,22 @@ async def cmd_admin_list(message: Message, db: AsyncSession):
         await message.answer("ℹ️ **Bot Administrators**: None configured.")
         return
 
-    # Query database for matching registered bot admins
-    stmt = select(User).where(User.id.in_(config.ADMIN_IDS))
+    # Query database for matching registered bot admins & uploaders
+    all_ids = list(set(config.ADMIN_IDS + config.UPLOADER_IDS))
+    stmt = select(User).where(User.id.in_(all_ids))
     res = await db.execute(stmt)
     registered_users = res.scalars().all()
     registered_ids = {u.id: u for u in registered_users}
 
     owner_row = None
     admin_rows = []
-    
+    uploader_rows = []
+
     # We treat the first ID in config.ADMIN_IDS as the Bot Owner, the rest as Administrators
     for idx, admin_id in enumerate(config.ADMIN_IDS):
         nickname = None
         username = None
-        
+
         if admin_id in registered_ids:
             u = registered_ids[admin_id]
             nickname = u.nickname
@@ -131,17 +133,39 @@ async def cmd_admin_list(message: Message, db: AsyncSession):
                 username = chat.username
             except Exception:
                 pass
-        
+
         if nickname:
             username_str = f" (@{escape_md(username)})" if username else ""
             row = f"• **{escape_md(nickname)}**{username_str} `(ID: {admin_id})`"
         else:
             row = f"• **Admin User** `(ID: {admin_id}, Unregistered)`"
-        
+
         if idx == 0:
             owner_row = row
         else:
             admin_rows.append(row)
+
+    # Build uploader rows
+    for up_id in config.UPLOADER_IDS:
+        nickname = None
+        username = None
+        if up_id in registered_ids:
+            u = registered_ids[up_id]
+            nickname = u.nickname
+            username = u.username
+        else:
+            try:
+                chat = await message.bot.get_chat(up_id)
+                nickname = chat.first_name
+                username = chat.username
+            except Exception:
+                pass
+        if nickname:
+            username_str = f" (@{escape_md(username)})" if username else ""
+            row = f"• **{escape_md(nickname)}**{username_str} `(ID: {up_id})`"
+        else:
+            row = f"• **Uploader User** `(ID: {up_id}, Unregistered)`"
+        uploader_rows.append(row)
 
     text = (
         f"👑 **BOT ROSTER** 👑\n"
@@ -151,7 +175,9 @@ async def cmd_admin_list(message: Message, db: AsyncSession):
     )
     if admin_rows:
         text += "🛡️ **ADMIN**\n" + "\n".join(admin_rows) + "\n\n"
-    
+    if uploader_rows:
+        text += "🎬 **UPLOADER**\n" + "\n".join(uploader_rows) + "\n\n"
+
     text += "───────────────"
     await message.answer(text, parse_mode="Markdown")
 
@@ -162,7 +188,7 @@ async def cmd_spawn_setting(message: Message, db: AsyncSession):
         return
 
     chat_id = message.chat.id
-    
+
     # Query database for GroupSetting
     stmt = select(GroupSetting).where(GroupSetting.chat_id == chat_id)
     res = await db.execute(stmt)
@@ -182,10 +208,10 @@ async def cmd_spawn_setting(message: Message, db: AsyncSession):
 
     status_str = "🟢 **Enabled**" if setting.enabled else "🔴 **Disabled**"
     remaining = max(0, setting.spawn_threshold - setting.message_counter)
-    
+
     # Generate progress bar
     bar = get_progress_bar(setting.message_counter, setting.spawn_threshold, 10)
-    
+
     # Format message
     text = (
         f"⚙️ **SPAWN SETTINGS** ⚙️\n"
@@ -196,7 +222,7 @@ async def cmd_spawn_setting(message: Message, db: AsyncSession):
         f"`[{bar}]` `{setting.message_counter}/{setting.spawn_threshold}`\n\n"
         f"✉️ **Next Spawn**: In **{remaining} messages**!"
     )
-    
+
     if not setting.enabled:
         text = (
             f"⚙️ **SPAWN SETTINGS** ⚙️\n"
@@ -204,7 +230,7 @@ async def cmd_spawn_setting(message: Message, db: AsyncSession):
             f"📡 **Status**: {status_str}\n\n"
             f"🚫 Spawns are currently disabled in this group. Group admins can enable them using `/toggle_spawns`."
         )
-        
+
     await message.answer(text, parse_mode="Markdown")
 
 @router.message(Command("giftcoins"))
@@ -216,10 +242,10 @@ async def cmd_gift_coins(message: Message, db: AsyncSession):
 
     # Parse arguments
     parts = message.text.split()
-    
+
     target_user = None
     amount = 0
-    
+
     # Check if this is a reply
     if message.reply_to_message:
         if len(parts) < 2 or not parts[1].isdigit():
@@ -227,7 +253,7 @@ async def cmd_gift_coins(message: Message, db: AsyncSession):
             return
         amount = int(parts[1])
         target_tg_user = message.reply_to_message.from_user
-        
+
         # Ensure target user exists in DB
         user_stmt = select(User).where(User.id == target_tg_user.id)
         user_res = await db.execute(user_stmt)
@@ -245,15 +271,15 @@ async def cmd_gift_coins(message: Message, db: AsyncSession):
         if len(parts) < 3:
             await message.answer("⚠️ Format: `/giftcoins <@username/user_id> <amount>` (or reply to their message with `/giftcoins <amount>`)")
             return
-            
+
         target_str = parts[1]
         amount_str = parts[2]
-        
+
         if not amount_str.isdigit():
             await message.answer("⚠️ Amount must be a number.")
             return
         amount = int(amount_str)
-        
+
         if target_str.isdigit():
             # Target by User ID
             u_id = int(target_str)
@@ -301,11 +327,11 @@ async def cmd_gift_pokemon(message: Message, db: AsyncSession):
 
     # Parse arguments
     parts = message.text.split()
-    
+
     target_user = None
     poke_query = None
     is_shiny = False
-    
+
     # Check if this is a reply: /giftpokemon <pokemon_name_or_id> [shiny]
     if message.reply_to_message:
         if len(parts) < 2:
@@ -315,9 +341,9 @@ async def cmd_gift_pokemon(message: Message, db: AsyncSession):
         extra_parts = [p.lower() for p in parts[2:]]
         if "shiny" in extra_parts or "s" in extra_parts:
             is_shiny = True
-            
+
         target_tg_user = message.reply_to_message.from_user
-        
+
         # Ensure target user exists in DB
         user_stmt = select(User).where(User.id == target_tg_user.id)
         user_res = await db.execute(user_stmt)
@@ -335,14 +361,14 @@ async def cmd_gift_pokemon(message: Message, db: AsyncSession):
         if len(parts) < 3:
             await message.answer("⚠️ Format: `/giftpokemon <@username/user_id> <pokemon_name/id> [shiny]` (or reply to their message)")
             return
-            
+
         target_str = parts[1]
         poke_query = parts[2].lower()
-        
+
         extra_parts = [p.lower() for p in parts[3:]]
         if "shiny" in extra_parts or "s" in extra_parts:
             is_shiny = True
-            
+
         if target_str.isdigit():
             # Target by User ID
             u_id = int(target_str)
@@ -378,10 +404,10 @@ async def cmd_gift_pokemon(message: Message, db: AsyncSession):
         poke_stmt = select(Pokemon).where(Pokemon.id == int(poke_query))
     else:
         poke_stmt = select(Pokemon).where(Pokemon.name.ilike(poke_query))
-        
+
     poke_res = await db.execute(poke_stmt)
     pokemon = poke_res.scalar_one_or_none()
-    
+
     if not pokemon:
         await message.answer(f"❌ Pokémon '{poke_query}' not found in database.")
         return
@@ -471,6 +497,24 @@ def update_env_admin_ids(new_ids):
     with open(env_path, "w", encoding="utf-8") as f:
         f.write(new_content)
 
+def update_env_uploader_ids(new_ids):
+    import os
+    import re
+    env_path = ".env"
+    if not os.path.exists(env_path):
+        return
+    with open(env_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    ids_str = ",".join(map(str, new_ids))
+    if re.search(r"^UPLOADER_IDS=.*", content, flags=re.MULTILINE):
+        new_content = re.sub(r"^UPLOADER_IDS=.*", f"UPLOADER_IDS={ids_str}", content, flags=re.MULTILINE)
+    else:
+        new_content = content.rstrip() + f"\nUPLOADER_IDS={ids_str}\n"
+
+    with open(env_path, "w", encoding="utf-8") as f:
+        f.write(new_content)
+
 @router.message(Command("makeadmin"))
 async def cmd_make_admin(message: Message, db: AsyncSession):
     # Only bot owner can use this (first admin ID in config.ADMIN_IDS)
@@ -526,7 +570,7 @@ async def cmd_make_admin(message: Message, db: AsyncSession):
 
     # Add to in-memory list
     config.ADMIN_IDS.append(target_id)
-    
+
     # Save to .env
     update_env_admin_ids(config.ADMIN_IDS)
 
@@ -598,7 +642,7 @@ async def cmd_remove_admin(message: Message, db: AsyncSession):
 
     # Remove from in-memory list
     config.ADMIN_IDS.remove(target_id)
-    
+
     # Save to .env
     update_env_admin_ids(config.ADMIN_IDS)
 
@@ -610,6 +654,186 @@ async def cmd_remove_admin(message: Message, db: AsyncSession):
     )
     await message.answer(text, parse_mode="Markdown")
 
+
+@router.message(Command("makeuploader"))
+async def cmd_make_uploader(message: Message, db: AsyncSession):
+    # Only bot owner can use this
+    if not config.ADMIN_IDS or message.from_user.id != config.ADMIN_IDS[0]:
+        await message.answer("❌ Denied. Only the Bot Owner can appoint Uploaders.")
+        return
+
+    parts = message.text.split()
+    target_id = None
+    target_name = None
+
+    if message.reply_to_message:
+        target_tg_user = message.reply_to_message.from_user
+        target_id = target_tg_user.id
+        target_name = target_tg_user.first_name
+    else:
+        if len(parts) < 2:
+            await message.answer("⚠️ Format: `/makeuploader <@username/user_id>` (or reply to a user's message with `/makeuploader`)")
+            return
+        target_str = parts[1]
+        if target_str.isdigit():
+            target_id = int(target_str)
+            stmt = select(User).where(User.id == target_id)
+            res = await db.execute(stmt)
+            u = res.scalar_one_or_none()
+            if u:
+                target_name = u.nickname
+            else:
+                try:
+                    chat = await message.bot.get_chat(target_id)
+                    target_name = chat.first_name
+                except Exception:
+                    target_name = f"User {target_id}"
+        elif target_str.startswith("@"):
+            username = target_str.replace("@", "").strip()
+            stmt = select(User).where(User.username.ilike(username))
+            res = await db.execute(stmt)
+            u = res.scalar_one_or_none()
+            if not u:
+                await message.answer(f"❌ User with username @{username} not found in database.")
+                return
+            target_id = u.id
+            target_name = u.nickname
+        else:
+            await message.answer("⚠️ Target must be a user ID or @username.")
+            return
+
+    # Check if already uploader or admin
+    if target_id in config.UPLOADER_IDS:
+        await message.answer(f"ℹ️ **{escape_md(target_name)}** is already an Uploader.")
+        return
+    if target_id in config.ADMIN_IDS:
+        await message.answer(f"ℹ️ **{escape_md(target_name)}** is already an Admin — they already have full access.")
+        return
+
+    # Add to in-memory list
+    config.UPLOADER_IDS.append(target_id)
+
+    # Save to .env
+    update_env_uploader_ids(config.UPLOADER_IDS)
+
+    announcement = (
+        f"🎬 **UPLOADER ADDED** 🎬\n"
+        f"───────────────\n"
+        f"User **{escape_md(target_name)}** `(ID: {target_id})` has been appointed as an Uploader!\n"
+        f"───────────────"
+    )
+    await message.answer(announcement, parse_mode="Markdown")
+
+    # DM the new uploader with their command guide
+    dm_text = (
+        f"🎬 <b>Welcome, Uploader!</b>\n"
+        f"─────────────────────\n\n"
+        f"You have been granted <b>Uploader</b> access to <b>PokeEmpire Bot</b>.\n\n"
+        f"As an Uploader, you can add and manage Pokémon media (AMV, Art, Dmax, Gmax, Z-Move, Terastal).\n\n"
+        f"<b>📋 Your Commands:</b>\n\n"
+        f"<b>/setpokemedia &lt;pokemon_name/id&gt;</b>\n"
+        f"  Shows a menu to pick which form to update.\n\n"
+        f"<b>/setpokemedia &lt;pokemon_id&gt;.&lt;form_index&gt;</b>\n"
+        f"  Directly start updating a specific form.\n"
+        f"  Then send the photo/video/GIF.\n\n"
+        f"<b>📐 Form Index Guide:</b>\n"
+        f"  • <code>6.0</code> — Standard Photo\n"
+        f"  • <code>6.1</code> — AMV / Art 🎬\n"
+        f"  • <code>6.2</code> — Dynamax (Dmax) ⚡\n"
+        f"  • <code>6.3</code> — Gigantamax (Gmax) 💥\n"
+        f"  • <code>6.4</code> — Z-Move 🌀\n"
+        f"  • <code>6.5</code> — Terastal 🔮\n\n"
+        f"<b>📌 Examples:</b>\n"
+        f"  <code>/setpokemedia charizard</code> → choose form\n"
+        f"  <code>/setpokemedia 6.1</code> → update AMV directly\n"
+        f"  <code>/setpokemedia 6.2</code> → update Dmax directly\n\n"
+        f"<b>/medialist</b>\n"
+        f"  View all currently configured Pokémon media IDs.\n\n"
+        f"─────────────────────\n"
+        f"⚠️ All uploads are announced to the updates channel automatically."
+    )
+    try:
+        await message.bot.send_message(chat_id=target_id, text=dm_text, parse_mode="HTML")
+    except Exception:
+        await message.answer(f"⚠️ Couldn't DM **{escape_md(target_name)}** — they may not have started the bot yet.", parse_mode="Markdown")
+
+
+@router.message(Command("removeuploader"))
+async def cmd_remove_uploader(message: Message, db: AsyncSession):
+    # Only bot owner can use this
+    if not config.ADMIN_IDS or message.from_user.id != config.ADMIN_IDS[0]:
+        await message.answer("❌ Denied. Only the Bot Owner can remove Uploaders.")
+        return
+
+    parts = message.text.split()
+    target_id = None
+    target_name = None
+
+    if message.reply_to_message:
+        target_tg_user = message.reply_to_message.from_user
+        target_id = target_tg_user.id
+        target_name = target_tg_user.first_name
+    else:
+        if len(parts) < 2:
+            await message.answer("⚠️ Format: `/removeuploader <@username/user_id>` (or reply to a user's message with `/removeuploader`)")
+            return
+        target_str = parts[1]
+        if target_str.isdigit():
+            target_id = int(target_str)
+            stmt = select(User).where(User.id == target_id)
+            res = await db.execute(stmt)
+            u = res.scalar_one_or_none()
+            if u:
+                target_name = u.nickname
+            else:
+                try:
+                    chat = await message.bot.get_chat(target_id)
+                    target_name = chat.first_name
+                except Exception:
+                    target_name = f"User {target_id}"
+        elif target_str.startswith("@"):
+            username = target_str.replace("@", "").strip()
+            stmt = select(User).where(User.username.ilike(username))
+            res = await db.execute(stmt)
+            u = res.scalar_one_or_none()
+            if not u:
+                await message.answer(f"❌ User with username @{username} not found in database.")
+                return
+            target_id = u.id
+            target_name = u.nickname
+        else:
+            await message.answer("⚠️ Target must be a user ID or @username.")
+            return
+
+    if target_id not in config.UPLOADER_IDS:
+        await message.answer(f"⚠️ **{escape_md(target_name)}** is not in the Uploader list.")
+        return
+
+    config.UPLOADER_IDS.remove(target_id)
+    update_env_uploader_ids(config.UPLOADER_IDS)
+
+    text = (
+        f"🎬 **UPLOADER REMOVED** 🎬\n"
+        f"───────────────\n"
+        f"User **{escape_md(target_name)}** `(ID: {target_id})` has been removed from the Uploader list.\n"
+        f"───────────────"
+    )
+    await message.answer(text, parse_mode="Markdown")
+    # DM the removed uploader
+    try:
+        await message.bot.send_message(
+            chat_id=target_id,
+            text=(
+                f"⚠️ <b>Uploader Access Revoked</b>\n\n"
+                f"Your Uploader permissions for <b>PokeEmpire Bot</b> have been removed.\n"
+                f"You can no longer use <code>/setpokemedia</code>."
+            ),
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+
+
 @router.message(Command("spawn"))
 async def cmd_spawn(message: Message, db: AsyncSession):
     # Enforce admin authorization
@@ -619,7 +843,7 @@ async def cmd_spawn(message: Message, db: AsyncSession):
 
     # Trigger a wild encounter spawn in this chat
     from services.spawn_service import SpawnService
-    
+
     success = await SpawnService.trigger_spawn(db, message.chat.id, message.bot)
     if not success:
         await message.answer("❌ Failed to spawn Pokémon. Ensure the database contains Pokémon species.")
@@ -679,7 +903,7 @@ async def cmd_spawn_chance(message: Message):
         if len(parts) < 6:
             await message.answer("⚠️ Format: `/spawnchance <common> <rare> <epic> <legendary> <mythical>` (e.g. `/spawnchance 50 30 15 4 1`)")
             return
-        
+
         try:
             weights = [int(p) for p in parts[1:6]]
             if any(w < 0 for w in weights) or sum(weights) == 0:
@@ -711,7 +935,7 @@ async def cmd_spawn_chance(message: Message):
 
 
 # In-memory dictionary to track active pokemon media updates
-# Key: owner_id, Value: (pokemon_id, field_type)
+# Key: user_id, Value: (pokemon_id, form_index)
 active_poke_media_updates = {}
 
 @router.message(Command("setpokemedia"))
@@ -719,18 +943,21 @@ async def cmd_set_poke_media(message: Message, db: AsyncSession):
     if message.chat.type != "private":
         await message.answer("⚠️ This command can only be used in private DMs.")
         return
-        
-    if not config.ADMIN_IDS or message.from_user.id != config.ADMIN_IDS[0]:
-        await message.answer("❌ Denied. Only the Bot Owner can configure Pokémon media.")
+
+    # Allow both owner/admins and uploaders
+    user_id = message.from_user.id
+    is_authorized = user_id in config.ADMIN_IDS or user_id in config.UPLOADER_IDS
+    if not is_authorized:
+        await message.answer("❌ Denied. Only Bot Admins or Uploaders can configure Pokémon media.")
         return
-        
+
     parts = message.text.split()
     if len(parts) < 2:
         await message.answer("⚠️ Format: `/setpokemedia <pokemon_name/id>.<form_index>`")
         return
-        
+
     query = parts[1].lower()
-    
+
     # Direct assignment: /setpokemedia <id>.<form> <file_id>
     if len(parts) >= 3:
         target_str = parts[1].lower()
@@ -740,7 +967,7 @@ async def cmd_set_poke_media(message: Message, db: AsyncSession):
             if fq.isdigit():
                 form_index = int(fq)
             target_str = pq
-            
+
         # Resolve Pokemon
         if target_str.isdigit():
             stmt = select(Pokemon).where(Pokemon.id == int(target_str))
@@ -751,11 +978,11 @@ async def cmd_set_poke_media(message: Message, db: AsyncSession):
         if not pokemon:
             await message.answer(f"❌ Pokémon '{target_str}' not found.")
             return
-            
+
         file_id = parts[2]
         media_prefix = "video:" if file_id.startswith("BAA") else "photo:"
         db_media_value = f"{media_prefix}{file_id}"
-        
+
         # Save
         if form_index == 0:
             pokemon.image_url = file_id
@@ -771,7 +998,7 @@ async def cmd_set_poke_media(message: Message, db: AsyncSession):
                 form_media.media_value = db_media_value
             else:
                 db.add(PokemonFormMedia(pokemon_id=pokemon.id, form_index=form_index, media_value=db_media_value))
-                
+
             # Backwards compatibility
             if form_index == 1:
                 pokemon.video_url = file_id
@@ -783,14 +1010,14 @@ async def cmd_set_poke_media(message: Message, db: AsyncSession):
                 pokemon.zmove_url = file_id
             elif form_index == 5:
                 pokemon.terastal_url = file_id
-                
+
         await db.commit()
-        
+
         # Post to updates channel if form_index > 0
         by_user = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
         if form_index > 0:
             await post_media_update_to_channel(message.bot, pokemon, form_index, db_media_value, by_user)
-            
+
         await message.answer(
             f"✅ Successfully updated <b>Form {form_index}</b> for <b>{pokemon.name.title()}</b> directly!\n"
             f"• Saved value: <code>{db_media_value}</code>\n"
@@ -798,7 +1025,7 @@ async def cmd_set_poke_media(message: Message, db: AsyncSession):
             parse_mode="HTML"
         )
         return
-        
+
     # parse form_index if they provided e.g. /setpokemedia 6.2 without file_id
     form_index = 1
     target_str = query
@@ -807,7 +1034,7 @@ async def cmd_set_poke_media(message: Message, db: AsyncSession):
         if fq.isdigit():
             form_index = int(fq)
         target_str = pq
-        
+
     # Resolve Pokemon for inline options
     if target_str.isdigit():
         stmt = select(Pokemon).where(Pokemon.id == int(target_str))
@@ -847,7 +1074,7 @@ async def cmd_set_poke_media(message: Message, db: AsyncSession):
     builder.button(text="🌀 Z-Move (6.4)", callback_data=f"setpm_4_{pokemon.id}_{message.from_user.id}")
     builder.button(text="🔮 Terastal (6.5)", callback_data=f"setpm_5_{pokemon.id}_{message.from_user.id}")
     builder.adjust(2)
-    
+
     await message.answer(
         f"⚙️ <b>Configure Media for {pokemon.name.title()} (#{pokemon.id:03d})</b>\n\n"
         f"Choose which media field you would like to set:",
@@ -863,13 +1090,13 @@ async def cb_set_poke_media_choice(callback: CallbackQuery):
     form_index = int(parts[1])
     pokemon_id = int(parts[2])
     owner_id = int(parts[3])
-    
+
     if callback.from_user.id != owner_id:
         await callback.answer("❌ Denied.", show_alert=True)
         return
-        
+
     active_poke_media_updates[owner_id] = (pokemon_id, form_index)
-    
+
     form_names = {
         0: "Standard Photo",
         1: "AMV / Art",
@@ -879,7 +1106,7 @@ async def cb_set_poke_media_choice(callback: CallbackQuery):
         5: "Terastal"
     }
     name = form_names.get(form_index, f"Form {form_index}")
-    
+
     await callback.message.edit_text(
         f"📥 <b>Ready to update {name} media!</b>\n\n"
         f"Please send the photo, video, or animation (GIF) now.",
@@ -888,20 +1115,20 @@ async def cb_set_poke_media_choice(callback: CallbackQuery):
     await callback.answer()
 
 
-# Media receiver for owner pokemon edits
-@router.message(F.chat.type == "private", F.from_user.id.in_(config.ADMIN_IDS), lambda msg: msg.from_user.id in active_poke_media_updates)
+# Media receiver for admin/uploader pokemon edits
+@router.message(F.chat.type == "private", lambda msg: msg.from_user.id in config.ADMIN_IDS or msg.from_user.id in config.UPLOADER_IDS, lambda msg: msg.from_user.id in active_poke_media_updates)
 async def on_poke_media_received(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     update_info = active_poke_media_updates.pop(user_id, None)
     if not update_info:
         return
-        
+
     pokemon_id, form_index = update_info
-    
+
     # Check media type in the sent message
     media_prefix = "video:"
     media_value = None
-    
+
     if message.photo:
         media_prefix = "photo:"
         media_value = message.photo[-1].file_id
@@ -914,22 +1141,22 @@ async def on_poke_media_received(message: Message, db: AsyncSession):
     elif message.document:
         media_prefix = "video:"
         media_value = message.document.file_id
-        
+
     if not media_value:
         await message.answer("❌ No valid media detected. Operation cancelled. Please use the command again.")
         return
-        
+
     stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
     res = await db.execute(stmt)
     pokemon = res.scalar_one_or_none()
-    
+
     if not pokemon:
         await message.answer("❌ Pokémon no longer exists in database.")
         return
-        
+
     # Save media value
     db_media_value = f"{media_prefix}{media_value}"
-    
+
     # Standard Form (form_index == 0) gets saved to pokemon.image_url directly
     if form_index == 0:
         pokemon.image_url = media_value
@@ -942,12 +1169,12 @@ async def on_poke_media_received(message: Message, db: AsyncSession):
         )
         media_res = await db.execute(media_stmt)
         form_media = media_res.scalar_one_or_none()
-        
+
         if form_media:
             form_media.media_value = db_media_value
         else:
             db.add(PokemonFormMedia(pokemon_id=pokemon_id, form_index=form_index, media_value=db_media_value))
-            
+
         # Backwards compatibility: update Pokemon columns
         if form_index == 1:
             pokemon.video_url = media_value
@@ -961,12 +1188,12 @@ async def on_poke_media_received(message: Message, db: AsyncSession):
             pokemon.terastal_url = media_value
 
     await db.commit()
-    
+
     # Post to updates channel if form_index > 0
     by_user = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
     if form_index > 0:
         await post_media_update_to_channel(message.bot, pokemon, form_index, db_media_value, by_user)
-        
+
     await message.answer(
         f"✅ Successfully updated <b>Form {form_index}</b> for <b>{pokemon.name.title()}</b>!\n"
         f"• Saved value: <code>{db_media_value}</code>\n"
@@ -977,7 +1204,7 @@ async def on_poke_media_received(message: Message, db: AsyncSession):
 
 async def get_media_list_text(db: AsyncSession) -> str:
     from utils.settings import get_custom_cover
-    
+
     # 1. Covers
     covers = ["start", "xo", "pokedex"]
     cover_lines = []
@@ -993,13 +1220,13 @@ async def get_media_list_text(db: AsyncSession) -> str:
     stmt = select(PokemonFormMedia, Pokemon).join(Pokemon).order_by(Pokemon.id, PokemonFormMedia.form_index)
     res = await db.execute(stmt)
     records = res.all()
-    
+
     poke_media = {}
     for pfm, p in records:
         if p not in poke_media:
             poke_media[p] = []
         poke_media[p].append(pfm)
-        
+
     form_names = {
         1: "AMV/Art",
         2: "Dmax",
@@ -1007,14 +1234,14 @@ async def get_media_list_text(db: AsyncSession) -> str:
         4: "Z-Move",
         5: "Terastal"
     }
-    
+
     poke_lines = []
     for p, pfms in poke_media.items():
         details = []
         for pfm in pfms:
             fname = form_names.get(pfm.form_index, f"Form {pfm.form_index}")
             details.append(f"{fname} (.{pfm.form_index}): <code>{pfm.media_value}</code>")
-        
+
         if details:
             details_str = "\n  - ".join(details)
             poke_lines.append(f"• <b>#{p.id:03d} {p.name.title()}</b>:\n  - {details_str}")
@@ -1031,26 +1258,26 @@ async def get_media_list_text(db: AsyncSession) -> str:
         response += "\n".join(poke_lines)
     else:
         response += "<i>No custom Pokémon media (photos/AMVs) set yet.</i>"
-        
+
     return response
 
 
 @router.message(Command("medialist"))
 async def cmd_media_list(message: Message, db: AsyncSession):
-    if not config.ADMIN_IDS or message.from_user.id not in config.ADMIN_IDS:
-        await message.answer("❌ Denied. Only the Bot Owner can view configured media IDs.")
+    if not config.ADMIN_IDS or (message.from_user.id not in config.ADMIN_IDS and message.from_user.id not in config.UPLOADER_IDS):
+        await message.answer("❌ Denied. Only Admins or Uploaders can view configured media IDs.")
         return
-        
+
     text = await get_media_list_text(db)
     await message.answer(text, parse_mode="HTML")
 
 
 @router.callback_query(F.data == "owner_medialist")
 async def cb_owner_medialist(callback: CallbackQuery, db: AsyncSession):
-    if callback.from_user.id not in config.ADMIN_IDS:
-        await callback.answer("❌ Denied. Owner only.", show_alert=True)
+    if callback.from_user.id not in config.ADMIN_IDS and callback.from_user.id not in config.UPLOADER_IDS:
+        await callback.answer("❌ Denied. Admin/Uploader only.", show_alert=True)
         return
-        
+
     text = await get_media_list_text(db)
     # Send a new message so we don't hit the 1024-character caption limit on the home menu
     await callback.message.answer(text, parse_mode="HTML")
@@ -1062,16 +1289,16 @@ async def cmd_emoji_id(message: Message):
     if not config.ADMIN_IDS or message.from_user.id not in config.ADMIN_IDS:
         await message.answer("❌ Denied. Owner only.")
         return
-        
+
     if not message.reply_to_message:
         await message.answer("⚠️ Reply to a message containing a custom/premium emoji to get its ID.")
         return
-        
+
     entities = message.reply_to_message.entities or message.reply_to_message.caption_entities
     if not entities:
         await message.answer("❌ No custom/premium emojis detected in that message.")
         return
-        
+
     found = False
     for ent in entities:
         if ent.type == "custom_emoji":
@@ -1083,14 +1310,14 @@ async def cmd_emoji_id(message: Message):
             )
             found = True
             break
-            
+
     if not found:
         await message.answer("❌ No Telegram Premium/Custom emojis detected in that message.")
 
 
 async def post_media_update_to_channel(bot: Bot, pokemon: Pokemon, form_index: int, media_value: str, by_user: str):
     from datetime import datetime, timezone, timedelta
-    
+
     # 1. Resolve form index to name / rarity
     form_names = {
         0: "Standard",
@@ -1101,7 +1328,7 @@ async def post_media_update_to_channel(bot: Bot, pokemon: Pokemon, form_index: i
         5: "Terastal"
     }
     form_name = form_names.get(form_index, f"Form {form_index}")
-    
+
     # Map to rarity label
     rarity_label = form_name
     if form_index == 1:
@@ -1109,7 +1336,7 @@ async def post_media_update_to_channel(bot: Bot, pokemon: Pokemon, form_index: i
             rarity_label = "Art"
         else:
             rarity_label = "AMV"
-            
+
     # Clean media value (strip prefix)
     media_id = media_value
     media_type = "video"
@@ -1127,16 +1354,16 @@ async def post_media_update_to_channel(bot: Bot, pokemon: Pokemon, form_index: i
             media_type = "photo"
         else:
             media_type = "video"
-            
+
     # Checkbox checks
     is_img = "✅" if media_type == "photo" else "❌"
     is_vid = "✅" if media_type in ["video", "animation"] else "❌"
-    
+
     # Time in IST
     utc_now = datetime.now(timezone.utc)
     ist_time = utc_now + timedelta(hours=5, minutes=30)
     time_str = ist_time.strftime("%d %b %Y, %I:%M %p IST")
-    
+
     caption = (
         f"✨ <b>NEW POKÉMON MEDIA ADDED!</b>\n\n"
         f"🆔 <b>ID</b>: #{pokemon.id:03d}.{form_index}\n"
@@ -1148,7 +1375,7 @@ async def post_media_update_to_channel(bot: Bot, pokemon: Pokemon, form_index: i
         f"👤 <b>By</b>: {by_user}\n"
         f"⌛ <b>Time</b>: {time_str}"
     )
-    
+
     try:
         if media_type == "video":
             await bot.send_video(chat_id=config.UPDATES_CHANNEL, video=media_id, caption=caption, parse_mode="HTML")

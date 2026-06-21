@@ -204,10 +204,25 @@ async def cmd_profile(message: Message, db: AsyncSession):
     rarity_counts = {r: count for r, count in rarity_res.all()}
 
     commons = rarity_counts.get("Common", 0)
+    uncommons = rarity_counts.get("Uncommon", 0)
+    mediums = rarity_counts.get("Medium", 0)
     rares = rarity_counts.get("Rare", 0)
     epics = rarity_counts.get("Epic", 0)
     legendaries = rarity_counts.get("Legendary", 0)
     mythicals = rarity_counts.get("Mythical", 0)
+
+    # Count form-based (AMV/Art=1, Dmax=2, Gmax=3, Z-Move=4, Terastal=5)
+    from database.models import PokemonFormMedia
+    form_counts_stmt = select(UserPokemon.form_index, func.count(distinct(UserPokemon.pokemon_id))).where(
+        UserPokemon.user_id == user_id, UserPokemon.form_index > 0
+    ).group_by(UserPokemon.form_index)
+    form_counts_res = await db.execute(form_counts_stmt)
+    form_counts = {fi: cnt for fi, cnt in form_counts_res.all()}
+    amv_count = form_counts.get(1, 0)
+    dmax_count = form_counts.get(2, 0)
+    gmax_count = form_counts.get(3, 0)
+    zmove_count = form_counts.get(4, 0)
+    terastal_count = form_counts.get(5, 0)
 
     # Formatted coins
     formatted_coins = f"{user.coins:,}"
@@ -238,11 +253,20 @@ async def cmd_profile(message: Message, db: AsyncSession):
         f"╰         {dex_bar}\n\n"
         f"╭─ Rarity Breakdown ─\n"
         f"├─➩ ⚪️ Common: {commons}\n"
-        f"├─➩ 🔵 Rare: {rares}\n"
-        f"├─➩ 🟣 Epic: {epics}\n"
-        f"├─➩ 🟡 Legendary: {legendaries}\n"
+        f"├─➩ 🟢 Uncommon: {uncommons}\n"
+        f"├─➩ 🔵 Medium: {mediums}\n"
+        f"├─➩ 🟣 Rare: {rares}\n"
+        f"├─➩ 🔮 Epic: {epics}\n"
+        f"├─➩ 🌟 Legendary: {legendaries}\n"
         f"├─➩ 🌌 Mythical: {mythicals}\n"
         f"├─➩ ✨ Shiny: {total_shiny}\n"
+        f"╰───────────────────\n\n"
+        f"╭─ Forms Breakdown ─\n"
+        f"├─➩ 🎬 AMV / Art: {amv_count}\n"
+        f"├─➩ ⚡ Dmax: {dmax_count}\n"
+        f"├─➩ 💥 Gmax: {gmax_count}\n"
+        f"├─➩ 🌀 Z-Move: {zmove_count}\n"
+        f"├─➩ 🔮 Terastal: {terastal_count}\n"
         f"╰───────────────────\n\n"
         f"╭─ Global Rank ─\n"
         f"├─➩ 🏆 Position: #{rank_position}\n"
@@ -435,6 +459,8 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
     current_gen = None
     rarity_badges = {
         "Common": "⚪️",
+        "Uncommon": "🟢",
+        "Medium": "🔵",
         "Rare": "🟣",
         "Epic": "🔮",
         "Legendary": "🌟",
@@ -512,12 +538,24 @@ def get_rarity_filter_keyboard(user_id: int, current_page: int, current_filter: 
         InlineKeyboardButton(text="🟢 Uncommon", callback_data=f"pd_setfilter_{user_id}_Uncommon")
     )
     builder.row(
-        InlineKeyboardButton(text="🟣 Rare", callback_data=f"pd_setfilter_{user_id}_Rare"),
-        InlineKeyboardButton(text="🔮 Epic", callback_data=f"pd_setfilter_{user_id}_Epic")
+        InlineKeyboardButton(text="🔵 Medium", callback_data=f"pd_setfilter_{user_id}_Medium"),
+        InlineKeyboardButton(text="🟣 Rare", callback_data=f"pd_setfilter_{user_id}_Rare")
     )
     builder.row(
-        InlineKeyboardButton(text="🌟 Legendary", callback_data=f"pd_setfilter_{user_id}_Legendary"),
-        InlineKeyboardButton(text="🌌 Mythical", callback_data=f"pd_setfilter_{user_id}_Mythical")
+        InlineKeyboardButton(text="🔮 Epic", callback_data=f"pd_setfilter_{user_id}_Epic"),
+        InlineKeyboardButton(text="🌟 Legendary", callback_data=f"pd_setfilter_{user_id}_Legendary")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🌌 Mythical", callback_data=f"pd_setfilter_{user_id}_Mythical"),
+        InlineKeyboardButton(text="🎬 AMV / Art", callback_data=f"pd_setfilter_{user_id}_AMV")
+    )
+    builder.row(
+        InlineKeyboardButton(text="⚡ Dmax", callback_data=f"pd_setfilter_{user_id}_Dmax"),
+        InlineKeyboardButton(text="💥 Gmax", callback_data=f"pd_setfilter_{user_id}_Gmax")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🌀 Z-Move", callback_data=f"pd_setfilter_{user_id}_Z-Move"),
+        InlineKeyboardButton(text="🔮 Terastal", callback_data=f"pd_setfilter_{user_id}_Terastal")
     )
     builder.row(
         InlineKeyboardButton(text="🌍 All", callback_data=f"pd_setfilter_{user_id}_All"),
@@ -1011,6 +1049,10 @@ async def cmd_search(message: Message, db: AsyncSession):
         [InlineKeyboardButton(text="👥 Owners", callback_data=f"show_owners_{pokemon.id}")]
     ])
     
+    # Initialize media defaults so they're always defined
+    media_type = "photo"
+    media_value = pokemon.image_url
+
     if len(user_catches) > 0:
         # Find best caught (highest IV)
         best_up = None
@@ -1047,7 +1089,7 @@ async def cmd_search(message: Message, db: AsyncSession):
             f"───────────────"
         )
         
-        # Resolve variant media
+        # Resolve variant media for the best catch
         if best_up and best_up.form_index > 0:
             from database.models import PokemonFormMedia
             media_stmt = select(PokemonFormMedia.media_value).where(
@@ -1182,10 +1224,25 @@ async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
     rarity_counts = {r: count for r, count in rarity_res.all()}
 
     commons = rarity_counts.get("Common", 0)
+    uncommons = rarity_counts.get("Uncommon", 0)
+    mediums = rarity_counts.get("Medium", 0)
     rares = rarity_counts.get("Rare", 0)
     epics = rarity_counts.get("Epic", 0)
     legendaries = rarity_counts.get("Legendary", 0)
     mythicals = rarity_counts.get("Mythical", 0)
+
+    # Count form-based (AMV/Art=1, Dmax=2, Gmax=3, Z-Move=4, Terastal=5)
+    from database.models import PokemonFormMedia
+    form_counts_stmt = select(UserPokemon.form_index, func.count(distinct(UserPokemon.pokemon_id))).where(
+        UserPokemon.user_id == user_id, UserPokemon.form_index > 0
+    ).group_by(UserPokemon.form_index)
+    form_counts_res = await db.execute(form_counts_stmt)
+    form_counts = {fi: cnt for fi, cnt in form_counts_res.all()}
+    amv_count = form_counts.get(1, 0)
+    dmax_count = form_counts.get(2, 0)
+    gmax_count = form_counts.get(3, 0)
+    zmove_count = form_counts.get(4, 0)
+    terastal_count = form_counts.get(5, 0)
 
     # Fetch User
     u_stmt = select(User).where(User.id == user_id)
@@ -1220,11 +1277,20 @@ async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
         f"╰         {dex_bar}\n\n"
         f"╭─ Rarity Breakdown ─\n"
         f"├─➩ ⚪️ Common: {commons}\n"
-        f"├─➩ 🔵 Rare: {rares}\n"
-        f"├─➩ 🟣 Epic: {epics}\n"
-        f"├─➩ 🟡 Legendary: {legendaries}\n"
+        f"├─➩ 🟢 Uncommon: {uncommons}\n"
+        f"├─➩ 🔵 Medium: {mediums}\n"
+        f"├─➩ 🟣 Rare: {rares}\n"
+        f"├─➩ 🔮 Epic: {epics}\n"
+        f"├─➩ 🌟 Legendary: {legendaries}\n"
         f"├─➩ 🌌 Mythical: {mythicals}\n"
         f"├─➩ ✨ Shiny: {total_shiny}\n"
+        f"╰───────────────────\n\n"
+        f"╭─ Forms Breakdown ─\n"
+        f"├─➩ 🎬 AMV / Art: {amv_count}\n"
+        f"├─➩ ⚡ Dmax: {dmax_count}\n"
+        f"├─➩ 💥 Gmax: {gmax_count}\n"
+        f"├─➩ 🌀 Z-Move: {zmove_count}\n"
+        f"├─➩ 🔮 Terastal: {terastal_count}\n"
         f"╰───────────────────\n\n"
         f"╭─ Global Rank ─\n"
         f"├─➩ 🏆 Position: #{rank_position}\n"

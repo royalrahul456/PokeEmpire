@@ -27,12 +27,21 @@ def get_hp_bar(current: int, max_hp: int, length: int = 10) -> str:
 def get_rarity_emoji(tier: str) -> str:
     """Returns a representative emoji for a rarity tier."""
     emojis = {
+        # Standard rarities
         "Common": "⚪️",
         "Uncommon": "🟢",
+        "Medium": "🔵",
         "Rare": "🟣",
         "Epic": "🔮",
         "Legendary": "🌟",
-        "Mythical": "🌌"
+        "Mythical": "🌌",
+        # Custom form types
+        "AMV": "🎬",
+        "Art": "🖼️",
+        "Dmax": "⚡",
+        "Gmax": "💥",
+        "Z-Move": "🌀",
+        "Terastal": "🔮",
     }
     return emojis.get(tier, "⚪️")
 

@@ -28,6 +28,10 @@ else:
 _admin_ids_str = os.getenv("ADMIN_IDS", "")
 ADMIN_IDS = [int(x.strip()) for x in _admin_ids_str.split(",") if x.strip().isdigit()]
 
+# Uploader List (can upload AMV/Art/Dmax/Gmax/Z-Move/Terastal media)
+_uploader_ids_str = os.getenv("UPLOADER_IDS", "")
+UPLOADER_IDS = [int(x.strip()) for x in _uploader_ids_str.split(",") if x.strip().isdigit()]
+
 # Game Configuration Defaults
 SHINY_RATE = float(os.getenv("SHINY_RATE", "0.002"))
 HUNT_COOLDOWN = int(os.getenv("HUNT_COOLDOWN", "30"))

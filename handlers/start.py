@@ -871,12 +871,19 @@ async def cmd_set_cover(message: Message):
         
     parts = message.text.split()
     if len(parts) < 2:
-        await message.answer("⚠️ Format: `/setcover <start/xo/pokedex>`")
+        await message.answer("⚠️ Format: `/setcover <start/xo/pokedex> [file_id]`")
         return
         
     key = parts[1].lower()
     if key not in ["start", "xo", "pokedex"]:
         await message.answer("❌ Invalid cover key. Choose `start`, `xo`, or `pokedex`.")
+        return
+        
+    if len(parts) >= 3:
+        file_id = parts[2]
+        media_type = "video" if file_id.startswith("BAA") else "photo"
+        await set_custom_cover(key, media_type, file_id)
+        await message.answer(f"✅ <b>Success!</b> Cover media for <code>{key}</code> has been updated to this custom {media_type} using the provided ID.", parse_mode="HTML")
         return
         
     active_cover_updates[message.from_user.id] = key

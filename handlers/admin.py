@@ -717,7 +717,7 @@ async def cmd_set_poke_media(message: Message, db: AsyncSession):
         
     parts = message.text.split()
     if len(parts) < 2:
-        await message.answer("⚠️ Format: `/setpokemedia <pokemon_name/id>`")
+        await message.answer("⚠️ Format: `/setpokemedia <pokemon_name/id>` or `/setpokemedia <pokemon_name/id> <std/amv> <file_id>`")
         return
         
     poke_query = parts[1].lower()
@@ -731,6 +731,24 @@ async def cmd_set_poke_media(message: Message, db: AsyncSession):
     
     if not pokemon:
         await message.answer(f"❌ Pokémon '{poke_query}' not found in database.")
+        return
+        
+    # Direct assignment
+    if len(parts) >= 4:
+        field_type = parts[2].lower()
+        file_id = parts[3]
+        if field_type not in ["std", "amv"]:
+            await message.answer("❌ Invalid media type. Choose `std` or `amv`.")
+            return
+            
+        if field_type == "std":
+            pokemon.image_url = file_id
+            await db.commit()
+            await message.answer(f"✅ Successfully updated standard photo for <b>{pokemon.name.title()}</b> directly!", parse_mode="HTML")
+        else:
+            pokemon.video_url = file_id
+            await db.commit()
+            await message.answer(f"✅ Successfully updated AMV video for <b>{pokemon.name.title()}</b> directly!", parse_mode="HTML")
         return
         
     # Show inline options

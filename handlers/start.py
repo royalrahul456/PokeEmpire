@@ -803,7 +803,8 @@ async def cb_owner_tools(callback: CallbackQuery):
         f"<b>🎫 Redeem Codes</b>\n"
         f"• <code>/createredeem &lt;code&gt; &lt;limit&gt; &lt;coins/pokemon&gt; [shiny] [amv]</code>\n\n"
         f"<b>🎨 Pokémon Media</b>\n"
-        f"• <code>/setpokemedia &lt;name or id&gt;</code> — Set photo/AMV for a Pokémon\n\n"
+        f"• <code>/setpokemedia &lt;name or id&gt;</code> — Set photo/AMV for a Pokémon\n"
+        f"• <code>/medialist</code> — View file IDs of custom covers & Pokémon media\n\n"
         f"<b>⚙️ Spawn Controls</b>\n"
         f"• <code>/spawnchance</code> — View/set rarity rates\n"
         f"• <code>/spawn</code> — Force a manual spawn\n"
@@ -822,7 +823,10 @@ async def cb_owner_tools(callback: CallbackQuery):
         InlineKeyboardButton(text="📖 Set Pokédex Cover", callback_data="owner_setcover_pokedex"),
         InlineKeyboardButton(text="📊 Spawn Rates", callback_data="owner_spawnchance")
     )
-    builder.row(InlineKeyboardButton(text="🔙 Back to Menu", callback_data="dm_home"))
+    builder.row(
+        InlineKeyboardButton(text="📋 View Media IDs", callback_data="owner_medialist"),
+        InlineKeyboardButton(text="🔙 Back to Menu", callback_data="dm_home")
+    )
     await callback.message.edit_caption(caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
     await callback.answer()
 

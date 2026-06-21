@@ -810,3 +810,75 @@ async def on_poke_media_received(message: Message, db: AsyncSession):
     await db.commit()
     await message.answer(f"✅ Successfully updated <b>{field}</b> for <b>{pokemon.name.title()}</b>!", parse_mode="HTML")
 
+
+async def get_media_list_text(db: AsyncSession) -> str:
+    from utils.settings import get_custom_cover
+    
+    # 1. Covers
+    covers = ["start", "xo", "pokedex"]
+    cover_lines = []
+    for c in covers:
+        media_type, media_value = get_custom_cover(c)
+        if media_type and media_value:
+            cover_lines.append(f"• <b>{c.upper()} Cover:</b> ({media_type}) <code>{media_value}</code>")
+        else:
+            cover_lines.append(f"• <b>{c.upper()} Cover:</b> <i>Not set (using default)</i>")
+
+    # 2. Pokémon custom media
+    stmt = select(Pokemon).where(
+        (Pokemon.video_url.is_not(None)) | 
+        (~Pokemon.image_url.like("http%"))
+    )
+    res = await db.execute(stmt)
+    custom_pokes = res.scalars().all()
+
+    poke_lines = []
+    for p in custom_pokes:
+        details = []
+        if p.image_url and not p.image_url.startswith("http"):
+            details.append(f"Standard Photo: <code>{p.image_url}</code>")
+        if p.video_url:
+            details.append(f"AMV Video: <code>{p.video_url}</code>")
+        
+        if details:
+            details_str = "\n  - ".join(details)
+            poke_lines.append(f"• <b>#{p.id:03d} {p.name.title()}</b>:\n  - {details_str}")
+
+    # Build the final message
+    response = (
+        "📋 <b>PokeEmpire Configured Media IDs</b>\n"
+        "───────────────────\n\n"
+        "<b>🖼️ CUSTOM COVERS</b>\n"
+        + "\n".join(cover_lines) + "\n\n"
+        "<b>🎨 CUSTOM POKÉMON MEDIA</b>\n"
+    )
+    if poke_lines:
+        response += "\n".join(poke_lines)
+    else:
+        response += "<i>No custom Pokémon media (photos/AMVs) set yet.</i>"
+        
+    return response
+
+
+@router.message(Command("medialist"))
+async def cmd_media_list(message: Message, db: AsyncSession):
+    if not config.ADMIN_IDS or message.from_user.id not in config.ADMIN_IDS:
+        await message.answer("❌ Denied. Only the Bot Owner can view configured media IDs.")
+        return
+        
+    text = await get_media_list_text(db)
+    await message.answer(text, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "owner_medialist")
+async def cb_owner_medialist(callback: CallbackQuery, db: AsyncSession):
+    if callback.from_user.id not in config.ADMIN_IDS:
+        await callback.answer("❌ Denied. Owner only.", show_alert=True)
+        return
+        
+    text = await get_media_list_text(db)
+    # Send a new message so we don't hit the 1024-character caption limit on the home menu
+    await callback.message.answer(text, parse_mode="HTML")
+    await callback.answer()
+
+

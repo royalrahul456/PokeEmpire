@@ -270,8 +270,20 @@ async def cmd_pokemon_list(message: Message):
     )
 
 async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter: str, db: AsyncSession):
+    form_index_map = {
+        "AMV": 1,
+        "Dmax": 2,
+        "Gmax": 3,
+        "Z-Move": 4,
+        "Terastal": 5
+    }
+    form_idx = form_index_map.get(rarity_filter)
+
     # 1. Query total species in database matching the filter
-    if rarity_filter and rarity_filter != "All":
+    if form_idx is not None:
+        from database.models import PokemonFormMedia
+        total_stmt = select(func.count(distinct(PokemonFormMedia.pokemon_id))).where(PokemonFormMedia.form_index == form_idx)
+    elif rarity_filter and rarity_filter != "All":
         total_stmt = select(func.count(Pokemon.id)).where(Pokemon.rarity == rarity_filter)
     else:
         total_stmt = select(func.count(Pokemon.id))
@@ -280,7 +292,12 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
     total_species = total_res.scalar() or 1
 
     # 2. Query unique species caught by user matching the filter
-    if rarity_filter and rarity_filter != "All":
+    if form_idx is not None:
+        caught_count_stmt = select(func.count(distinct(UserPokemon.pokemon_id))).where(
+            UserPokemon.user_id == user_id,
+            UserPokemon.form_index == form_idx
+        )
+    elif rarity_filter and rarity_filter != "All":
         caught_count_stmt = (
             select(func.count(distinct(UserPokemon.pokemon_id)))
             .join(Pokemon)
@@ -310,7 +327,21 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
     offset = (page - 1) * per_page
 
     # 3. Query unique caught species sorted by ID for the current page
-    if rarity_filter and rarity_filter != "All":
+    if form_idx is not None:
+        poke_stmt = (
+            select(
+                Pokemon,
+                func.count(UserPokemon.id).label("total_caught"),
+                func.max(case((UserPokemon.is_shiny == True, 1), else_=0)).label("has_shiny")
+            )
+            .join(UserPokemon)
+            .where(UserPokemon.user_id == user_id, UserPokemon.form_index == form_idx)
+            .group_by(Pokemon.id)
+            .order_by(Pokemon.id)
+            .offset(offset)
+            .limit(per_page)
+        )
+    elif rarity_filter and rarity_filter != "All":
         poke_stmt = (
             select(
                 Pokemon,
@@ -342,7 +373,21 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
     pairs = poke_res.all()
 
     # 4. Query stats per generation
-    if rarity_filter and rarity_filter != "All":
+    if form_idx is not None:
+        from database.models import PokemonFormMedia
+        gen_stats_stmt = (
+            select(Pokemon.generation, func.count(distinct(UserPokemon.pokemon_id)))
+            .join(UserPokemon)
+            .where(UserPokemon.user_id == user_id, UserPokemon.form_index == form_idx)
+            .group_by(Pokemon.generation)
+        )
+        gen_totals_stmt = (
+            select(Pokemon.generation, func.count(distinct(PokemonFormMedia.pokemon_id)))
+            .join(PokemonFormMedia, PokemonFormMedia.pokemon_id == Pokemon.id)
+            .where(PokemonFormMedia.form_index == form_idx)
+            .group_by(Pokemon.generation)
+        )
+    elif rarity_filter and rarity_filter != "All":
         gen_stats_stmt = (
             select(Pokemon.generation, func.count(distinct(UserPokemon.pokemon_id)))
             .join(UserPokemon)

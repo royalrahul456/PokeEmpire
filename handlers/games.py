@@ -146,16 +146,16 @@ async def cmd_claim(message: Message, db: AsyncSession):
     update_claim_cooldown(user_id)
     await db.commit()
     
-    # Build text using HTML blockquote style
+    # Build text using HTML blockquote style (excluding IV stats line)
     shiny_prefix = "✨ Shiny " if is_shiny else ""
     r_emoji = get_rarity_emoji(selected_pokemon.rarity)
     
     text = (
         f"🎁 <b>POKÉMON CLAIMED</b> 🎁\n"
+        f"───────────────\n"
         f"<blockquote>👤 Trainer: <b>{html.escape(user.nickname)}</b>\n"
         f"👾 Pokémon: <b>{shiny_prefix}{selected_pokemon.name.title()}</b>\n"
-        f"{r_emoji} Rarity: <b>{r_emoji} {selected_pokemon.rarity}</b>\n"
-        f"📊 IVs: HP {iv_hp} | ATK {iv_atk} | DEF {iv_def} | SPD {iv_spd}</blockquote>"
+        f"{r_emoji} Rarity: <b>{r_emoji} {selected_pokemon.rarity}</b></blockquote>"
     )
     
     await message.answer(text, parse_mode="HTML")

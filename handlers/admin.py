@@ -88,6 +88,14 @@ async def cmd_set_spawn(message: Message, db: AsyncSession):
         setting.spawn_threshold = threshold
 
     await db.commit()
+
+    # Sync to group monitor cache
+    from utils.group_monitor import group_settings_cache
+    group_settings_cache[chat_id] = {
+        "spawn_threshold": threshold,
+        "enabled": setting.enabled
+    }
+
     await message.answer(f"⚙️ **Configured!** Spawns will occur every **{threshold} messages** in this chat.")
 
 @router.message(Command("toggle_spawns"))
@@ -117,6 +125,13 @@ async def cmd_toggle_spawns(message: Message, db: AsyncSession):
         setting.enabled = not setting.enabled
 
     await db.commit()
+
+    # Sync to group monitor cache
+    from utils.group_monitor import group_settings_cache
+    group_settings_cache[chat_id] = {
+        "spawn_threshold": setting.spawn_threshold,
+        "enabled": setting.enabled
+    }
 
     if setting.enabled:
         await message.answer("🌲 **Spawns Enabled!** Wild Pokémon will now spawn in this group chat.")
@@ -230,24 +245,37 @@ async def cmd_spawn_setting(message: Message, db: AsyncSession):
         db.add(setting)
         await db.commit()
 
-    status_str = "🟢 **Enabled**" if setting.enabled else "🔴 **Disabled**"
-    remaining = max(0, setting.spawn_threshold - setting.message_counter)
+    # Sync cache if not already cached
+    from utils.group_monitor import group_settings_cache, group_message_counters
+    if chat_id not in group_settings_cache:
+        group_settings_cache[chat_id] = {
+            "spawn_threshold": setting.spawn_threshold,
+            "enabled": setting.enabled
+        }
+
+    cached_setting = group_settings_cache[chat_id]
+    current_count = group_message_counters.get(chat_id, 0)
+    threshold = cached_setting["spawn_threshold"]
+    enabled = cached_setting["enabled"]
+
+    status_str = "🟢 **Enabled**" if enabled else "🔴 **Disabled**"
+    remaining = max(0, threshold - current_count)
 
     # Generate progress bar
-    bar = get_progress_bar(setting.message_counter, setting.spawn_threshold, 10)
+    bar = get_progress_bar(current_count, threshold, 10)
 
     # Format message
     text = (
         f"⚙️ **SPAWN SETTINGS** ⚙️\n"
         f"───────────────\n"
         f"📡 **Status**: {status_str}\n"
-        f"⏱️ **Spawn Interval**: `Every {setting.spawn_threshold} messages`\n\n"
+        f"⏱️ **Spawn Interval**: `Every {threshold} messages`\n\n"
         f"📊 **Activity Progress**:\n"
-        f"`[{bar}]` `{setting.message_counter}/{setting.spawn_threshold}`\n\n"
+        f"`[{bar}]` `{current_count}/{threshold}`\n\n"
         f"✉️ **Next Spawn**: In **{remaining} messages**!"
     )
 
-    if not setting.enabled:
+    if not enabled:
         text = (
             f"⚙️ **SPAWN SETTINGS** ⚙️\n"
             f"───────────────\n"

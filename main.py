@@ -11,6 +11,8 @@ import config
 from database.database import init_db, SessionLocal
 from utils.anti_spam import AntiSpamMiddleware
 from utils.group_monitor import GroupActivityMiddleware
+from utils.membership import MembershipMiddleware
+
 
 # Import Routers
 from handlers import (
@@ -105,6 +107,7 @@ async def register_bot_commands(bot: Bot):
         BotCommand(command="profile", description="Check Trainer coins & metrics"),
         BotCommand(command="pokemon", description="Browse caught collection bag"),
         BotCommand(command="pokedex", description="Review Pokédex checklist"),
+        BotCommand(command="claim", description="Claim a free daily random Pokémon"),
         BotCommand(command="xo", description="Play Tic Tac Toe (AI or PvP)"),
         BotCommand(command="coinflip", description="Bet coins on a coin flip"),
         BotCommand(command="rps", description="Play Rock-Paper-Scissors"),
@@ -112,6 +115,7 @@ async def register_bot_commands(bot: Bot):
         BotCommand(command="streak", description="View Catch Streak stats"),
         BotCommand(command="shop", description="Open Coin Shop"),
         BotCommand(command="mines", description="Play 5x5 Mines betting game"),
+        BotCommand(command="endmines", description="Forcibly end active Mines game"),
         BotCommand(command="redeem", description="Claim a promo/gift code"),
         BotCommand(command="leaderboard", description="Global standings ranks"),
         BotCommand(command="help", description="Show complete guide instructions")
@@ -198,6 +202,7 @@ async def main():
     dp = Dispatcher()
 
     # Register Middlewares
+    dp.update.outer_middleware(MembershipMiddleware())
     dp.update.outer_middleware(DbSessionMiddleware())
     dp.update.outer_middleware(AntiSpamMiddleware())
     

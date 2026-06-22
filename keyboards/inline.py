@@ -68,3 +68,67 @@ def get_back_to_hub_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="🔙 Back to Hub Menu", callback_data="dm_home"))
     return builder.as_markup()
+
+def get_admin_menu_keyboard() -> InlineKeyboardMarkup:
+    """Generates the primary Hub menu keyboard for DMs (Admin/Owner)."""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="👤 Profile", callback_data="dm_profile"),
+        InlineKeyboardButton(text="🏆 Pokédex", callback_data="dm_dex_1")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🎒 My Bag", callback_data="dm_bag_1"),
+        InlineKeyboardButton(text="📊 Leaderboard", callback_data="dm_leaderboard")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🛡️ Battle", callback_data="dm_battle_menu"),
+        InlineKeyboardButton(text="⚔️ Duel Trainer", callback_data="dm_duel_info")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🔄 Trade", callback_data="dm_trade_info"),
+        InlineKeyboardButton(text="🎁 Redeem", callback_data="dm_redeem_info")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🛂 Shop", callback_data="dm_shop"),
+        InlineKeyboardButton(text="🎮 Games Center", callback_data="dm_games")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🔥 Streak", callback_data="dm_streak"),
+        InlineKeyboardButton(text="❓ Guide", callback_data="dm_help")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🛠️ Owner Tools", callback_data="owner_tools")
+    )
+    return builder.as_markup()
+
+def get_uploader_menu_keyboard() -> InlineKeyboardMarkup:
+    """Generates the primary Hub menu keyboard for DMs (Uploader)."""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="👤 Profile", callback_data="dm_profile"),
+        InlineKeyboardButton(text="🏆 Pokédex", callback_data="dm_dex_1")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🎒 My Bag", callback_data="dm_bag_1"),
+        InlineKeyboardButton(text="📊 Leaderboard", callback_data="dm_leaderboard")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🛡️ Battle", callback_data="dm_battle_menu"),
+        InlineKeyboardButton(text="⚔️ Duel Trainer", callback_data="dm_duel_info")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🔄 Trade", callback_data="dm_trade_info"),
+        InlineKeyboardButton(text="🎁 Redeem", callback_data="dm_redeem_info")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🛂 Shop", callback_data="dm_shop"),
+        InlineKeyboardButton(text="🎮 Games Center", callback_data="dm_games")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🔥 Streak", callback_data="dm_streak"),
+        InlineKeyboardButton(text="❓ Guide", callback_data="dm_help")
+    )
+    builder.row(
+        InlineKeyboardButton(text="📋 View Media IDs", callback_data="owner_medialist")
+    )
+    return builder.as_markup()

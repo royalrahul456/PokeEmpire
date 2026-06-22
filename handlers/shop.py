@@ -47,28 +47,28 @@ async def cmd_shop(message: Message, db: AsyncSession):
         await db.commit()
 
     text = (
-        f"🛒 **POKÉEMPIRE SHOP** 🛒\n"
-        f"💰 Balance: **{user.coins} coins**\n"
+        f"🛒 <b>POKÉEMPIRE SHOP</b> 🛒\n"
+        f"💰 Balance: <b>{user.coins} coins</b>\n"
         f"───────────────\n"
         f"Welcome, Trainer! Purchase mystery boxes to obtain high-tier Pokémon, or buy upgrades to boost your journey.\n\n"
-        f"🎁 **Mystery Boxes**:\n"
-        f"• **Common Box** (💰 200c)\n"
-        f"  _Contains a random Common Pokémon._\n"
-        f"• **Rare Box** (💰 500c)\n"
-        f"  _Contains a random Rare Pokémon._\n"
-        f"• **Epic Box** (💰 1200c)\n"
-        f"  _Contains a random Epic Pokémon._\n"
-        f"• **Legendary Box** (💰 4000c)\n"
-        f"  _Contains a random Legendary Pokémon._\n"
-        f"• **Mythical Box** (💰 8000c)\n"
-        f"  _Contains a random Mythical Pokémon._\n\n"
-        f"⚡ **Upgrades & Items**:\n"
-        f"• **Shiny Charm** (💰 2000c)\n"
-        f"  _Permanently gives a 1% chance to upgrade any normal catch to a Shiny Pokémon!_\n"
+        f"<blockquote>🎁 <b>Mystery Boxes</b>:\n"
+        f"• <b>Common Box</b> (💰 200c)\n"
+        f"  <i>Contains a random Common Pokémon.</i>\n"
+        f"• <b>Rare Box</b> (💰 500c)\n"
+        f"  <i>Contains a random Rare Pokémon.</i>\n"
+        f"• <b>Epic Box</b> (💰 1200c)\n"
+        f"  <i>Contains a random Epic Pokémon.</i>\n"
+        f"• <b>Legendary Box</b> (💰 4000c)\n"
+        f"  <i>Contains a random Legendary Pokémon.</i>\n"
+        f"• <b>Mythical Box</b> (💰 8000c)\n"
+        f"  <i>Contains a random Mythical Pokémon.</i>\n\n"
+        f"⚡ <b>Upgrades & Items</b>:\n"
+        f"• <b>Shiny Charm</b> (💰 2000c)\n"
+        f"  <i>Permanently gives a 1% chance to upgrade any normal catch to a Shiny Pokémon!</i></blockquote>\n"
         f"───────────────"
     )
 
-    await message.answer(text, reply_markup=get_shop_keyboard(user.has_shiny_charm).as_markup(), parse_mode="Markdown")
+    await message.answer(text, reply_markup=get_shop_keyboard(user.has_shiny_charm).as_markup(), parse_mode="HTML")
 
 @router.callback_query(F.data == "dm_shop")
 async def cb_dm_shop(callback: CallbackQuery, db: AsyncSession):
@@ -85,32 +85,32 @@ async def cb_dm_shop(callback: CallbackQuery, db: AsyncSession):
         await db.commit()
 
     text = (
-        f"🛒 **POKÉEMPIRE SHOP** 🛒\n"
-        f"💰 Balance: **{user.coins} coins**\n"
+        f"🛒 <b>POKÉEMPIRE SHOP</b> 🛒\n"
+        f"💰 Balance: <b>{user.coins} coins</b>\n"
         f"───────────────\n"
         f"Welcome, Trainer! Purchase mystery boxes to obtain high-tier Pokémon, or buy upgrades to boost your journey.\n\n"
-        f"🎁 **Mystery Boxes**:\n"
-        f"• **Common Box** (💰 200c)\n"
-        f"  _Contains a random Common Pokémon._\n"
-        f"• **Rare Box** (💰 500c)\n"
-        f"  _Contains a random Rare Pokémon._\n"
-        f"• **Epic Box** (💰 1200c)\n"
-        f"  _Contains a random Epic Pokémon._\n"
-        f"• **Legendary Box** (💰 4000c)\n"
-        f"  _Contains a random Legendary Pokémon._\n"
-        f"• **Mythical Box** (💰 8000c)\n"
-        f"  _Contains a random Mythical Pokémon._\n\n"
-        f"⚡ **Upgrades & Items**:\n"
-        f"• **Shiny Charm** (💰 2000c)\n"
-        f"  _Permanently gives a 1% chance to upgrade any normal catch to a Shiny Pokémon!_\n"
+        f"<blockquote>🎁 <b>Mystery Boxes</b>:\n"
+        f"• <b>Common Box</b> (💰 200c)\n"
+        f"  <i>Contains a random Common Pokémon.</i>\n"
+        f"• <b>Rare Box</b> (💰 500c)\n"
+        f"  <i>Contains a random Rare Pokémon.</i>\n"
+        f"• <b>Epic Box</b> (💰 1200c)\n"
+        f"  <i>Contains a random Epic Pokémon.</i>\n"
+        f"• <b>Legendary Box</b> (💰 4000c)\n"
+        f"  <i>Contains a random Legendary Pokémon.</i>\n"
+        f"• <b>Mythical Box</b> (💰 8000c)\n"
+        f"  <i>Contains a random Mythical Pokémon.</i>\n\n"
+        f"⚡ <b>Upgrades & Items</b>:\n"
+        f"• <b>Shiny Charm</b> (💰 2000c)\n"
+        f"  <i>Permanently gives a 1% chance to upgrade any normal catch to a Shiny Pokémon!</i></blockquote>\n"
         f"───────────────"
     )
 
     try:
-        await callback.message.edit_caption(caption=text, reply_markup=get_shop_keyboard(user.has_shiny_charm).as_markup(), parse_mode="Markdown")
+        await callback.message.edit_caption(caption=text, reply_markup=get_shop_keyboard(user.has_shiny_charm).as_markup(), parse_mode="HTML")
     except Exception:
         try:
-            await callback.message.edit_text(text, reply_markup=get_shop_keyboard(user.has_shiny_charm).as_markup(), parse_mode="Markdown")
+            await callback.message.edit_text(text, reply_markup=get_shop_keyboard(user.has_shiny_charm).as_markup(), parse_mode="HTML")
         except Exception:
             pass
     await callback.answer()
@@ -157,8 +157,8 @@ async def cb_buy_box(callback: CallbackQuery, db: AsyncSession):
     iv_def = random.randint(0, 31)
     iv_spd = random.randint(0, 31)
 
-    # 1 in 100 chance of shiny from shop box
-    is_shiny = random.randint(1, 100) == 1
+    # 5% chance of shiny from shop box
+    is_shiny = random.randint(1, 20) == 1
 
     # Deduct coins and add pokemon
     user.coins -= cost
@@ -210,15 +210,15 @@ async def cb_buy_box(callback: CallbackQuery, db: AsyncSession):
     r_emoji = get_rarity_emoji(selected_pokemon.rarity)
 
     text = (
-        f"🎁 **BOX UNBOXING** 🎁\n"
+        f"🎁 <b>BOX UNBOXING</b> 🎁\n"
         f"───────────────\n"
-        f"You opened a **{rarity} Box** for `💰 {cost} coins`!\n\n"
-        f"🎉 Unlocked: {r_emoji} {shiny_badge}**{selected_pokemon.name.title()}**!\n\n"
-        f"💰 **Remaining Balance**: `💰 {user.coins} coins`\n"
+        f"<blockquote>🗳️ Box: <b>{rarity} Box</b>\n"
+        f"🎉 Unlocked: {r_emoji} {shiny_badge}<b>{selected_pokemon.name.title()}</b>!\n"
+        f"💳 Balance: <b>{user.coins} coins</b></blockquote>\n"
         f"───────────────"
     )
 
-    await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
     await callback.answer(f"Unlocked {selected_pokemon.name.title()}!")
 
 @router.callback_query(F.data == "buy_charm")
@@ -276,13 +276,13 @@ async def cb_buy_charm(callback: CallbackQuery, db: AsyncSession):
             print(f"⚠️ Failed to send DM to owner: {e}")
 
     text = (
-        f"✨ **SHINY CHARM ACTIVATE** ✨\n"
+        f"✨ <b>SHINY CHARM PURCHASED</b> ✨\n"
         f"───────────────\n"
-        f"You spent `💰 2000 coins` to purchase the Shiny Charm!\n\n"
-        f"🍀 Your shiny encounter rate in group spawns is now permanently increased!\n\n"
-        f"💰 **Remaining Balance**: `💰 {user.coins} coins`\n"
+        f"<blockquote>🍀 Upgrade: <b>Shiny Charm</b>\n"
+        f"✨ Effect: <b>Shiny encounter rate in group spawns permanently increased!</b>\n"
+        f"💳 Balance: <b>{user.coins} coins</b></blockquote>\n"
         f"───────────────"
     )
 
-    await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
     await callback.answer("Shiny Charm activated!")

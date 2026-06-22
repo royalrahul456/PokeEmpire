@@ -78,6 +78,20 @@ def get_mines_keyboard(user_id: int, game: dict) -> InlineKeyboardMarkup:
 @router.message(Command("mines"))
 async def cmd_mines(message: Message, db: AsyncSession):
     user_id = message.from_user.id
+    
+    # Restrict to official group chat if used in groups
+    if message.chat.type in ["group", "supergroup"]:
+        if message.chat.username != "pokeempireunion":
+            builder = InlineKeyboardBuilder()
+            builder.row(InlineKeyboardButton(text="🔗 Join Official GC", url="https://t.me/pokeempireunion"))
+            await message.answer(
+                "⚠️ <b>Mines game is only available in our official group chat!</b>\n\n"
+                "Join us there to play!",
+                reply_markup=builder.as_markup(),
+                parse_mode="HTML"
+            )
+            return
+
     parts = message.text.split()
     
     if len(parts) < 2:
@@ -146,11 +160,10 @@ async def cmd_mines(message: Message, db: AsyncSession):
 
     text = (
         f"💣 <b>MINES GAME STARTED</b> 💣\n"
-        f"───────────────\n"
-        f"Trainer: <b>{escape_md(game_state['nickname'])}</b>\n"
-        f"Bet: <code>{bet} coins</code>\n"
-        f"Mines: <code>{mines_count} 💣</code>\n"
-        f"Multiplier: <code>1.0x</code>\n\n"
+        f"<blockquote>👤 Trainer: <b>{escape_md(game_state['nickname'])}</b>\n"
+        f"💰 Bet: <b>{bet} coins</b>\n"
+        f"💣 Mines: <b>{mines_count} 💣</b>\n"
+        f"📈 Multiplier: <b>1.0x</b></blockquote>\n"
         f"👉 Click on the tiles below to find diamonds! Avoid the mines!"
     )
     
@@ -193,11 +206,10 @@ async def cb_mines_reveal(callback: CallbackQuery, db: AsyncSession):
         
         text = (
             f"💥 <b>BOOM! GAME OVER</b> 💥\n"
-            f"───────────────\n"
-            f"You hit a mine at tile #{cell_idx + 1}!\n"
-            f"You lost your bet of <code>{game['bet']} coins</code>.\n\n"
-            f"💰 New Balance: <code>{bal} coins</code>\n"
-            f"───────────────"
+            f"<blockquote>👤 Trainer: <b>{escape_md(game['nickname'])}</b>\n"
+            f"💣 Hit Tile: <b>#{cell_idx + 1}</b>\n"
+            f"💸 Lost Bet: <b>-{game['bet']} coins</b>\n"
+            f"💰 New Balance: <b>💰 {bal} coins</b></blockquote>"
         )
         
         await callback.message.edit_text(text, reply_markup=get_mines_keyboard(user_id, game), parse_mode="HTML")
@@ -234,29 +246,27 @@ async def cb_mines_reveal(callback: CallbackQuery, db: AsyncSession):
             
         text = (
             f"🏆 <b>MAXIMUM WIN!</b> 🏆\n"
-            f"───────────────\n"
-            f"Amazing! You cleared all safe tiles!\n"
-            f"Multiplier: <code>{multiplier}x</code>\n"
-            f"Earnings: <code>+{win_amt} coins</code>\n\n"
-            f"💰 New Balance: <code>{bal} coins</code>\n"
-            f"───────────────"
+            f"<blockquote>👤 Trainer: <b>{escape_md(game['nickname'])}</b>\n"
+            f"🌟 Result: <b>Cleared all safe tiles!</b>\n"
+            f"📈 Multiplier: <b>{multiplier}x</b>\n"
+            f"💰 Earnings: <b>+{win_amt} coins</b>\n"
+            f"💰 New Balance: <b>💰 {bal} coins</b></blockquote>"
         )
         
         await callback.message.edit_text(text, reply_markup=get_mines_keyboard(user_id, game), parse_mode="HTML")
         await callback.answer("🏆 Maximum Win! Outstanding!", show_alert=True)
         return
-
+ 
     # Continue game
     win_amt = int(game["bet"] * multiplier)
     text = (
         f"💣 <b>MINES GAME</b> 💣\n"
-        f"───────────────\n"
-        f"Trainer: <b>{escape_md(game['nickname'])}</b>\n"
-        f"Bet: <code>{game['bet']} coins</code>\n"
-        f"Mines: <code>{mines_count} 💣</code>\n"
-        f"Diamonds: <code>{revealed_count} 💎</code>\n"
-        f"Multiplier: <code>{multiplier}x</code>\n"
-        f"Potential Win: <code>{win_amt} coins</code>\n\n"
+        f"<blockquote>👤 Trainer: <b>{escape_md(game['nickname'])}</b>\n"
+        f"💰 Bet: <b>{game['bet']} coins</b>\n"
+        f"💣 Mines: <b>{mines_count} 💣</b>\n"
+        f"💎 Diamonds: <b>{revealed_count} 💎</b>\n"
+        f"📈 Multiplier: <b>{multiplier}x</b>\n"
+        f"💰 Potential Win: <b>{win_amt} coins</b></blockquote>\n"
         f"👉 Keep clicking or cash out!"
     )
     
@@ -299,14 +309,13 @@ async def cb_mines_cashout(callback: CallbackQuery, db: AsyncSession):
     else:
         bal = win_amt
         
+    import html
     text = (
         f"💰 <b>CASHOUT SUCCESSFUL!</b> 💰\n"
-        f"───────────────\n"
-        f"You cashed out successfully!\n"
-        f"Multiplier: <code>{multiplier}x</code>\n"
-        f"Earnings: <code>+{win_amt} coins</code> (Profit: <code>+{win_amt - game['bet']} coins</code>)\n\n"
-        f"💰 New Balance: <code>{bal} coins</code>\n"
-        f"───────────────"
+        f"<blockquote>👤 Trainer: <b>{html.escape(game['nickname'])}</b>\n"
+        f"📈 Multiplier: <b>{multiplier}x</b>\n"
+        f"💰 Earnings: <b>+{win_amt} coins</b> (Profit: <b>+{win_amt - game['bet']} coins</b>)\n"
+        f"💰 New Balance: <b>💰 {bal} coins</b></blockquote>"
     )
     
     await callback.message.edit_text(text, reply_markup=get_mines_keyboard(user_id, game), parse_mode="HTML")
@@ -315,3 +324,13 @@ async def cb_mines_cashout(callback: CallbackQuery, db: AsyncSession):
 @router.callback_query(F.data == "noop")
 async def cb_noop(callback: CallbackQuery):
     await callback.answer()
+
+@router.message(Command("endmines"))
+async def cmd_endmines(message: Message):
+    user_id = message.from_user.id
+    if user_id not in active_mines_games:
+        await message.answer("❌ You do not have an active Mines game to end.")
+        return
+        
+    active_mines_games.pop(user_id, None)
+    await message.answer("🛑 <b>Your active Mines game has been terminated.</b>\n<i>Note: Since your bet was already placed, those coins are lost.</i>", parse_mode="HTML")

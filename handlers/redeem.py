@@ -206,12 +206,14 @@ async def cmd_redeem(message: Message, db: AsyncSession):
             user.coins += code.reward_value
             await db.commit()
             
+            import html
             await message.answer(
                 f"🎉 <b>REDEEM SUCCESSFUL!</b> 🎉\n"
                 f"───────────────\n"
-                f"Trainer <b>{escape_md(user.nickname or 'Trainer')}</b> claimed code <code>{code.code}</code>!\n\n"
-                f"💰 Reward: <code>💰 +{code.reward_value:,} coins</code>\n"
-                f"Balance: <code>💰 {user.coins:,} coins</code>",
+                f"<blockquote>👤 Trainer: <b>{html.escape(user.nickname or 'Trainer')}</b>\n"
+                f"🎫 Code: <code>{code.code}</code>\n"
+                f"💰 Reward: <b>+{code.reward_value:,} coins</b>\n"
+                f"💳 Balance: <b>{user.coins:,} coins</b></blockquote>",
                 parse_mode="HTML"
             )
             
@@ -219,9 +221,9 @@ async def cmd_redeem(message: Message, db: AsyncSession):
             dm_text = (
                 f"🎉 <b>Redemption Confirmed!</b>\n"
                 f"───────────────\n"
-                f"You successfully redeemed code <code>{code.code}</code>!\n\n"
-                f"💰 <b>Reward:</b> <code>💰 +{code.reward_value:,} coins</code>\n"
-                f"New Balance: <code>💰 {user.coins:,} coins</code>\n"
+                f"<blockquote>🎫 Code: <code>{code.code}</code>\n"
+                f"💰 Reward: <b>+{code.reward_value:,} coins</b>\n"
+                f"💳 Balance: <b>{user.coins:,} coins</b></blockquote>\n"
                 f"───────────────"
             )
             try:
@@ -274,15 +276,16 @@ async def cmd_redeem(message: Message, db: AsyncSession):
             }
             form_badge = form_names.get(form_index, f"Form {form_index} ")
             shiny_badge = "✨ Shiny " if code.reward_is_shiny else ""
-            serial_str = f"\n🎫 **Serial Number**: `{serial_number}`" if serial_number else ""
+            serial_str = f"<br/>🎫 <b>Serial Number:</b> <code>{serial_number}</code>" if serial_number else ""
             r_emoji = get_rarity_emoji(pokemon.rarity)
             
+            import html
             text = (
                 f"🎉 <b>REDEEM SUCCESSFUL!</b> 🎉\n"
                 f"───────────────\n"
-                f"Trainer <b>{escape_md(user.nickname or 'Trainer')}</b> claimed code <code>{code.code}</code>!\n\n"
-                f"🎁 Reward: {r_emoji} {shiny_badge}{form_badge}<b>{pokemon.name.title()}</b>{serial_str}\n"
-                f"───────────────"
+                f"<blockquote>👤 Trainer: <b>{html.escape(user.nickname or 'Trainer')}</b>\n"
+                f"🎫 Code: <code>{code.code}</code>\n"
+                f"🎁 Reward: {r_emoji} {shiny_badge}{form_badge}<b>{pokemon.name.title()}</b>{serial_str}</blockquote>"
             )
             await message.answer(text, parse_mode="HTML")
             
@@ -290,8 +293,8 @@ async def cmd_redeem(message: Message, db: AsyncSession):
             dm_text = (
                 f"🎉 <b>Redemption Confirmed!</b>\n"
                 f"───────────────\n"
-                f"You successfully redeemed code <code>{code.code}</code>!\n\n"
-                f"🎁 <b>Reward:</b> {r_emoji} {shiny_badge}{form_badge}<b>{pokemon.name.title()}</b>{serial_str}\n"
+                f"<blockquote>🎫 Code: <code>{code.code}</code>\n"
+                f"🎁 Reward: {r_emoji} {shiny_badge}{form_badge}<b>{pokemon.name.title()}</b>{serial_str}</blockquote>\n"
                 f"───────────────"
             )
             try:

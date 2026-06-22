@@ -32,6 +32,7 @@ last_trivia_time = {}
 
 @router.message(Command("daily"))
 async def cmd_daily(message: Message, db: AsyncSession):
+    import html
     user_id = message.from_user.id
     nickname = message.from_user.first_name
 
@@ -54,25 +55,114 @@ async def cmd_daily(message: Message, db: AsyncSession):
             hours, remainder = divmod(remaining.seconds, 3600)
             minutes, seconds = divmod(remainder, 60)
             time_str = f"{hours}h {minutes}m {seconds}s"
-            await message.answer(f"⏳ **Too early!** You can claim your next daily reward in **{time_str}**.")
+            await message.answer(
+                f"⏳ <b>DAILY REWARD COOLDOWN</b>\n"
+                f"<blockquote>Too early! You can claim your next daily reward in <b>{time_str}</b>.</blockquote>",
+                parse_mode="HTML"
+            )
             return
 
-    reward = random.randint(200, 500)
+    reward = random.randint(250, 550)
     user.coins += reward
     user.last_daily_at = now
     await db.commit()
 
     text = (
-        f"📅 **DAILY REWARD** 📅\n"
+        f"📅 <b>DAILY REWARD SUCCESS</b>\n"
         f"───────────────\n"
-        f"Trainer **{escape_md(user.nickname)}** successfully claimed their daily reward:\n"
-        f"💰 **+{reward} coins**!\n\n"
-        f"Balance: 💰 **{user.coins} coins**."
+        f"<blockquote>👤 Trainer: <b>{html.escape(user.nickname)}</b>\n"
+        f"💰 Earned: <b>+{reward} coins</b>\n"
+        f"💳 Balance: <b>{user.coins} coins</b></blockquote>"
     )
-    await message.answer(text, parse_mode="Markdown")
+    await message.answer(text, parse_mode="HTML")
+
+@router.message(Command("claim"))
+async def cmd_claim(message: Message, db: AsyncSession):
+    import html
+    user_id = message.from_user.id
+    nickname = message.from_user.first_name
+    
+    # Check claim cooldown using utils/claim.py
+    from utils.claim import check_claim_cooldown, update_claim_cooldown
+    remaining_cooldown = check_claim_cooldown(user_id)
+    if remaining_cooldown > 0:
+        hours = remaining_cooldown // 3600
+        minutes = (remaining_cooldown % 3600) // 60
+        seconds = remaining_cooldown % 60
+        time_str = f"{hours}h {minutes}m {seconds}s"
+        await message.answer(
+            f"⏳ <b>DAILY CLAIM COOLDOWN</b>\n"
+            f"<blockquote>Too early! You can claim your next free Pokémon in <b>{time_str}</b>.</blockquote>",
+            parse_mode="HTML"
+        )
+        return
+        
+    # Get all Pokémon list from database
+    stmt = select(Pokemon)
+    res = await db.execute(stmt)
+    pokemon_list = res.scalars().all()
+    
+    if not pokemon_list:
+        await message.answer("❌ <b>Error:</b> No Pokémon found in database to claim.")
+        return
+        
+    # Select random Pokémon
+    selected_pokemon = random.choice(pokemon_list)
+    
+    # Roll shiny (1% chance)
+    is_shiny = random.randint(1, 100) == 1
+    
+    # Generate random IVs
+    iv_hp = random.randint(0, 31)
+    iv_atk = random.randint(0, 31)
+    iv_def = random.randint(0, 31)
+    iv_spd = random.randint(0, 31)
+    
+    # Check/Register user in DB
+    stmt_user = select(User).where(User.id == user_id)
+    res_user = await db.execute(stmt_user)
+    user = res_user.scalar_one_or_none()
+    
+    if not user:
+        user = User(id=user_id, username=message.from_user.username, nickname=nickname)
+        db.add(user)
+        await db.flush()
+        
+    # Create capture entry
+    capture = UserPokemon(
+        user_id=user_id,
+        pokemon_id=selected_pokemon.id,
+        is_shiny=is_shiny,
+        level=1,
+        xp=0,
+        iv_hp=iv_hp,
+        iv_atk=iv_atk,
+        iv_def=iv_def,
+        iv_spd=iv_spd
+    )
+    db.add(capture)
+    
+    # Update cooldown
+    update_claim_cooldown(user_id)
+    await db.commit()
+    
+    # Build text using HTML blockquote style
+    shiny_prefix = "✨ Shiny " if is_shiny else ""
+    r_emoji = get_rarity_emoji(selected_pokemon.rarity)
+    
+    text = (
+        f"🎁 <b>POKÉMON CLAIMED</b> 🎁\n"
+        f"<blockquote>👤 Trainer: <b>{html.escape(user.nickname)}</b>\n"
+        f"👾 Pokémon: <b>{shiny_prefix}{selected_pokemon.name.title()}</b>\n"
+        f"{r_emoji} Rarity: <b>{r_emoji} {selected_pokemon.rarity}</b>\n"
+        f"📊 IVs: HP {iv_hp} | ATK {iv_atk} | DEF {iv_def} | SPD {iv_spd}</blockquote>"
+    )
+    
+    await message.answer(text, parse_mode="HTML")
 
 @router.message(Command("spin"))
 async def cmd_spin(message: Message, db: AsyncSession):
+    import html
     user_id = message.from_user.id
     nickname = message.from_user.first_name
 
@@ -95,10 +185,14 @@ async def cmd_spin(message: Message, db: AsyncSession):
             hours, remainder = divmod(remaining.seconds, 3600)
             minutes, seconds = divmod(remainder, 60)
             time_str = f"{hours}h {minutes}m {seconds}s"
-            await message.answer(f"⏳ **Hold on!** The lucky wheel is recharging. Spin again in **{time_str}**.")
+            await message.answer(
+                f"⏳ <b>SPIN WHEEL COOLDOWN</b>\n"
+                f"<blockquote>The lucky wheel is recharging. Spin again in <b>{time_str}</b>.</blockquote>",
+                parse_mode="HTML"
+            )
             return
 
-    rewards = [50, 100, 150, 200, 300, 500]
+    rewards = [100, 150, 200, 250, 350, 550]
     weights = [40, 30, 15, 10, 4, 1]
     won = random.choices(rewards, weights=weights, k=1)[0]
 
@@ -106,22 +200,22 @@ async def cmd_spin(message: Message, db: AsyncSession):
     user.last_spin_at = now
     await db.commit()
 
-    # Simple text-based spin animation
+    # Simple text-based spin animation in HTML
     wheels = [
-        "🎡 **LUCKY SPIN WHEEL** 🎡\n───────────────\nSpinning... 🎰 [ 🔴 | 🟡 | 🟢 | 🔵 ]",
-        "🎡 **LUCKY SPIN WHEEL** 🎡\n───────────────\nSpinning... 🎰 [ 50 | 150 | 500 ]",
-        f"🎡 **LUCKY SPIN RESULT** 🎡\n───────────────\n"
-        f"🎉 **STAY!** 🎉\n\n"
-        f"Trainer **{escape_md(user.nickname)}** spun the wheel and won:\n"
-        f"💰 **+{won} coins**!\n\n"
-        f"Balance: 💰 **{user.coins} coins**."
+        "🎡 <b>LUCKY SPIN WHEEL</b> 🎡\n───────────────\nSpinning... 🎰 [ 🔴 | 🟡 | 🟢 | 🔵 ]",
+        "🎡 <b>LUCKY SPIN WHEEL</b> 🎡\n───────────────\nSpinning... 🎰 [ 100 | 250 | 550 ]",
+        f"🎡 <b>LUCKY SPIN RESULT</b> 🎡\n───────────────\n"
+        f"🎉 <b>STAY!</b> 🎉\n\n"
+        f"<blockquote>👤 Trainer: <b>{html.escape(user.nickname)}</b>\n"
+        f"💰 Won: <b>+{won} coins</b>\n"
+        f"💳 Balance: <b>{user.coins} coins</b></blockquote>"
     ]
     
-    msg = await message.answer(wheels[0], parse_mode="Markdown")
+    msg = await message.answer(wheels[0], parse_mode="HTML")
     await asyncio.sleep(0.5)
-    await msg.edit_text(wheels[1], parse_mode="Markdown")
+    await msg.edit_text(wheels[1], parse_mode="HTML")
     await asyncio.sleep(0.5)
-    await msg.edit_text(wheels[2], parse_mode="Markdown")
+    await msg.edit_text(wheels[2], parse_mode="HTML")
 
 @router.message(Command("coinflip"))
 async def cmd_coinflip(message: Message, db: AsyncSession):
@@ -170,30 +264,30 @@ async def cmd_coinflip(message: Message, db: AsyncSession):
         user.coins += bet
         await db.commit()
         text = (
-            f"🪙 **COINFLIP RESULT** 🪙\n"
+            f"🪙 <b>COINFLIP RESULT</b> 🪙\n"
             f"───────────────\n"
-            f"The coin landed on: **{outcome.upper()}**!\n\n"
-            f"🎉 **Victory!** You double your bet and gained:\n"
-            f"💰 **+{bet} coins**!\n\n"
-            f"Balance: 💰 **{user.coins} coins**."
+            f"<blockquote>🪙 Landed on: <b>{outcome.upper()}</b>\n"
+            f"🎉 Result: <b>Victory!</b>\n"
+            f"💰 Gained: <b>+{bet} coins</b>\n"
+            f"💳 Balance: <b>{user.coins} coins</b></blockquote>"
         )
     else:
         user.coins -= bet
         await db.commit()
         text = (
-            f"🪙 **COINFLIP RESULT** 🪙\n"
+            f"🪙 <b>COINFLIP RESULT</b> 🪙\n"
             f"───────────────\n"
-            f"The coin landed on: **{outcome.upper()}**!\n\n"
-            f"💀 **Defeat!** You lost your bet of:\n"
-            f"💰 **-{bet} coins**...\n\n"
-            f"Balance: 💰 **{user.coins} coins**."
+            f"<blockquote>🪙 Landed on: <b>{outcome.upper()}</b>\n"
+            f"💀 Result: <b>Defeat!</b>\n"
+            f"💰 Lost: <b>-{bet} coins</b>\n"
+            f"💳 Balance: <b>{user.coins} coins</b></blockquote>"
         )
 
     msg = await message.answer("🪙 Flipping the coin... 🪙\n───────────────\n🔄 *Spinning in the air...*")
     await asyncio.sleep(0.5)
     await msg.edit_text("🪙 Flipping the coin... 🪙\n───────────────\n✨ *Falling down...*")
     await asyncio.sleep(0.5)
-    await msg.edit_text(text, parse_mode="Markdown")
+    await msg.edit_text(text, parse_mode="HTML")
 
 @router.message(Command("rps"))
 async def cmd_rps(message: Message, db: AsyncSession):
@@ -247,42 +341,42 @@ async def cmd_rps(message: Message, db: AsyncSession):
 
     if outcome == "draw":
         text = (
-            f"✊✋✌️ **ROCK-PAPER-SCISSORS** ✊✋✌️\n"
+            f"✊✋✌️ <b>ROCK-PAPER-SCISSORS</b> ✊✋✌️\n"
             f"───────────────\n"
-            f"• You chose: **{user_choice.title()}**\n"
-            f"• Bot chose: **{bot_choice.title()}**\n\n"
-            f"🤝 **Draw!** Your bet of 💰 **{bet} coins** has been refunded."
+            f"<blockquote>👤 You: <b>{user_choice.title()}</b>\n"
+            f"🤖 Bot: <b>{bot_choice.title()}</b>\n"
+            f"🤝 Result: <b>Draw!</b> (Refunded {bet} coins)</blockquote>"
         )
     elif outcome == "win":
         user.coins += bet
         await db.commit()
         text = (
-            f"✊✋✌️ **ROCK-PAPER-SCISSORS** ✊✋✌️\n"
+            f"✊✋✌️ <b>ROCK-PAPER-SCISSORS</b> ✊✋✌️\n"
             f"───────────────\n"
-            f"• You chose: **{user_choice.title()}**\n"
-            f"• Bot chose: **{bot_choice.title()}**\n\n"
-            f"🎉 **Victory!** You won the duel and gained:\n"
-            f"💰 **+{bet} coins**!\n\n"
-            f"Balance: 💰 **{user.coins} coins**."
+            f"<blockquote>👤 You: <b>{user_choice.title()}</b>\n"
+            f"🤖 Bot: <b>{bot_choice.title()}</b>\n"
+            f"🎉 Result: <b>Victory!</b>\n"
+            f"💰 Gained: <b>+{bet} coins</b>\n"
+            f"💳 Balance: <b>{user.coins} coins</b></blockquote>"
         )
     else:
         user.coins -= bet
         await db.commit()
         text = (
-            f"✊✋✌️ **ROCK-PAPER-SCISSORS** ✊✋✌️\n"
+            f"✊✋✌️ <b>ROCK-PAPER-SCISSORS</b> ✊✋✌️\n"
             f"───────────────\n"
-            f"• You chose: **{user_choice.title()}**\n"
-            f"• Bot chose: **{bot_choice.title()}**\n\n"
-            f"💀 **Defeat!** You lost the duel and lost:\n"
-            f"💰 **-{bet} coins**...\n\n"
-            f"Balance: 💰 **{user.coins} coins**."
+            f"<blockquote>👤 You: <b>{user_choice.title()}</b>\n"
+            f"🤖 Bot: <b>{bot_choice.title()}</b>\n"
+            f"💀 Result: <b>Defeat!</b>\n"
+            f"💰 Lost: <b>-{bet} coins</b>\n"
+            f"💳 Balance: <b>{user.coins} coins</b></blockquote>"
         )
 
     msg = await message.answer("✊✋✌️ Dueling... ✊✋✌️\n───────────────\n🔄 *Rock... Paper... Scissors...*")
     await asyncio.sleep(0.5)
     await msg.edit_text("✊✋✌️ Dueling... ✊✋✌️\n───────────────\n💥 *SHOOT!* 💥")
     await asyncio.sleep(0.5)
-    await msg.edit_text(text, parse_mode="Markdown")
+    await msg.edit_text(text, parse_mode="HTML")
 
 def generate_hint(name: str) -> str:
     revealed_indices = set()
@@ -1014,7 +1108,7 @@ async def check_game_answers(message: Message, db: AsyncSession):
     if guess == correct_answer:
         from aiogram.types import ReactionTypeEmoji
         try:
-            await message.react(reactions=[ReactionTypeEmoji(emoji="🎉")])
+            await message.react(reaction=[ReactionTypeEmoji(emoji="🎉")])
         except Exception as e:
             print(f"Failed to react to game guess: {e}")
 
@@ -1031,17 +1125,17 @@ async def check_game_answers(message: Message, db: AsyncSession):
             db.add(user)
             await db.flush()
 
-        # Determine reward
+        # Determine reward (increased by 50 coins)
         if game.get("type") == "nameguess":
             if message.chat.type in ["group", "supergroup"] and game.get("is_auto"):
-                reward = random.randint(100, 200)
+                reward = random.randint(150, 250)
             else:
-                reward = 150
+                reward = 200
         else: # scribble
             if message.chat.type in ["group", "supergroup"] and game.get("is_auto"):
-                reward = random.randint(10, 50)
+                reward = random.randint(60, 100)
             else:
-                reward = 100
+                reward = 150
 
         user.coins += reward
         await db.commit()
@@ -1053,22 +1147,22 @@ async def check_game_answers(message: Message, db: AsyncSession):
         else:
             await cleanup_scribble_messages(message.bot, chat_id, game)
 
-        # Format victory message in clean card style
+        # Format victory message in clean card style with blockquotes
         if game.get("type") == "nameguess":
             text = (
                 f"🎉 <b>Correct!</b>\n"
                 f"───────────────\n"
-                f"🧠 <b>Pokémon</b>: {correct_answer.title()}\n"
+                f"<blockquote>🧠 <b>Pokémon</b>: {correct_answer.title()}\n"
                 f"💰 <b>Earned</b>: +{reward} coins\n"
-                f"👥 <b>Winner</b>: {message.from_user.mention_html()}"
+                f"👥 <b>Winner</b>: {message.from_user.mention_html()}</blockquote>"
             )
         else:
             text = (
                 f"🎉 <b>Correct!</b>\n"
                 f"───────────────\n"
-                f"🛑 <b>Word</b>: {correct_answer.title()}\n"
+                f"<blockquote>🛑 <b>Word</b>: {correct_answer.title()}\n"
                 f"💰 <b>Earned</b>: +{reward} coins\n"
-                f"👥 <b>Winner</b>: {message.from_user.mention_html()}"
+                f"👥 <b>Winner</b>: {message.from_user.mention_html()}</blockquote>"
             )
 
         victory_msg = await message.reply(text, parse_mode="HTML")
@@ -1682,7 +1776,7 @@ async def cb_trivia_answer(callback: CallbackQuery, db: AsyncSession):
             db.add(user)
             await db.flush()
 
-        reward = 100
+        reward = 150
         user.coins += reward
         await db.commit()
 
@@ -1693,10 +1787,10 @@ async def cb_trivia_answer(callback: CallbackQuery, db: AsyncSession):
             f"───────────────\n\n"
             f"<b>Question:</b>\n"
             f"{game['question']}\n\n"
-            f"💡 Correct Answer: <b>{game['answer']}</b>\n"
-            f"🏆 Winner: Trainer <b>{escape_md(user.nickname)}</b>\n"
+            f"<blockquote>💡 Correct Answer: <b>{game['answer']}</b>\n"
+            f"🏆 Winner: Trainer <b>{html.escape(user.nickname)}</b>\n"
             f"💰 Reward: <b>+{reward} coins</b>\n"
-            f"Balance: 💰 <b>{user.coins} coins</b>.\n"
+            f"💳 Balance: <b>{user.coins} coins</b></blockquote>\n"
             f"───────────────"
         )
         
@@ -1711,8 +1805,8 @@ async def cb_trivia_answer(callback: CallbackQuery, db: AsyncSession):
             msg = await callback.message.edit_text(
                 f"❓ <b>TRIVIA OVER</b> ❓\n"
                 f"───────────────\n\n"
-                f"❌ You guessed incorrectly!\n\n"
-                f"💡 Correct Answer: <b>{game['answer']}</b>\n"
+                f"<blockquote>❌ You guessed incorrectly!\n\n"
+                f"💡 Correct Answer: <b>{game['answer']}</b></blockquote>\n"
                 f"───────────────",
                 reply_markup=None,
                 parse_mode="HTML"
@@ -1732,7 +1826,7 @@ async def cmd_streak(message: Message, db: AsyncSession):
         return
         
     from utils.streak import get_streak_data, get_streak_rank
-    from utils.formatters import escape_md
+    import html
     
     s_data = await get_streak_data(user_id)
     
@@ -1761,15 +1855,15 @@ async def cmd_streak(message: Message, db: AsyncSession):
         bar_chars = "█" * 10
         
     text = (
-        f" 🔥 **Daily Streak — {escape_md(user.nickname)}**\n\n"
-        f"💧 **Status**: `{status_str}`\n"
-        f"🎁 **Current**: `{current_days} days`\n"
-        f"🏆 **Best**: `{best_days} days`\n"
-        f"🏆 **Rank**: `{rank_str}`\n"
-        f"🎁 **Progress**: `[{bar_chars}] {capped_count}/3`\n\n"
-        f"👉 *Catch 3 Pokémon every day to keep your streak!*"
+        f" 🔥 <b>Daily Streak — {html.escape(user.nickname)}</b>\n\n"
+        f"<blockquote>💧 <b>Status</b>: <code>{status_str}</code>\n"
+        f"🎁 <b>Current</b>: <code>{current_days} days</code>\n"
+        f"🏆 <b>Best</b>: <code>{best_days} days</code>\n"
+        f"🏆 <b>Rank</b>: <code>{rank_str}</code>\n"
+        f"🎁 <b>Progress</b>: <code>[{bar_chars}] {capped_count}/3</code></blockquote>\n\n"
+        f"👉 <i>Catch 3 Pokémon every day to keep your streak!</i>"
     )
-    await message.answer(text, parse_mode="Markdown")
+    await message.answer(text, parse_mode="HTML")
 
 @router.message(Command("streaklb"))
 @router.message(Command("slb"))
@@ -1790,23 +1884,25 @@ async def cmd_streak_leaderboard(message: Message, db: AsyncSession):
     users_dict = {u.id: u for u in u_res.scalars().all()}
     
     rows = []
+    import html
     for idx, (uid, uinfo) in enumerate(top_users):
         rank_prefix = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx + 1}."
         user = users_dict.get(uid)
+        username = user.username if user else None
         nickname = user.nickname if user else f"Trainer_{uid}"
-        username_str = f" (@{escape_md(user.username)})" if user and user.username else ""
         
+        display_name = f"@{html.escape(username)}" if username else f"{html.escape(nickname)}"
         best = uinfo.get("best_streak", 0)
         curr = uinfo.get("current_streak", 0)
-        rows.append(f"{rank_prefix} **{escape_md(nickname)}**{username_str} • Best: `{best}d` (Current: `{curr}d`)")
+        rows.append(f"{rank_prefix} <b>{display_name}</b> • Best: <code>{best}d</code> (Current: <code>{curr}d</code>)")
         
     leaderboard_card = (
-        f"🔥 **DAILY STREAK LEADERBOARD** 🔥\n"
+        f"🔥 <b>DAILY STREAK LEADERBOARD</b> 🔥\n"
         f"───────────────\n\n"
         f"{'\n'.join(rows)}\n\n"
         f"───────────────"
     )
-    await message.answer(leaderboard_card, parse_mode="Markdown")
+    await message.answer(leaderboard_card, parse_mode="HTML")
 
 @router.callback_query(F.data == "dm_streak")
 async def cb_dm_streak(callback: CallbackQuery, db: AsyncSession):
@@ -1821,8 +1917,8 @@ async def cb_dm_streak(callback: CallbackQuery, db: AsyncSession):
         return
         
     from utils.streak import get_streak_data, get_streak_rank
-    from utils.formatters import escape_md
     from keyboards.inline import get_back_to_hub_keyboard
+    import html
     
     s_data = await get_streak_data(user_id)
     
@@ -1851,19 +1947,19 @@ async def cb_dm_streak(callback: CallbackQuery, db: AsyncSession):
         bar_chars = "█" * 10
         
     text = (
-        f" 🔥 **Daily Streak — {escape_md(user.nickname)}**\n\n"
-        f"💧 **Status**: `{status_str}`\n"
-        f"🎁 **Current**: `{current_days} days`\n"
-        f"🏆 **Best**: `{best_days} days`\n"
-        f"🏆 **Rank**: `{rank_str}`\n"
-        f"🎁 **Progress**: `[{bar_chars}] {capped_count}/3`\n\n"
-        f"👉 *Catch 3 Pokémon every day to keep your streak!*"
+        f" 🔥 <b>Daily Streak — {html.escape(user.nickname)}</b>\n\n"
+        f"<blockquote>💧 <b>Status</b>: <code>{status_str}</code>\n"
+        f"🎁 <b>Current</b>: <code>{current_days} days</code>\n"
+        f"🏆 <b>Best</b>: <code>{best_days} days</code>\n"
+        f"🏆 <b>Rank</b>: <code>{rank_str}</code>\n"
+        f"🎁 <b>Progress</b>: <code>[{bar_chars}] {capped_count}/3</code></blockquote>\n\n"
+        f"👉 <i>Catch 3 Pokémon every day to keep your streak!</i>"
     )
     try:
-        await callback.message.edit_caption(caption=text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+        await callback.message.edit_caption(caption=text, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
     except Exception:
         try:
-            await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+            await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
         except Exception:
             pass
     await callback.answer()

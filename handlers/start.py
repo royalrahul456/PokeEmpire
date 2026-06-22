@@ -5,7 +5,14 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, distinct, case
 from database.models import User, Pokemon, UserPokemon, ActiveSpawn, GroupSetting
-from keyboards.inline import get_dm_menu_keyboard, get_bag_pagination_keyboard, get_back_to_hub_keyboard, get_dex_pagination_keyboard
+from keyboards.inline import (
+    get_dm_menu_keyboard, 
+    get_bag_pagination_keyboard, 
+    get_back_to_hub_keyboard, 
+    get_dex_pagination_keyboard,
+    get_admin_menu_keyboard,
+    get_uploader_menu_keyboard
+)
 from utils.formatters import get_hp_bar, get_progress_bar, get_rarity_emoji, escape_md
 from utils.settings import (
     send_cover_media, 
@@ -66,28 +73,12 @@ async def cmd_start(message: Message, db: AsyncSession):
                 f"• 🌳 Active Spawns: <code>{active_spawns}</code>\n\n"
                 f"Use the console below to manage your profile, view checklists, or configure cover media and global settings!"
             )
-            builder = InlineKeyboardBuilder()
-            builder.row(
-                InlineKeyboardButton(text="👤 Profile", callback_data="dm_profile"),
-                InlineKeyboardButton(text="🔥 Streak", callback_data="dm_streak")
-            )
-            builder.row(
-                InlineKeyboardButton(text="🏆 Pokédex", callback_data="dm_dex_1"),
-                InlineKeyboardButton(text="🛒 Shop", callback_data="dm_shop")
-            )
-            builder.row(
-                InlineKeyboardButton(text="🎮 Games Center", callback_data="dm_games"),
-                InlineKeyboardButton(text="❓ Guide", callback_data="dm_help")
-            )
-            builder.row(
-                InlineKeyboardButton(text="🛠️ Owner Tools", callback_data="owner_tools")
-            )
             
             await send_cover_media(
                 chat_id=message.chat.id,
                 key="start",
                 caption=text,
-                reply_markup=builder.as_markup(),
+                reply_markup=get_admin_menu_keyboard(),
                 bot=message.bot,
                 default_file="data/pokeempire_banner.png"
             )
@@ -102,20 +93,12 @@ async def cmd_start(message: Message, db: AsyncSession):
                 f"• <code>/medialist</code> — View custom media files list\n\n"
                 f"Use the premium uploader dashboard below to manage your profile or explore your collection checklist."
             )
-            builder = InlineKeyboardBuilder()
-            builder.row(
-                InlineKeyboardButton(text="👤 Profile", callback_data="dm_profile"),
-                InlineKeyboardButton(text="🏆 Pokédex", callback_data="dm_dex_1")
-            )
-            builder.row(
-                InlineKeyboardButton(text="📋 View Media IDs", callback_data="owner_medialist")
-            )
             
             await send_cover_media(
                 chat_id=message.chat.id,
                 key="start",
                 caption=text,
-                reply_markup=builder.as_markup(),
+                reply_markup=get_uploader_menu_keyboard(),
                 bot=message.bot,
                 default_file="data/pokeempire_banner.png"
             )
@@ -211,31 +194,38 @@ async def cmd_start(message: Message, db: AsyncSession):
 @router.message(Command("help"))
 async def cmd_help(message: Message):
     help_text = (
-        "❓ **POKÉEMPIRE GUIDE** ❓\n"
-        "───────────────\n\n"
-        "🌲 **Trainer Commands**:\n"
-        "• `/profile` - View your Trainer level, coins, and titles.\n"
-        "• `/pokemon <page>` - View your bag and paginated collection of caught Pokémon.\n"
-        "• `/pokedex` - Review your caught species checklist & completion.\n"
-        "• `/leaderboard` - Check the global leaderboard for coins and catches (alias `/lb`).\n"
-        "• `/catch <name>` - Catch a wild Pokémon when one spawns in the group.\n"
-        "• `/shop` - Purchase mystery boxes, Rare Candies, and Shiny Charms.\n"
-        "• `/help` - Show this complete guide.\n\n"
-        "🎮 **Earning Coins (Games)**:\n"
-        "• `/daily` - Claim your daily reward (24h cooldown).\n"
-        "• `/spin` - Spin the wheel of fortune (4h cooldown).\n"
-        "• `/coinflip <amount> <heads/tails>` - Bet coins on a coin flip.\n"
-        "• `/rps <amount> <rock/paper/scissors>` - Play rock-paper-scissors.\n"
-        "• `/trivia` - Answer Pokémon questions for coins.\n"
-        "• `/scribble` - Unscramble a Pokémon's name.\n\n"
-        "🛡️ **Admin Group Commands**:\n"
-        "• `/setspawn <threshold>` - Configure group spawn message threshold (Admins only).\n"
-        "• `/toggle_spawns` - Enable or disable spawns in this group chat (Admins only)."
+        f"❓ <b>POKÉEMPIRE GUIDE</b> ❓\n"
+        f"───────────────\n\n"
+        f"🌲 <b>Trainer Commands</b>:\n"
+        f"<blockquote>• <code>/profile</code> — Check Trainer level, coins & titles\n"
+        f"• <code>/pokemon &lt;page&gt;</code> — View caught collection bag\n"
+        f"• <code>/pokedex</code> — Review species checklist & completion\n"
+        f"• <code>/leaderboard</code> (or <code>/lb</code>) — Global coin ranks\n"
+        f"• <code>/catch &lt;name&gt;</code> — Catch a wild Pokémon when one spawns\n"
+        f"• <code>/gift &lt;@user/user_id&gt; &lt;pokedex_id&gt;</code> — Gift a Pokémon to a trainer\n"
+        f"• <code>/shop</code> — Open Coin Shop to buy items\n"
+        f"• <code>/claim</code> — Claim a free daily random Pokémon\n"
+        f"• <code>/help</code> — Show this guide</blockquote>\n"
+        f"🔥 <b>Streak Commands</b>:\n"
+        f"<blockquote>• <code>/streak</code> — Check your current/best daily catch streak\n"
+        f"• <code>/streaklb</code> (or <code>/slb</code>) — View streak leaderboards</blockquote>\n"
+        f"🎮 <b>Earning Coins (Games)</b>:\n"
+        f"<blockquote>• <code>/daily</code> — Claim daily reward (24h cooldown)\n"
+        f"• <code>/spin</code> — Spin wheel of fortune (4h cooldown)\n"
+        f"• <code>/coinflip &lt;bet&gt; &lt;h/t&gt;</code> — Bet coins on a coin flip\n"
+        f"• <code>/rps &lt;bet&gt; &lt;r/p/s&gt;</code> — Play rock-paper-scissors\n"
+        f"• <code>/mines &lt;bet&gt; [mines]</code> — Play 5x5 Mines (groups/DMs)\n"
+        f"• <code>/endmines</code> — Stop your active Mines game\n"
+        f"• <code>/trivia</code> — Answer trivia for coins\n"
+        f"• <code>/scribble</code> — Unscramble a Pokémon's name Extraction</blockquote>\n"
+        f"🛡️ <b>Admin Group Commands</b>:\n"
+        f"<blockquote>• <code>/setspawn &lt;threshold&gt;</code> — Configure spawn rate (Admins only)\n"
+        f"• <code>/toggle_spawns</code> — Enable/Disable spawns in this group (Admins only)</blockquote>"
     )
     if message.chat.type == "private":
-        await message.answer(help_text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+        await message.answer(help_text, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
     else:
-        await message.answer(help_text, parse_mode="Markdown")
+        await message.answer(help_text, parse_mode="HTML")
 
 @router.callback_query(F.data == "dm_home")
 async def cb_dm_home(callback: CallbackQuery, db: AsyncSession):
@@ -275,28 +265,12 @@ async def cb_dm_home(callback: CallbackQuery, db: AsyncSession):
             f"• 🌳 Active Spawns: <code>{active_spawns}</code>\n\n"
             f"Use the console below to manage your profile, view checklists, or configure cover media and global settings!"
         )
-        builder = InlineKeyboardBuilder()
-        builder.row(
-            InlineKeyboardButton(text="👤 Profile", callback_data="dm_profile"),
-            InlineKeyboardButton(text="🔥 Streak", callback_data="dm_streak")
-        )
-        builder.row(
-            InlineKeyboardButton(text="🏆 Pokédex", callback_data="dm_dex_1"),
-            InlineKeyboardButton(text="🛒 Shop", callback_data="dm_shop")
-        )
-        builder.row(
-            InlineKeyboardButton(text="🎮 Games Center", callback_data="dm_games"),
-            InlineKeyboardButton(text="❓ Guide", callback_data="dm_help")
-        )
-        builder.row(
-            InlineKeyboardButton(text="🛠️ Owner Tools", callback_data="owner_tools")
-        )
         
         try:
-            await callback.message.edit_caption(caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
+            await callback.message.edit_caption(caption=text, reply_markup=get_admin_menu_keyboard(), parse_mode="HTML")
         except Exception:
             try:
-                await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+                await callback.message.edit_text(text, reply_markup=get_admin_menu_keyboard(), parse_mode="HTML")
             except Exception:
                 pass
 
@@ -310,20 +284,12 @@ async def cb_dm_home(callback: CallbackQuery, db: AsyncSession):
             f"• <code>/medialist</code> — View custom media files list\n\n"
             f"Use the premium uploader dashboard below to manage your profile or explore your collection checklist."
         )
-        builder = InlineKeyboardBuilder()
-        builder.row(
-            InlineKeyboardButton(text="👤 Profile", callback_data="dm_profile"),
-            InlineKeyboardButton(text="🏆 Pokédex", callback_data="dm_dex_1")
-        )
-        builder.row(
-            InlineKeyboardButton(text="📋 View Media IDs", callback_data="owner_medialist")
-        )
         
         try:
-            await callback.message.edit_caption(caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
+            await callback.message.edit_caption(caption=text, reply_markup=get_uploader_menu_keyboard(), parse_mode="HTML")
         except Exception:
             try:
-                await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+                await callback.message.edit_text(text, reply_markup=get_uploader_menu_keyboard(), parse_mode="HTML")
             except Exception:
                 pass
     else:
@@ -450,33 +416,40 @@ async def cb_dm_profile(callback: CallbackQuery, db: AsyncSession):
 @router.callback_query(F.data == "dm_help")
 async def cb_dm_help(callback: CallbackQuery):
     help_text = (
-        "❓ **POKÉEMPIRE GUIDE** ❓\n"
-        "───────────────\n\n"
-        "🌲 **Trainer Commands**:\n"
-        "• `/profile` - View your Trainer level, coins, and titles.\n"
-        "• `/pokemon <page>` - View your bag and paginated collection of caught Pokémon.\n"
-        "• `/pokedex` - Review your caught species checklist & completion.\n"
-        "• `/leaderboard` - Check the global leaderboard for coins and catches (alias `/lb`).\n"
-        "• `/catch <name>` - Catch a wild Pokémon when one spawns in the group.\n"
-        "• `/shop` - Purchase mystery boxes, Rare Candies, and Shiny Charms.\n"
-        "• `/help` - Show this complete guide.\n\n"
-        "🎮 **Earning Coins (Games)**:\n"
-        "• `/daily` - Claim your daily reward (24h cooldown).\n"
-        "• `/spin` - Spin the wheel of fortune (4h cooldown).\n"
-        "• `/coinflip <amount> <heads/tails>` - Bet coins on a coin flip.\n"
-        "• `/rps <amount> <rock/paper/scissors>` - Play rock-paper-scissors.\n"
-        "• `/trivia` - Answer Pokémon questions for coins.\n"
-        "• `/scribble` - Unscramble a Pokémon's name.\n\n"
-        "🛡️ **Admin Group Commands**:\n"
-        "• `/setspawn <threshold>` - Configure group spawn message threshold (Admins only).\n"
-        "• `/toggle_spawns` - Enable or disable spawns in this group chat (Admins only).\n\n"
-        "🎮 **Interactive Hub**: Use the buttons here to explore your trainer collection instantly!"
+        f"❓ <b>POKÉEMPIRE GUIDE</b> ❓\n"
+        f"───────────────\n\n"
+        f"🌲 <b>Trainer Commands</b>:\n"
+        f"<blockquote>• <code>/profile</code> — Check Trainer level, coins & titles\n"
+        f"• <code>/pokemon &lt;page&gt;</code> — View caught collection bag\n"
+        f"• <code>/pokedex</code> — Review species checklist & completion\n"
+        f"• <code>/leaderboard</code> (or <code>/lb</code>) — Global coin ranks\n"
+        f"• <code>/catch &lt;name&gt;</code> — Catch a wild Pokémon when one spawns\n"
+        f"• <code>/gift &lt;@user/user_id&gt; &lt;pokedex_id&gt;</code> — Gift a Pokémon to a trainer\n"
+        f"• <code>/shop</code> — Open Coin Shop to buy items\n"
+        f"• <code>/claim</code> — Claim a free daily random Pokémon\n"
+        f"• <code>/help</code> — Show this guide</blockquote>\n"
+        f"🔥 <b>Streak Commands</b>:\n"
+        f"<blockquote>• <code>/streak</code> — Check your current/best daily catch streak\n"
+        f"• <code>/streaklb</code> (or <code>/slb</code>) — View streak leaderboards</blockquote>\n"
+        f"🎮 <b>Earning Coins (Games)</b>:\n"
+        f"<blockquote>• <code>/daily</code> — Claim daily reward (24h cooldown)\n"
+        f"• <code>/spin</code> — Spin wheel of fortune (4h cooldown)\n"
+        f"• <code>/coinflip &lt;bet&gt; &lt;h/t&gt;</code> — Bet coins on a coin flip\n"
+        f"• <code>/rps &lt;bet&gt; &lt;r/p/s&gt;</code> — Play rock-paper-scissors\n"
+        f"• <code>/mines &lt;bet&gt; [mines]</code> — Play 5x5 Mines (groups/DMs)\n"
+        f"• <code>/endmines</code> — Stop your active Mines game\n"
+        f"• <code>/trivia</code> — Answer trivia for coins\n"
+        f"• <code>/scribble</code> — Unscramble a Pokémon's name Extraction</blockquote>\n"
+        f"🛡️ <b>Admin Group Commands</b>:\n"
+        f"<blockquote>• <code>/setspawn &lt;threshold&gt;</code> — Configure spawn rate (Admins only)\n"
+        f"• <code>/toggle_spawns</code> — Enable/Disable spawns in this group (Admins only)</blockquote>\n\n"
+        f"🎮 <b>Interactive Hub</b>: Use the buttons here to explore your trainer collection instantly!"
     )
     try:
-        await callback.message.edit_caption(caption=help_text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+        await callback.message.edit_caption(caption=help_text, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
     except Exception:
         try:
-            await callback.message.edit_text(help_text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+            await callback.message.edit_text(help_text, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
         except Exception:
             pass
     await callback.answer()
@@ -848,24 +821,24 @@ async def on_new_chat_members(message: Message):
     bot_user = await message.bot.get_me()
     if any(member.id == bot_user.id for member in message.new_chat_members):
         welcome_text = (
-            f"🎮 **POKÉEMPIRE ACTIVATED** 🎮\n"
+            f"🎮 <b>POKÉEMPIRE ACTIVATED</b> 🎮\n"
             f"───────────────\n\n"
-            f"Hello everyone! I am **PokéEmpire Bot**, and I have just joined this group. 🌲\n\n"
+            f"Hello everyone! I am <b>PokéEmpire Bot</b>, and I have just joined this group. 🌲\n\n"
             f"I spawn wild Pokémon in this chat based on message activity. "
-            f"The first player to guess their name and use `/catch <name>` catches them!\n\n"
-            f"⚙️ **Default Settings**:\n"
-            f"• Spawns are **Enabled**.\n"
-            f"• Spawn interval is initialized randomly (every 50-100 messages).\n\n"
-            f"🛡️ **Admin Group Commands**:\n"
-            f"• `/setspawn <threshold>` - Configure group spawn message threshold.\n"
-            f"• `/toggle_spawns` - Enable/Disable spawns in this group.\n"
-            f"• `/spawnsetting` - Check current spawn status and progress.\n\n"
-            f"👤 **Player Commands**:\n"
-            f"• `/help` - Show the complete game guide.\n"
-            f"• `/leaderboard` (or `/lb`) - Check global rankings.\n\n"
+            f"The first player to guess their name and use `/catch &lt;name&gt;` catches them!\n\n"
+            f"⚙️ <b>Default Settings</b>:\n"
+            f"<blockquote>• Spawns: <b>Enabled</b>\n"
+            f"• Spawn Interval: <b>50-100 messages (randomized)</b></blockquote>\n"
+            f"🛡️ <b>Admin Group Commands</b>:\n"
+            f"<blockquote>• <code>/setspawn &lt;threshold&gt;</code> - Configure spawn threshold\n"
+            f"• <code>/toggle_spawns</code> - Enable/Disable spawns in this group\n"
+            f"• <code>/spawnsetting</code> - Check current progress</blockquote>\n"
+            f"👤 <b>Player Commands</b>:\n"
+            f"<blockquote>• <code>/help</code> - Show guide & all games\n"
+            f"• <code>/leaderboard</code> (or <code>/lb</code>) - Global ranks</blockquote>\n"
             f"👉 Chat here to start triggering spawns, or message me in private DMs to check your profile, bag, and shop!"
         )
-        await message.answer(welcome_text, parse_mode="Markdown")
+        await message.answer(welcome_text, parse_mode="HTML")
 
 
 # -------------------------------------------------------------
@@ -1152,5 +1125,15 @@ async def cb_adm_toggle_nameguess(callback: CallbackQuery, db: AsyncSession):
     await set_nameguess_status(chat_id, not curr)
     await callback.answer(f"Nameguess {'enabled' if not curr else 'disabled'}.")
     await refresh_admin_console(callback, chat_id, db)
+
+@router.callback_query(F.data == "verify_membership")
+async def cb_verify_membership(callback: CallbackQuery, db: AsyncSession):
+    from utils.membership import check_membership
+    is_member = await check_membership(callback.bot, callback.from_user.id)
+    if is_member:
+        await callback.answer("✅ Verification successful! Welcome to PokéEmpire!", show_alert=True)
+        await cb_dm_home(callback, db)
+    else:
+        await callback.answer("❌ Verification failed. You still haven't joined both our group chat and channel!", show_alert=True)
 
 

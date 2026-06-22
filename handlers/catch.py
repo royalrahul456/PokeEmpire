@@ -126,7 +126,7 @@ async def cmd_catch(message: Message, db: AsyncSession):
         iv_pct = int((iv_total / 124) * 100)
 
         # Award coins on catch
-        coins_won = random.randint(30, 80)
+        coins_won = random.randint(80, 130)
         user.coins += coins_won
 
         # Shiny Charm roll (1 in 100 chance to upgrade)
@@ -160,7 +160,7 @@ async def cmd_catch(message: Message, db: AsyncSession):
         # 1. Set emoji reaction on correct guess message
         from aiogram.types import ReactionTypeEmoji
         try:
-            await message.react(reactions=[ReactionTypeEmoji(emoji="🎉")])
+            await message.react(reaction=[ReactionTypeEmoji(emoji="🎉")])
         except Exception as e:
             print(f"Failed to react to message: {e}")
 
@@ -189,10 +189,10 @@ async def cmd_catch(message: Message, db: AsyncSession):
 
         msg2_text = (
             f"💥 🌟 <b>{escape_md(user.nickname)}</b> caught!{shiny_upgrade_text}\n\n"
-            f"⛔ <b>NAME:</b> {poke_display}\n"
+            f"<blockquote>⛔ <b>NAME:</b> {poke_display}\n"
             f"🎦 <b>ANIME:</b> Gen {pokemon.generation}\n"
             f"{r_emoji} <b>RARITY:</b> {r_emoji} {pokemon.rarity}\n"
-            f"⏱️ <b>TIME:</b> {time_taken}s"
+            f"⏱️ <b>TIME:</b> {time_taken}s</blockquote>"
         )
         
         kb_builder = InlineKeyboardBuilder()

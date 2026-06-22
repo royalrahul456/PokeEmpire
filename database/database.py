@@ -3,12 +3,23 @@ from sqlalchemy.orm import declarative_base
 from sqlalchemy import select, text
 from config import DATABASE_URL
 
-# Configure the SQLite Async Engine
-engine = create_async_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
-    pool_pre_ping=True
-)
+# Configure the Async Engine with pooling options for PostgreSQL
+if "postgresql" in DATABASE_URL:
+    engine = create_async_engine(
+        DATABASE_URL,
+        pool_size=20,
+        max_overflow=30,
+        pool_recycle=1800,
+        pool_timeout=30,
+        pool_pre_ping=True
+    )
+else:
+    engine = create_async_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
+        pool_pre_ping=True
+    )
+
 
 # Create a session factory
 SessionLocal = async_sessionmaker(

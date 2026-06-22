@@ -1054,22 +1054,24 @@ async def cb_check_back(callback: CallbackQuery, db: AsyncSession):
 
 
 async def get_leaderboard_text(lb_type: str, db: AsyncSession) -> str:
+    import html
     if lb_type == "coins":
         coins_stmt = select(User).order_by(desc(User.coins)).limit(10)
         coins_res = await db.execute(coins_stmt)
         coins_users = coins_res.scalars().all()
         
-        text = "🏆 **TOP 10 — Coins**\n\n"
+        text = "🏆 <b>TOP 10 — Coins</b>\n\n"
         if coins_users:
             for idx, u in enumerate(coins_users):
                 rank = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx + 1}."
-                text += f"{rank} {escape_md(u.nickname or 'Trainer')}  -> {u.coins}\n"
+                display_name = f"@{html.escape(u.username)}" if u.username else f"{html.escape(u.nickname or 'Trainer')}"
+                text += f"{rank} {escape_md(display_name)}  -> {u.coins}\n"
         else:
-            text += "• *No trainers registered yet.*"
+            text += "• <i>No trainers registered yet.</i>"
             
     elif lb_type == "catches":
         catches_stmt = (
-            select(User.nickname, func.count(UserPokemon.id).label("total_catches"))
+            select(User.username, User.nickname, func.count(UserPokemon.id).label("total_catches"))
             .join(UserPokemon, UserPokemon.user_id == User.id)
             .group_by(User.id)
             .order_by(desc(func.count(UserPokemon.id)))
@@ -1078,31 +1080,37 @@ async def get_leaderboard_text(lb_type: str, db: AsyncSession) -> str:
         catches_res = await db.execute(catches_stmt)
         catches_data = catches_res.all()
         
-        text = "🏆 **TOP 10 — Pokémon**\n\n"
+        text = "🏆 <b>TOP 10 — Pokémon</b>\n\n"
         if catches_data:
             for idx, row in enumerate(catches_data):
                 rank = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx + 1}."
-                text += f"{rank} {escape_md(row.nickname or 'Trainer')}  -> {row.total_catches}\n"
+                display_name = f"@{html.escape(row.username)}" if row.username else f"{html.escape(row.nickname or 'Trainer')}"
+                text += f"{rank} {escape_md(display_name)}  -> {row.total_catches}\n"
         else:
-            text += "• *No catches registered yet.*"
+            text += "• <i>No catches registered yet.</i>"
             
     elif lb_type == "streak":
         from utils.streak import get_top_streaks
         top_users = await get_top_streaks(10)
         
-        text = "🏆 **TOP 10 — Streaks**\n\n"
+        text = "🏆 <b>TOP 10 — Streaks</b>\n\n"
         if top_users:
             for idx, (user_id, uinfo) in enumerate(top_users):
                 rank = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx + 1}."
                 
-                stmt = select(User.nickname).where(User.id == user_id)
+                stmt = select(User.username, User.nickname).where(User.id == user_id)
                 res = await db.execute(stmt)
-                nickname = res.scalar_one_or_none() or "Trainer"
+                user_row = res.first()
+                if user_row:
+                    username, nickname = user_row
+                    display_name = f"@{html.escape(username)}" if username else f"{html.escape(nickname or 'Trainer')}"
+                else:
+                    display_name = f"Trainer_{user_id}"
                 
                 best_streak = uinfo.get("best_streak", 0)
-                text += f"{rank} {escape_md(nickname)}  -> {best_streak} days\n"
+                text += f"{rank} {escape_md(display_name)}  -> {best_streak} days\n"
         else:
-            text += "• *No active streaks recorded yet.*"
+            text += "• <i>No active streaks recorded yet.</i>"
             
     return text
 
@@ -1937,6 +1945,9 @@ async def cmd_gift(message: Message, db: AsyncSession):
             media_value = up.pokemon.video_url
 
     pokemon_display = f"{r_emoji} {shiny_badge}{form_badge}<b>{up.pokemon.name.title()}</b>"
+
+    sender_name = message.from_user.first_name
+    receiver_name = target_user.nickname or "Trainer"
 
     caption = (
         f"🎁 <b>POKÉMON GIFTED!</b> 🎁\n"

@@ -40,21 +40,27 @@ This document summarizes the changes, additions, and layout refinements complete
 - Users must join the official group `@pokeempireunion` and updates channel `@pokeempireupdates` to interact with the bot in DMs or run commands in groups.
 - Unverified users are intercepted dynamically and shown a custom "Verify Membership" menu with join links and a refresh/verify button.
 
-### 5. Anti-Spam Fine System
+### 5. Anti-Spam & Bad Words Fine System
 - Integrated chat anti-flood detection into `GroupActivityMiddleware` in `utils/group_monitor.py`.
 - If a user sends more than 5 messages in 3 seconds, they are fined **20,000 coins**. The coins are deducted from their balance and transferred to the bot creator's account.
-- Implemented a 10-second warning cooldown between spam checks.
-- Excluded stickers from incrementing chat spawn activity counters.
+- Integrated a bad-word filter system matching messages against `data/ban_words.json`. Users sending bad words are fined **50,000 coins** (transferred to the creator's balance), and the message is deleted.
+- **Creator DM Warnings Disabled**: Removed private DM warning messages sent to the bot creator when user anti-flood and bad-word fines are charged to prevent inbox flooding.
 
 ### 6. Visual Overhaul (Blockquotes)
 - Converted all outcomes and results to use HTML blockquotes `<blockquote>...</blockquote>` for clean colored left-borders.
 - Refined `/daily`, `/spin`, `/coinflip`, `/rps`, `/redeem` claims, and unboxing result cards to use the blockquote structure.
 - Refined shop unboxing shiny rate to **5%** (from 1%) in `handlers/shop.py`.
+- **Leaderboard Formatting Fix**: Fixed leaderboard layout issues by changing the leaderboard bot commands and queries to send HTML and wrapping rankings within a `<blockquote>` element for proper formatting.
+- **Direct Media Update Formatting**: Modified the direct `/setpokemedia` uploader console response to use the clean blockquote card styling.
 
 ### 7. Database & Latency Optimizations
 - Configured PostgreSQL async engine connection pool settings (`pool_size=20`, `max_overflow=30`, `pool_recycle=1800`) to address high ping and late replies.
 - Implemented in-memory caching of group spawn thresholds and active message counters in `utils/group_monitor.py` to prevent heavy database write traffic on every user message.
 - Updated settings commands (`/setspawn`, `/toggle_spawns`, `/spawnsetting`) to sync directly with the cache.
+
+### 8. Spawn Rules & Permissions
+- **Restrict Spawn Command**: Configured `/spawn` manual wild spawns to be runnable exclusively by bot owners/admins (`config.ADMIN_IDS`), blocking general group chat admins.
+- **Disable Legendary-Only Overrides**: Completely removed the group chat `legendary_only_groups` settings and spawn override checks, ensuring regular group spawns roll normal weights.
 
 ---
 

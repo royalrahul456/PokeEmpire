@@ -1191,6 +1191,7 @@ async def cmd_fav(message: Message, db: AsyncSession):
         
     p = up.pokemon
     await set_favorite_id(user_id, fav_str, db)
+    await db.commit()
     
     # Check if they own any shiny version of this species
     shiny_stmt = select(UserPokemon.is_shiny).where(
@@ -1209,6 +1210,7 @@ async def cmd_fav(message: Message, db: AsyncSession):
 async def cmd_unfav(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     await set_favorite_id(user_id, None, db)
+    await db.commit()
     await message.answer("❌ Cleared your favorite cover. A random Pokémon from your bag will be shown instead.")
 
 @router.message(Command("search"))

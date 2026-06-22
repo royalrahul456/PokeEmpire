@@ -48,6 +48,11 @@ def parse_form_filter(form_str: str) -> int | None:
     return mapping.get(form_str)
 
 
+FORM_FILTER_LABELS = {
+    "AMV": "AMV / Art",
+}
+
+
 def get_filter_display_label(rarity_filter: str) -> str:
     return FORM_FILTER_LABELS.get(rarity_filter, rarity_filter)
 

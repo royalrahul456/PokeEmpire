@@ -39,8 +39,61 @@ class GroupActivityMiddleware(BaseMiddleware):
         if chat.type not in ["group", "supergroup"]:
             return await handler(event, data)
 
-        # 1. Anti-Flood / Anti-Spam Detection
+        # 1. Banned Words Detection
         user = event.from_user
+        if user and not user.is_bot:
+            user_id = user.id
+            if event.text:
+                from utils.ban_words import check_text_for_ban_words
+                matched_word = check_text_for_ban_words(event.text)
+                if matched_word:
+                    # Try to delete bad word message
+                    try:
+                        await event.delete()
+                    except Exception as e:
+                        print(f"Failed to delete bad word message: {e}")
+                        
+                    db: AsyncSession = data.get("db")
+                    if db:
+                        try:
+                            spammer_stmt = select(User).where(User.id == user_id)
+                            spammer_res = await db.execute(spammer_stmt)
+                            spammer = spammer_res.scalar_one_or_none()
+                            
+                            if spammer:
+                                # Fine 50,000 coins
+                                spammer.coins = max(0, spammer.coins - 50000)
+                                
+                                if config.ADMIN_IDS:
+                                    creator_id = config.ADMIN_IDS[0]
+                                    creator_stmt = select(User).where(User.id == creator_id)
+                                    creator_res = await db.execute(creator_stmt)
+                                    creator = creator_res.scalar_one_or_none()
+                                    
+                                    if not creator:
+                                        creator = User(id=creator_id, username="creator", nickname="Creator")
+                                        db.add(creator)
+                                        await db.flush()
+                                        
+                                    creator.coins += 50000
+                                    await db.commit()
+                                    
+                                    spammer_display = f"@{html.escape(user.username)}" if user.username else f"<b>{html.escape(user.first_name)}</b>"
+                                    
+                                    # Send warning to chat
+                                    await event.answer(
+                                        f"⚠️ <b>BAD WORD DETECTED!</b> ⚠️\n"
+                                        f"<blockquote>👤 Trainer: <b>{spammer_display}</b>\n"
+                                        f"💸 Fine: <b>50,000 coins</b> (transferred to Bot Creator)</blockquote>\n"
+                                        f"<i>Using inappropriate words is prohibited. Keep the chat clean!</i>",
+                                        parse_mode="HTML"
+                                    )
+                        except Exception as err:
+                            await db.rollback()
+                            print(f"Error executing bad word fine: {err}")
+                    return None  # Stop handler execution for this message
+
+        # 2. Anti-Flood / Anti-Spam Detection
         if user and not user.is_bot:
             user_id = user.id
             now = time.time()

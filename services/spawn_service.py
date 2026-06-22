@@ -25,13 +25,10 @@ class SpawnService:
         settings = load_spawn_settings()
         
         # 1. Roll rarity tier
-        if chat_id < 0 and settings.get("legendary_only_groups", True):
-            selected_rarity = "Legendary"
-        else:
-            probs = settings.get("group_rarity_probabilities", RARITY_PROBABILITIES)
-            rarities = list(probs.keys())
-            weights = [probs.get(r, RARITY_PROBABILITIES.get(r, 0)) for r in rarities]
-            selected_rarity = random.choices(rarities, weights=weights, k=1)[0]
+        probs = settings.get("group_rarity_probabilities", RARITY_PROBABILITIES)
+        rarities = list(probs.keys())
+        weights = [probs.get(r, RARITY_PROBABILITIES.get(r, 0)) for r in rarities]
+        selected_rarity = random.choices(rarities, weights=weights, k=1)[0]
 
         # 2. Query Pokémon matching that rarity tier
         stmt = select(Pokemon).where(Pokemon.rarity == selected_rarity)

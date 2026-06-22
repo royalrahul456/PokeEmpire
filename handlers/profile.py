@@ -1062,10 +1062,12 @@ async def get_leaderboard_text(lb_type: str, db: AsyncSession) -> str:
         
         text = "🏆 <b>TOP 10 — Coins</b>\n\n"
         if coins_users:
+            text += "<blockquote>"
             for idx, u in enumerate(coins_users):
                 rank = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx + 1}."
                 display_name = f"@{html.escape(u.username)}" if u.username else f"{html.escape(u.nickname or 'Trainer')}"
-                text += f"{rank} {escape_md(display_name)}  -> {u.coins}\n"
+                text += f"{rank} {display_name}  -> {u.coins}\n"
+            text += "</blockquote>"
         else:
             text += "• <i>No trainers registered yet.</i>"
             
@@ -1082,10 +1084,12 @@ async def get_leaderboard_text(lb_type: str, db: AsyncSession) -> str:
         
         text = "🏆 <b>TOP 10 — Pokémon</b>\n\n"
         if catches_data:
+            text += "<blockquote>"
             for idx, row in enumerate(catches_data):
                 rank = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx + 1}."
                 display_name = f"@{html.escape(row.username)}" if row.username else f"{html.escape(row.nickname or 'Trainer')}"
-                text += f"{rank} {escape_md(display_name)}  -> {row.total_catches}\n"
+                text += f"{rank} {display_name}  -> {row.total_catches}\n"
+            text += "</blockquote>"
         else:
             text += "• <i>No catches registered yet.</i>"
             
@@ -1095,6 +1099,7 @@ async def get_leaderboard_text(lb_type: str, db: AsyncSession) -> str:
         
         text = "🏆 <b>TOP 10 — Streaks</b>\n\n"
         if top_users:
+            text += "<blockquote>"
             for idx, (user_id, uinfo) in enumerate(top_users):
                 rank = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx + 1}."
                 
@@ -1108,7 +1113,8 @@ async def get_leaderboard_text(lb_type: str, db: AsyncSession) -> str:
                     display_name = f"Trainer_{user_id}"
                 
                 best_streak = uinfo.get("best_streak", 0)
-                text += f"{rank} {escape_md(display_name)}  -> {best_streak} days\n"
+                text += f"{rank} {display_name}  -> {best_streak} days\n"
+            text += "</blockquote>"
         else:
             text += "• <i>No active streaks recorded yet.</i>"
             
@@ -1135,7 +1141,7 @@ async def cmd_leaderboard(message: Message, db: AsyncSession):
         reply_markup=get_leaderboard_keyboard(),
         bot=message.bot,
         default_url="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/493.png",
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 @router.callback_query(F.data.startswith("lb_type_"))
@@ -1147,7 +1153,7 @@ async def cb_leaderboard_type(callback: CallbackQuery, db: AsyncSession):
         await callback.message.edit_caption(
             caption=text,
             reply_markup=get_leaderboard_keyboard(),
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
     except Exception:
         pass

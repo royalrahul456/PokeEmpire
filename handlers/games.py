@@ -1899,7 +1899,7 @@ async def cmd_streak_leaderboard(message: Message, db: AsyncSession):
     leaderboard_card = (
         f"🔥 <b>DAILY STREAK LEADERBOARD</b> 🔥\n"
         f"───────────────\n\n"
-        f"{'\n'.join(rows)}\n\n"
+        f"<blockquote>{'\n'.join(rows)}</blockquote>\n\n"
         f"───────────────"
     )
     await message.answer(leaderboard_card, parse_mode="HTML")

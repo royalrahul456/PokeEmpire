@@ -12,7 +12,6 @@ nameguess_settings_cache = {}
 global_settings_cache = {}
 
 DEFAULT_SPAWN_SETTINGS = {
-    "legendary_only_groups": True,
     "group_rarity_probabilities": {
         "Common": 70,
         "Rare": 20,
@@ -78,12 +77,6 @@ async def load_all_settings_into_cache():
                 with open(spawn_json, "r", encoding="utf-8") as f:
                     old_spawn = json.load(f)
                 
-                # Check if we already have global settings in cache
-                if "legendary_only_groups" not in global_settings_cache:
-                    val = "true" if old_spawn.get("legendary_only_groups", True) else "false"
-                    db.add(GlobalSetting(key="legendary_only_groups", value=val))
-                    global_settings_cache["legendary_only_groups"] = val
-                    
                 if "group_rarity_probabilities" not in global_settings_cache:
                     val = json.dumps(old_spawn.get("group_rarity_probabilities", DEFAULT_SPAWN_SETTINGS["group_rarity_probabilities"]))
                     db.add(GlobalSetting(key="group_rarity_probabilities", value=val))
@@ -133,9 +126,6 @@ async def set_nameguess_status(chat_id: int, enabled: bool):
 
 def load_spawn_settings() -> dict:
     """Synchronous read from cache with default fallback."""
-    leg_only_val = global_settings_cache.get("legendary_only_groups", "true")
-    legendary_only_groups = (leg_only_val == "true")
-    
     probs_val = global_settings_cache.get("group_rarity_probabilities", None)
     if probs_val:
         try:
@@ -146,25 +136,23 @@ def load_spawn_settings() -> dict:
         group_rarity_probabilities = DEFAULT_SPAWN_SETTINGS["group_rarity_probabilities"]
         
     return {
-        "legendary_only_groups": legendary_only_groups,
         "group_rarity_probabilities": group_rarity_probabilities
     }
 
 async def save_spawn_settings(settings: dict):
-    global_settings_cache["legendary_only_groups"] = "true" if settings.get("legendary_only_groups", True) else "false"
     probs = settings.get("group_rarity_probabilities", DEFAULT_SPAWN_SETTINGS["group_rarity_probabilities"])
     global_settings_cache["group_rarity_probabilities"] = json.dumps(probs)
     
     async with SessionLocal() as db:
-        for k, v in [("legendary_only_groups", global_settings_cache["legendary_only_groups"]), 
-                     ("group_rarity_probabilities", global_settings_cache["group_rarity_probabilities"])]:
-            stmt = select(GlobalSetting).where(GlobalSetting.key == k)
-            res = await db.execute(stmt)
-            gs = res.scalar_one_or_none()
-            if gs:
-                gs.value = v
-            else:
-                db.add(GlobalSetting(key=k, value=v))
+        k = "group_rarity_probabilities"
+        v = global_settings_cache["group_rarity_probabilities"]
+        stmt = select(GlobalSetting).where(GlobalSetting.key == k)
+        res = await db.execute(stmt)
+        gs = res.scalar_one_or_none()
+        if gs:
+            gs.value = v
+        else:
+            db.add(GlobalSetting(key=k, value=v))
         await db.commit()
 
 # Custom covers helper functions

@@ -118,6 +118,9 @@ async def register_bot_commands(bot: Bot):
         BotCommand(command="endmines", description="Forcibly end active Mines game"),
         BotCommand(command="redeem", description="Claim a promo/gift code"),
         BotCommand(command="leaderboard", description="Global standings ranks"),
+        BotCommand(command="banword", description="Ban a word in group chats (Admins only)"),
+        BotCommand(command="removebanword", description="Unban a word (Admins only)"),
+        BotCommand(command="banwords", description="Show all banned words (Admins only)"),
         BotCommand(command="help", description="Show complete guide instructions")
     ]
     try:

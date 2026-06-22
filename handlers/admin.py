@@ -954,9 +954,9 @@ async def cmd_remove_uploader(message: Message, db: AsyncSession):
 
 @router.message(Command("spawn"))
 async def cmd_spawn(message: Message, db: AsyncSession):
-    # Enforce admin authorization
-    if not await is_user_admin(message):
-        await message.answer("❌ Denied. Only group administrators or bot owners can trigger a spawn.")
+    # Enforce bot admin authorization
+    if message.from_user.id not in config.ADMIN_IDS:
+        await message.answer("❌ Denied. Only bot owners can trigger a manual spawn.")
         return
 
     # Trigger a wild encounter spawn in this chat
@@ -979,12 +979,10 @@ async def cmd_spawn_chance(message: Message):
 
     if len(parts) < 2:
         # Show current settings
-        leg_only = "✅ Enabled (Legendary Only)" if settings.get("legendary_only_groups", True) else "❌ Disabled (Custom Chances)"
         probs = settings.get("group_rarity_probabilities", {})
         text = (
             "⚙️ **GROUP SPAWN CHANCES (OWNER ONLY)** ⚙️\n"
             "───────────────\n"
-            f"👑 **Legendary-Only Spawns in Groups**: `{leg_only}`\n\n"
             "📈 **Custom Group Rarity Probabilities**:\n"
             f"• Common: `{probs.get('Common', 70)}%`\n"
             f"• Rare: `{probs.get('Rare', 20)}%`\n"
@@ -993,20 +991,14 @@ async def cmd_spawn_chance(message: Message):
             f"• Mythical: `{probs.get('Mythical', 1)}%`\n"
             "───────────────\n"
             "💡 **Commands to Configure**:\n"
-            "👉 `/spawnchance legendary` - Enable Legendary-only spawns in groups\n"
-            "👉 `/spawnchance default` - Reset to standard rates & disable Legendary-only\n"
+            "👉 `/spawnchance default` - Reset to standard rates\n"
             "👉 `/spawnchance <common> <rare> <epic> <legendary> <mythical>` - Set custom weights"
         )
         await message.answer(text, parse_mode="Markdown")
         return
 
     arg = parts[1].lower()
-    if arg == "legendary":
-        settings["legendary_only_groups"] = True
-        await save_spawn_settings(settings)
-        await message.answer("✅ **Spawns in group chats are now restricted to Legendary rarity only.**")
-    elif arg == "default":
-        settings["legendary_only_groups"] = False
+    if arg == "default":
         settings["group_rarity_probabilities"] = {
             "Common": 70,
             "Rare": 20,
@@ -1015,7 +1007,7 @@ async def cmd_spawn_chance(message: Message):
             "Mythical": 1
         }
         await save_spawn_settings(settings)
-        await message.answer("✅ **Reset group spawn chances to default rates (70% C, 20% R, 7% E, 2% L, 1% M) and disabled Legendary-only restriction.**")
+        await message.answer("✅ **Reset group spawn chances to default rates (70% C, 20% R, 7% E, 2% L, 1% M).**")
     else:
         # Check for 5 integer weights
         if len(parts) < 6:
@@ -1030,7 +1022,6 @@ async def cmd_spawn_chance(message: Message):
             await message.answer("❌ Error: All weights must be non-negative integers, and the sum must be greater than zero.")
             return
 
-        settings["legendary_only_groups"] = False
         settings["group_rarity_probabilities"] = {
             "Common": weights[0],
             "Rare": weights[1],
@@ -1042,7 +1033,6 @@ async def cmd_spawn_chance(message: Message):
 
         await message.answer(
             "✅ **Group spawn chances configured!**\n"
-            "Legendary-only restriction has been disabled.\n"
             "**New custom weights**:\n"
             f"• Common: `{weights[0]}`\n"
             f"• Rare: `{weights[1]}`\n"
@@ -1137,9 +1127,12 @@ async def cmd_set_poke_media(message: Message, db: AsyncSession):
             await post_media_update_to_channel(message.bot, pokemon, form_index, db_media_value, by_user)
 
         await message.answer(
-            f"✅ Successfully updated <b>Form {form_index}</b> for <b>{pokemon.name.title()}</b> directly!\n"
-            f"• Saved value: <code>{db_media_value}</code>\n"
-            f"📢 Announcement sent to {config.UPDATES_CHANNEL}!",
+            f"✅ <b>MEDIA UPDATED SUCCESS</b>\n"
+            f"───────────────\n"
+            f"<blockquote>👾 Pokémon: <b>{pokemon.name.title()}</b>\n"
+            f"🎭 Form: <b>Form {form_index}</b>\n"
+            f"💾 Saved: <code>{db_media_value}</code>\n"
+            f"📢 Announcement sent to {config.UPDATES_CHANNEL}!</blockquote>",
             parse_mode="HTML"
         )
         return
@@ -1313,9 +1306,12 @@ async def on_poke_media_received(message: Message, db: AsyncSession):
         await post_media_update_to_channel(message.bot, pokemon, form_index, db_media_value, by_user)
 
     await message.answer(
-        f"✅ Successfully updated <b>Form {form_index}</b> for <b>{pokemon.name.title()}</b>!\n"
-        f"• Saved value: <code>{db_media_value}</code>\n"
-        f"📢 Announcement sent to {config.UPDATES_CHANNEL}!",
+        f"✅ <b>MEDIA UPDATED SUCCESS</b>\n"
+        f"───────────────\n"
+        f"<blockquote>👾 Pokémon: <b>{pokemon.name.title()}</b>\n"
+        f"🎭 Form: <b>Form {form_index}</b>\n"
+        f"💾 Saved: <code>{db_media_value}</code>\n"
+        f"📢 Announcement sent to {config.UPDATES_CHANNEL}!</blockquote>",
         parse_mode="HTML"
     )
 
@@ -1484,14 +1480,14 @@ async def post_media_update_to_channel(bot: Bot, pokemon: Pokemon, form_index: i
 
     caption = (
         f"✨ <b>NEW POKÉMON MEDIA ADDED!</b>\n\n"
-        f"🆔 <b>ID</b>: #{pokemon.id:03d}.{form_index}\n"
+        f"<blockquote>🆔 <b>ID</b>: #{pokemon.id:03d}.{form_index}\n"
         f"📛 <b>Name</b>: {pokemon.name.title()}\n"
         f"📺 <b>Generation</b>: Gen {pokemon.generation}\n"
         f"💎 <b>Rarity</b>: {rarity_label}\n"
         f"🖼️ <b>Image</b>: {is_img}\n"
         f"🎥 <b>Video</b>: {is_vid}\n"
         f"👤 <b>By</b>: {by_user}\n"
-        f"⌛ <b>Time</b>: {time_str}"
+        f"⌛ <b>Time</b>: {time_str}</blockquote>"
     )
 
     try:
@@ -1503,3 +1499,67 @@ async def post_media_update_to_channel(bot: Bot, pokemon: Pokemon, form_index: i
             await bot.send_photo(chat_id=config.UPDATES_CHANNEL, photo=media_id, caption=caption, parse_mode="HTML")
     except Exception as e:
         print(f"⚠️ Failed to post update to channel {config.UPDATES_CHANNEL}: {e}")
+
+@router.message(Command("banword"))
+async def cmd_ban_word(message: Message):
+    import html
+    if message.from_user.id not in config.ADMIN_IDS:
+        await message.answer("❌ Denied. Only bot administrators can ban words.")
+        return
+
+    parts = message.text.split()
+    if len(parts) < 2:
+        await message.answer("⚠️ Format: `/banword <word>`")
+        return
+
+    word = parts[1].strip()
+    from utils.ban_words import add_ban_word
+    added = add_ban_word(word)
+
+    if added:
+        await message.answer(f"✅ Banned word '<b>{html.escape(word)}</b>' has been added to the filter list.", parse_mode="HTML")
+    else:
+        await message.answer(f"⚠️ Word '<b>{html.escape(word)}</b>' is already banned.", parse_mode="HTML")
+
+@router.message(Command("removebanword"))
+async def cmd_remove_ban_word(message: Message):
+    import html
+    if message.from_user.id not in config.ADMIN_IDS:
+        await message.answer("❌ Denied. Only bot administrators can manage banned words.")
+        return
+
+    parts = message.text.split()
+    if len(parts) < 2:
+        await message.answer("⚠️ Format: `/removebanword <word>`")
+        return
+
+    word = parts[1].strip()
+    from utils.ban_words import remove_ban_word
+    removed = remove_ban_word(word)
+
+    if removed:
+        await message.answer(f"✅ Banned word '<b>{html.escape(word)}</b>' has been removed from the filter list.", parse_mode="HTML")
+    else:
+        await message.answer(f"⚠️ Word '<b>{html.escape(word)}</b>' was not found in the banned list.", parse_mode="HTML")
+
+@router.message(Command("banwords"))
+async def cmd_ban_words(message: Message):
+    import html
+    if message.from_user.id not in config.ADMIN_IDS:
+        await message.answer("❌ Denied. Only bot administrators can check banned words.")
+        return
+
+    from utils.ban_words import load_ban_words
+    words = load_ban_words()
+    if not words:
+        await message.answer("📋 No words are currently banned.")
+        return
+
+    word_list = "\n".join([f"• <code>{html.escape(w)}</code>" for w in words])
+    await message.answer(
+        f"📋 <b>BANNED WORDS LIST</b>\n"
+        f"───────────────\n"
+        f"{word_list}\n"
+        f"───────────────",
+        parse_mode="HTML"
+    )

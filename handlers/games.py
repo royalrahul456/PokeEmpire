@@ -1144,7 +1144,13 @@ async def cb_dm_games(callback: CallbackQuery, db: AsyncSession):
         InlineKeyboardButton(text="🔙 Back to Hub Menu", callback_data="dm_home")
     )
     
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    try:
+        await callback.message.edit_caption(caption=text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    except Exception:
+        try:
+            await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+        except Exception:
+            pass
     await callback.answer()
 
 @router.callback_query(F.data == "play_mines")
@@ -1161,7 +1167,13 @@ async def cb_play_mines(callback: CallbackQuery):
     )
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="🔙 Back to Games", callback_data="dm_games"))
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    try:
+        await callback.message.edit_caption(caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    except Exception:
+        try:
+            await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        except Exception:
+            pass
     await callback.answer()
 
 @router.callback_query(F.data == "play_daily")
@@ -1847,7 +1859,13 @@ async def cb_dm_streak(callback: CallbackQuery, db: AsyncSession):
         f"🎁 **Progress**: `[{bar_chars}] {capped_count}/3`\n\n"
         f"👉 *Catch 3 Pokémon every day to keep your streak!*"
     )
-    await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    try:
+        await callback.message.edit_caption(caption=text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    except Exception:
+        try:
+            await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+        except Exception:
+            pass
     await callback.answer()
 
 @router.callback_query(F.data == "dm_leaderboard")
@@ -1860,7 +1878,13 @@ async def cb_dm_leaderboard(callback: CallbackQuery):
         "\u2022 `/leaderboard` or `/lb` \u2014 Top trainers by coins\n"
         "\u2022 `/streaklb` or `/slb` \u2014 Top streak holders\n"
     )
-    await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    try:
+        await callback.message.edit_caption(caption=text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    except Exception:
+        try:
+            await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+        except Exception:
+            pass
     await callback.answer()
 
 @router.callback_query(F.data == "dm_battle_menu")
@@ -1873,7 +1897,13 @@ async def cb_dm_battle_menu(callback: CallbackQuery):
         "\u2022 `/battlebot` \u2014 Battle against the AI\n"
         "\u2022 `/duel @trainer` \u2014 Challenge another trainer\n"
     )
-    await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    try:
+        await callback.message.edit_caption(caption=text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    except Exception:
+        try:
+            await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+        except Exception:
+            pass
     await callback.answer()
 
 @router.callback_query(F.data == "dm_duel_info")
@@ -1885,7 +1915,13 @@ async def cb_dm_duel_info(callback: CallbackQuery):
         "\ud83d\udc49 **Commands:**\n"
         "\u2022 `/duel @username` \u2014 Start a duel in group\n"
     )
-    await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    try:
+        await callback.message.edit_caption(caption=text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    except Exception:
+        try:
+            await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+        except Exception:
+            pass
     await callback.answer()
 
 @router.callback_query(F.data == "dm_trade_info")
@@ -1897,7 +1933,13 @@ async def cb_dm_trade_info(callback: CallbackQuery):
         "\ud83d\udc49 **Commands:**\n"
         "\u2022 `/trade @username` \u2014 Initiate a trade\n"
     )
-    await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    try:
+        await callback.message.edit_caption(caption=text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    except Exception:
+        try:
+            await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+        except Exception:
+            pass
     await callback.answer()
 
 @router.callback_query(F.data == "dm_redeem_info")
@@ -1910,5 +1952,11 @@ async def cb_dm_redeem_info(callback: CallbackQuery):
         "\u2022 `/redeem <CODE>` \u2014 Use a promo code\n\n"
         "\u26a0\ufe0f *Codes are distributed during special events.*"
     )
-    await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    try:
+        await callback.message.edit_caption(caption=text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    except Exception:
+        try:
+            await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+        except Exception:
+            pass
     await callback.answer()

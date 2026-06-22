@@ -438,7 +438,13 @@ async def cb_dm_profile(callback: CallbackQuery, db: AsyncSession):
         f"╰───────────────────"
     )
 
-    await callback.message.edit_text(profile_card, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    try:
+        await callback.message.edit_caption(caption=profile_card, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    except Exception:
+        try:
+            await callback.message.edit_text(profile_card, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+        except Exception:
+            pass
     await callback.answer()
 
 @router.callback_query(F.data == "dm_help")
@@ -466,7 +472,13 @@ async def cb_dm_help(callback: CallbackQuery):
         "• `/toggle_spawns` - Enable or disable spawns in this group chat (Admins only).\n\n"
         "🎮 **Interactive Hub**: Use the buttons here to explore your trainer collection instantly!"
     )
-    await callback.message.edit_text(help_text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    try:
+        await callback.message.edit_caption(caption=help_text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    except Exception:
+        try:
+            await callback.message.edit_text(help_text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+        except Exception:
+            pass
     await callback.answer()
 
 @router.callback_query(F.data.startswith("dm_dex_"))
@@ -487,7 +499,13 @@ async def cb_dm_dex(callback: CallbackQuery, db: AsyncSession):
     text, final_page, max_page = await get_pokedex_data(user_id, nickname, page, "All", db)
 
     if max_page == 0:
-        await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
+        except Exception:
+            try:
+                await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
+            except Exception:
+                pass
         await callback.answer()
         return
 
@@ -537,7 +555,13 @@ async def cb_dm_bag(callback: CallbackQuery, db: AsyncSession):
         "All collections are managed directly via your Pokédex.\n\n"
         "👉 Use `/pokedex` to view your collection checklist and progress!"
     )
-    await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    try:
+        await callback.message.edit_caption(caption=text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    except Exception:
+        try:
+            await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+        except Exception:
+            pass
     await callback.answer()
 
 @router.callback_query(F.data.startswith("dm_detail_"))
@@ -547,7 +571,13 @@ async def cb_dm_detail(callback: CallbackQuery, db: AsyncSession):
         "All collections are managed directly via your Pokédex.\n\n"
         "👉 Use `/pokedex` to view your collection checklist and progress!"
     )
-    await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    try:
+        await callback.message.edit_caption(caption=text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+    except Exception:
+        try:
+            await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+        except Exception:
+            pass
     await callback.answer()
 
 @router.callback_query(F.data.startswith("dm_rename_"))

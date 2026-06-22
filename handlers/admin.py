@@ -542,6 +542,7 @@ async def cmd_gift_pokemon(message: Message, db: AsyncSession):
         f"💝 Pokémon: {pokemon_display}</blockquote>"
     )
 
+    import os
     from aiogram.types import FSInputFile
     if isinstance(media_value, str) and os.path.exists(media_value):
         media_value = FSInputFile(media_value)

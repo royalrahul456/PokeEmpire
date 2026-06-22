@@ -106,7 +106,13 @@ async def cb_dm_shop(callback: CallbackQuery, db: AsyncSession):
         f"───────────────"
     )
 
-    await callback.message.edit_text(text, reply_markup=get_shop_keyboard(user.has_shiny_charm).as_markup(), parse_mode="Markdown")
+    try:
+        await callback.message.edit_caption(caption=text, reply_markup=get_shop_keyboard(user.has_shiny_charm).as_markup(), parse_mode="Markdown")
+    except Exception:
+        try:
+            await callback.message.edit_text(text, reply_markup=get_shop_keyboard(user.has_shiny_charm).as_markup(), parse_mode="Markdown")
+        except Exception:
+            pass
     await callback.answer()
 
 @router.callback_query(F.data.startswith("buy_box_"))

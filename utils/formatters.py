@@ -28,15 +28,17 @@ def get_rarity_emoji(tier: str) -> str:
     """Returns a representative emoji for a rarity tier."""
     emojis = {
         # Standard rarities
-        "Common": "⚪️",
+        "Common": "🎱",
         "Uncommon": "🟢",
         "Medium": "🔵",
         "Rare": "🟣",
         "Epic": "🔮",
-        "Legendary": "🌟",
+        "Legendary": "🟡",
         "Mythical": "🌌",
+        "Limited Edition": "🔮",
+        "Limited": "🔮",
         # Custom form types
-        "AMV": "🎬",
+        "AMV": "📺",
         "Art": "🖼️",
         "Dmax": "⚡",
         "Gmax": "💥",

@@ -91,6 +91,34 @@ async def cmd_start(message: Message, db: AsyncSession):
                 bot=message.bot,
                 default_file="data/pokeempire_banner.png"
             )
+        elif user_id in config.UPLOADER_IDS:
+            # Uploader Console
+            text = (
+                f"📤 <b>POKÉEMPIRE UPLOADER CONSOLE</b> 📤\n"
+                f"───────────────────────────────\n"
+                f"✨ Welcome, Uploader <b>{escape_md(nickname)}</b>!\n\n"
+                f"You have uploader privileges. You can upload and configure Pokémon media:\n"
+                f"• <code>/setpokemedia &lt;name or id&gt;</code> — Set photo/AMV for a Pokémon\n"
+                f"• <code>/medialist</code> — View custom media files list\n\n"
+                f"Use the premium uploader dashboard below to manage your profile or explore your collection checklist."
+            )
+            builder = InlineKeyboardBuilder()
+            builder.row(
+                InlineKeyboardButton(text="👤 Profile", callback_data="dm_profile"),
+                InlineKeyboardButton(text="🏆 Pokédex", callback_data="dm_dex_1")
+            )
+            builder.row(
+                InlineKeyboardButton(text="📋 View Media IDs", callback_data="owner_medialist")
+            )
+            
+            await send_cover_media(
+                chat_id=message.chat.id,
+                key="start",
+                caption=text,
+                reply_markup=builder.as_markup(),
+                bot=message.bot,
+                default_file="data/pokeempire_banner.png"
+            )
         else:
             # Standard premium player dashboard
             text = (
@@ -214,15 +242,6 @@ async def cb_dm_home(callback: CallbackQuery, db: AsyncSession):
     user_id = callback.from_user.id
     nickname = callback.from_user.first_name
 
-    welcome_text = (
-        f"🎮 **POKÉEMPIRE HUB** 🎮\n"
-        f"👑 Welcome, Trainer **{escape_md(nickname)}**! 👑\n"
-        f"───────────────\n\n"
-        f"I spawn wild Pokémon in your active Telegram Groups based on message activity. "
-        f"Be the first to guess their names and catch them!\n\n"
-        f"Use the menu below to check your profile, view your caught Pokémon bag, browse the Pokédex checklist, or read the game guide.\n\n"
-        f"👉 *Use the dashboard below to navigate:* "
-    )
     # Check registration
     stmt = select(User).where(User.id == user_id)
     res = await db.execute(stmt)
@@ -236,7 +255,95 @@ async def cb_dm_home(callback: CallbackQuery, db: AsyncSession):
         db.add(user)
         await db.commit()
 
-    await callback.message.edit_text(welcome_text, reply_markup=get_dm_menu_keyboard(), parse_mode="Markdown")
+    if user_id in config.ADMIN_IDS:
+        u_count = await db.execute(select(func.count(User.id)))
+        total_users = u_count.scalar() or 0
+        
+        c_count = await db.execute(select(func.count(UserPokemon.id)))
+        total_catches = c_count.scalar() or 0
+        
+        s_count = await db.execute(select(func.count(ActiveSpawn.chat_id)))
+        active_spawns = s_count.scalar() or 0
+
+        text = (
+            f"⚡ <b>POKÉEMPIRE OWNER DASHBOARD</b> ⚡\n"
+            f"───────────────────────────────\n"
+            f"👑 Welcome, Creator <b>{escape_md(nickname)}</b>!\n\n"
+            f"📊 <b>System Metrics</b>:\n"
+            f"• 👥 Total Trainers: <code>{total_users}</code>\n"
+            f"• ⚡ Total Catches: <code>{total_catches}</code>\n"
+            f"• 🌳 Active Spawns: <code>{active_spawns}</code>\n\n"
+            f"Use the console below to manage your profile, view checklists, or configure cover media and global settings!"
+        )
+        builder = InlineKeyboardBuilder()
+        builder.row(
+            InlineKeyboardButton(text="👤 Profile", callback_data="dm_profile"),
+            InlineKeyboardButton(text="🔥 Streak", callback_data="dm_streak")
+        )
+        builder.row(
+            InlineKeyboardButton(text="🏆 Pokédex", callback_data="dm_dex_1"),
+            InlineKeyboardButton(text="🛒 Shop", callback_data="dm_shop")
+        )
+        builder.row(
+            InlineKeyboardButton(text="🎮 Games Center", callback_data="dm_games"),
+            InlineKeyboardButton(text="❓ Guide", callback_data="dm_help")
+        )
+        builder.row(
+            InlineKeyboardButton(text="🛠️ Owner Tools", callback_data="owner_tools")
+        )
+        
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        except Exception:
+            try:
+                await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+            except Exception:
+                pass
+
+    elif user_id in config.UPLOADER_IDS:
+        text = (
+            f"📤 <b>POKÉEMPIRE UPLOADER CONSOLE</b> 📤\n"
+            f"───────────────────────────────\n"
+            f"✨ Welcome, Uploader <b>{escape_md(nickname)}</b>!\n\n"
+            f"You have uploader privileges. You can upload and configure Pokémon media:\n"
+            f"• <code>/setpokemedia &lt;name or id&gt;</code> — Set photo/AMV for a Pokémon\n"
+            f"• <code>/medialist</code> — View custom media files list\n\n"
+            f"Use the premium uploader dashboard below to manage your profile or explore your collection checklist."
+        )
+        builder = InlineKeyboardBuilder()
+        builder.row(
+            InlineKeyboardButton(text="👤 Profile", callback_data="dm_profile"),
+            InlineKeyboardButton(text="🏆 Pokédex", callback_data="dm_dex_1")
+        )
+        builder.row(
+            InlineKeyboardButton(text="📋 View Media IDs", callback_data="owner_medialist")
+        )
+        
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        except Exception:
+            try:
+                await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+            except Exception:
+                pass
+    else:
+        text = (
+            f"⚡ <b>POKÉEMPIRE HUB</b> ⚡\n"
+            f"───────────────────────────────\n"
+            f"✨ Welcome, Trainer <b>{escape_md(nickname)}</b>!\n\n"
+            f"I spawn wild Pokémon in your active Telegram Groups based on group message activity. "
+            f"Be the first to guess their names and catch them!\n\n"
+            f"Use the premium interactive dashboard below to view your profile, browse your collection bag, track your Pokédex checklist, or read the game guide.\n\n"
+            f"👉 <i>Select an option from the menu:</i>"
+        )
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=get_dm_menu_keyboard(), parse_mode="HTML")
+        except Exception:
+            try:
+                await callback.message.edit_text(text, reply_markup=get_dm_menu_keyboard(), parse_mode="HTML")
+            except Exception:
+                pass
+
     await callback.answer()
 
 @router.callback_query(F.data == "dm_profile")
@@ -637,6 +744,41 @@ async def cb_battle_action(callback: CallbackQuery, db: AsyncSession):
 def is_renaming(message: Message) -> bool:
     return message.from_user.id in active_renames
 
+@router.message(Command("ping"))
+async def cmd_ping(message: Message):
+    import time
+    from datetime import datetime, timezone
+    
+    start_time = time.time()
+    sent_message = await message.reply("🏓 <b>Pinging...</b>", parse_mode="HTML")
+    latency_ms = int((time.time() - start_time) * 1000)
+    
+    transit_latency = int((datetime.now(timezone.utc) - message.date).total_seconds() * 1000)
+    
+    # Get system stats dynamically
+    cpu_usage = "N/A"
+    ram_usage = "N/A"
+    try:
+        import psutil
+        cpu_usage = f"{psutil.cpu_percent()}%"
+        ram = psutil.virtual_memory()
+        ram_usage = f"{ram.percent}% ({ram.used // (1024*1024)}MB / {ram.total // (1024*1024)}MB)"
+    except Exception:
+        pass
+
+    text = (
+        f"🏓 <b>PONG!</b> 🏓\n"
+        f"───────────────\n"
+        f"📡 <b>API Latency</b>: <code>{latency_ms}ms</code>\n"
+        f"⚡ <b>Transit Latency</b>: <code>{max(0, transit_latency)}ms</code>\n"
+        f"⚙️ <b>CPU Usage</b>: <code>{cpu_usage}</code>\n"
+        f"💾 <b>RAM Usage</b>: <code>{ram_usage}</code>\n"
+        f"🟢 <b>Status</b>: <code>Stable</code>\n"
+            f"🏷️ <b>Release</b>: <code>v2.1.0</code>\n"
+        f"───────────────"
+    )
+    await sent_message.edit_text(text, parse_mode="HTML")
+
 @router.message(F.chat.type == "private", F.text, ~F.text.startswith("/"), is_renaming)
 async def check_dm_text_messages(message: Message, db: AsyncSession):
     user_id = message.from_user.id
@@ -669,26 +811,6 @@ async def check_dm_text_messages(message: Message, db: AsyncSession):
         del active_renames[user_id]
         await message.answer("❌ Error: Pokémon not found.")
     return
-
-@router.message(Command("ping"))
-async def cmd_ping(message: Message):
-    import time
-    from datetime import datetime, timezone
-    
-    start_time = time.time()
-    sent_message = await message.answer("🏓 **Pinging...**", parse_mode="Markdown")
-    latency_ms = int((time.time() - start_time) * 1000)
-    
-    transit_latency = int((datetime.now(timezone.utc) - message.date).total_seconds() * 1000)
-    
-    text = (
-        f"🏓 **PONG!** 🏓\n"
-        f"───────────────\n"
-        f"📡 **API Latency**: `{latency_ms}ms`\n"
-        f"⚡ **Transit Latency**: `{max(0, transit_latency)}ms`\n"
-        f"───────────────"
-    )
-    await sent_message.edit_text(text, parse_mode="Markdown")
 
 @router.message(F.new_chat_members)
 async def on_new_chat_members(message: Message):
@@ -808,12 +930,15 @@ async def cmd_set_cover(message: Message):
         
     parts = message.text.split()
     if len(parts) < 2:
-        await message.answer("⚠️ Format: `/setcover <start/xo/pokedex> [file_id]`")
+        await message.answer("⚠️ Format: `/setcover <start/main/xo/pokedex/leaderboard> [file_id]`")
         return
         
     key = parts[1].lower()
-    if key not in ["start", "xo", "pokedex"]:
-        await message.answer("❌ Invalid cover key. Choose `start`, `xo`, or `pokedex`.")
+    if key == "main":
+        key = "start"
+        
+    if key not in ["start", "xo", "pokedex", "leaderboard"]:
+        await message.answer("❌ Invalid cover key. Choose `start`, `main`, `xo`, `pokedex`, or `leaderboard`.")
         return
         
     if len(parts) >= 3:
@@ -834,12 +959,15 @@ async def cmd_reset_cover(message: Message):
         
     parts = message.text.split()
     if len(parts) < 2:
-        await message.answer("⚠️ Format: `/resetcover <start/xo/pokedex>`")
+        await message.answer("⚠️ Format: `/resetcover <start/main/xo/pokedex/leaderboard>`")
         return
         
     key = parts[1].lower()
-    if key not in ["start", "xo", "pokedex"]:
-        await message.answer("❌ Invalid cover key. Choose `start`, `xo`, or `pokedex`.")
+    if key == "main":
+        key = "start"
+        
+    if key not in ["start", "xo", "pokedex", "leaderboard"]:
+        await message.answer("❌ Invalid cover key. Choose `start`, `main`, `xo`, `pokedex`, or `leaderboard`.")
         return
         
     await delete_custom_cover(key)

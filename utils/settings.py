@@ -202,7 +202,7 @@ async def delete_custom_cover(key: str):
         await db.execute(stmt)
         await db.commit()
 
-async def send_cover_media(chat_id: int, key: str, caption: str, reply_markup, bot: Bot, default_url=None, default_file=None):
+async def send_cover_media(chat_id: int, key: str, caption: str, reply_markup, bot: Bot, default_url=None, default_file=None, parse_mode="HTML"):
     """Sends the configured custom media (photo, video, or animation) or falls back to defaults."""
     media_type, media_value = get_custom_cover(key)
     
@@ -216,7 +216,7 @@ async def send_cover_media(chat_id: int, key: str, caption: str, reply_markup, b
             media_value = default_url
         else:
             # Fallback text if no media
-            return await bot.send_message(chat_id, caption, reply_markup=reply_markup, parse_mode="HTML")
+            return await bot.send_message(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
 
     # If it is a string representing a local path, wrap it in FSInputFile
     if isinstance(media_value, str) and os.path.exists(media_value):
@@ -224,13 +224,13 @@ async def send_cover_media(chat_id: int, key: str, caption: str, reply_markup, b
 
     try:
         if media_type == "photo":
-            return await bot.send_photo(chat_id, photo=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+            return await bot.send_photo(chat_id, photo=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
         elif media_type == "video":
-            return await bot.send_video(chat_id, video=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+            return await bot.send_video(chat_id, video=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
         elif media_type == "animation":
-            return await bot.send_animation(chat_id, animation=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+            return await bot.send_animation(chat_id, animation=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
         else:
-            return await bot.send_message(chat_id, caption, reply_markup=reply_markup, parse_mode="HTML")
+            return await bot.send_message(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
     except Exception as e:
         print(f"Error sending cover media: {e}. Falling back to default message...")
-        return await bot.send_message(chat_id, caption, reply_markup=reply_markup, parse_mode="HTML")
+        return await bot.send_message(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)

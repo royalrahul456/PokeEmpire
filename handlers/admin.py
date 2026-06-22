@@ -307,16 +307,32 @@ async def cmd_gift_coins(message: Message, db: AsyncSession):
     await db.commit()
 
     admin_name = message.from_user.first_name
-    text = (
-        f"🎁 **COINS GIFTED** 🎁\n"
-        f"───────────────\n"
-        f"Bot Owner **{escape_md(admin_name)}** gifted:\n"
-        f"💰 **+{amount} coins**\n\n"
-        f"👤 Recipient: **{escape_md(target_user.nickname)}**\n"
-        f"💰 New Balance: `💰 {target_user.coins} coins`\n"
-        f"───────────────"
+    recipient_name = target_user.nickname or "Trainer"
+    caption = (
+        f"📣 <b>Coins Given!</b>\n"
+        f"<blockquote>👤 Sender: <b>{escape_md(admin_name)}</b>\n"
+        f"👤 Recipient: <b>{escape_md(recipient_name)}</b>\n"
+        f"💰 Coins: <b>{amount} coins</b>\n"
+        f"💰 New Balance: <b>💰 {target_user.coins} coins</b></blockquote>"
     )
-    await message.answer(text, parse_mode="Markdown")
+    
+    coin_photo = "https://i.imgur.com/Kz8GmqP.png"
+    try:
+        await message.answer_photo(photo=coin_photo, caption=caption, parse_mode="HTML")
+    except Exception as e:
+        print(f"Error sending gifted coins photo: {e}")
+        await message.answer(caption, parse_mode="HTML")
+        
+    # Send private DM to recipient
+    dm_text = (
+        f"📣 <b>You received a Gift!</b>\n"
+        f"<blockquote>👤 Sender: <b>{escape_md(admin_name)}</b>\n"
+        f"💰 Coins: <b>{amount} coins</b></blockquote>"
+    )
+    try:
+        await message.bot.send_message(chat_id=target_user.id, text=dm_text, parse_mode="HTML")
+    except Exception:
+        pass
 
 @router.message(Command("giftpokemon"))
 async def cmd_gift_pokemon(message: Message, db: AsyncSession):
@@ -469,15 +485,60 @@ async def cmd_gift_pokemon(message: Message, db: AsyncSession):
     r_emoji = get_rarity_emoji(pokemon.rarity)
     admin_name = message.from_user.first_name
 
-    text = (
-        f"🎁 **POKÉMON GIFTED** 🎁\n"
-        f"───────────────\n"
-        f"Bot Owner **{escape_md(admin_name)}** gifted a Pokémon!\n\n"
-        f"👤 Recipient: **{escape_md(target_user.nickname)}**\n"
-        f"🎉 Unwrapped: {r_emoji} {shiny_badge}{form_badge}**{pokemon.name.title()}**{serial_str}\n"
-        f"───────────────"
+    from handlers.profile import get_single_form_media_value, parse_stored_media_value
+    
+    # Resolve media of the gifted Pokémon
+    media_value = pokemon.image_url
+    media_type = "photo"
+    if form_index > 0:
+        form_media = await get_single_form_media_value(db, pokemon.id, form_index)
+        if form_media:
+            media_type, media_value = parse_stored_media_value(form_media)
+    else:
+        if pokemon.video_url:
+            media_type = "video"
+            media_value = pokemon.video_url
+
+    admin_name = message.from_user.first_name
+    recipient_name = target_user.nickname or "Trainer"
+    shiny_badge = "✨ Shiny " if is_shiny else ""
+    form_badge = form_names.get(form_index, f"Form {form_index} ")
+    r_emoji = get_rarity_emoji(pokemon.rarity)
+    serial_str = f" (🎫 {serial_number})" if serial_number else ""
+    pokemon_display = f"{r_emoji} {shiny_badge}{form_badge}<b>{pokemon.name.title()}</b>{serial_str}"
+
+    caption = (
+        f"📣 <b>Pokémon Given!</b>\n"
+        f"<blockquote>👤 Sender: <b>{escape_md(admin_name)}</b>\n"
+        f"👤 Recipient: <b>{escape_md(recipient_name)}</b>\n"
+        f"💝 Pokémon: {pokemon_display}</blockquote>"
     )
-    await message.answer(text, parse_mode="HTML")
+
+    from aiogram.types import FSInputFile
+    if isinstance(media_value, str) and os.path.exists(media_value):
+        media_value = FSInputFile(media_value)
+
+    try:
+        if media_type == "video":
+            await message.answer_video(video=media_value, caption=caption, parse_mode="HTML")
+        elif media_type == "animation":
+            await message.answer_animation(animation=media_value, caption=caption, parse_mode="HTML")
+        else:
+            await message.answer_photo(photo=media_value, caption=caption, parse_mode="HTML")
+    except Exception as e:
+        print(f"Error sending gifted pokemon media: {e}")
+        await message.answer(caption, parse_mode="HTML")
+
+    # Send private DM to recipient
+    dm_text = (
+        f"📣 <b>You received a Gift!</b>\n"
+        f"<blockquote>👤 Sender: <b>{escape_md(admin_name)}</b>\n"
+        f"💝 Pokémon: {pokemon_display}</blockquote>"
+    )
+    try:
+        await message.bot.send_message(chat_id=target_user.id, text=dm_text, parse_mode="HTML")
+    except Exception:
+        pass
 
 def update_env_admin_ids(new_ids):
     import os

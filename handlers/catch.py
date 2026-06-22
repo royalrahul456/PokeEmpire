@@ -7,7 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 import config
 from database.models import User, Pokemon, UserPokemon, ActiveSpawn
-from utils.formatters import get_progress_bar, get_rarity_emoji
+from utils.formatters import get_progress_bar, get_rarity_emoji, escape_md
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 router = Router()
 
@@ -154,45 +155,55 @@ async def cmd_catch(message: Message, db: AsyncSession):
         from utils.streak import increment_streak_catch, get_streak_data
         secured, current_count = await increment_streak_catch(user_id)
         streak_info = await get_streak_data(user_id)
-
         streak_days = streak_info.get("current_streak", 0)
-        capped_count = min(current_count, 3)
-        streak_bar_chars = "█" * (capped_count * 3) + "░" * (10 - (capped_count * 3))
-        if capped_count == 3:
-            streak_bar_chars = "█" * 10
 
-        streak_msg = f"🔥 **Streak Progress**: `[{streak_bar_chars}] {capped_count}/3`"
-        if secured:
-            streak_msg += f"\n🎉 **Streak Secured!** (Current: `{streak_days} days`)"
-        elif capped_count >= 3:
-            streak_msg += f"\n✨ **Streak Secured today!** (Current: `{streak_days} days`)"
+        # 1. Set emoji reaction on correct guess message
+        from aiogram.types import ReactionTypeEmoji
+        try:
+            await message.react(reactions=[ReactionTypeEmoji(emoji="🎉")])
+        except Exception as e:
+            print(f"Failed to react to message: {e}")
 
-        # 6. Announce winner
+        # 2. Send quick coins victory reply (Message 1)
+        msg1_text = f"🎉 +{coins_won} coins! Balance: {user.coins}"
+        await message.reply(msg1_text)
+
+        # 3. Calculate time taken
+        import datetime
+        time_taken = 1
+        if spawn.spawned_at:
+            spawn_time = spawn.spawned_at
+            if spawn_time.tzinfo is not None:
+                spawn_time = spawn_time.replace(tzinfo=None)
+            now_time = datetime.datetime.now()
+            time_taken = max(1, int((now_time - spawn_time).total_seconds()))
+
+        # 4. Format and send detailed card message (Message 2)
         shiny_badge = "✨ Shiny " if is_shiny else ""
         poke_display = pokemon.name.title()
         r_emoji = get_rarity_emoji(pokemon.rarity)
         
-        # Generate small progress bars for IVs
-        hp_bar = get_progress_bar(iv_hp, 31, 5, fill_char="▰", empty_char="▱")
-        atk_bar = get_progress_bar(iv_atk, 31, 5, fill_char="▰", empty_char="▱")
-        def_bar = get_progress_bar(iv_def, 31, 5, fill_char="▰", empty_char="▱")
-        spd_bar = get_progress_bar(iv_spd, 31, 5, fill_char="▰", empty_char="▱")
-
-        announcement = (
-            f"🎉 **SUCCESSFUL CATCH!** 🎉\n"
-            f"───────────────\n"
-            f"Trainer **{user.nickname}** successfully caught the wild {r_emoji} {shiny_badge}**{poke_display}**!\n\n"
-        )
+        shiny_upgrade_text = ""
         if shiny_upgraded:
-            announcement += "🍀 ✨ **Shiny Charm Activated!** Your catch was upgraded to a **Shiny**! ✨\n\n"
-            
-        announcement += (
-            f"💰 **Reward**: `💰 +{coins_won} coins`\n"
-            f"───────────────\n"
-            f"{streak_msg}\n"
-            f"───────────────"
+            shiny_upgrade_text = "\n🍀 ✨ <b>Shiny Charm Activated!</b> catch upgraded to <b>Shiny</b>! ✨"
+
+        msg2_text = (
+            f"💥 🌟 <b>{escape_md(user.nickname)}</b> caught!{shiny_upgrade_text}\n\n"
+            f"⛔ <b>NAME:</b> {poke_display}\n"
+            f"🎦 <b>ANIME:</b> Gen {pokemon.generation}\n"
+            f"{r_emoji} <b>RARITY:</b> {r_emoji} {pokemon.rarity}\n"
+            f"⏱️ <b>TIME:</b> {time_taken}s"
         )
-        await message.answer(announcement, parse_mode="Markdown")
+        
+        kb_builder = InlineKeyboardBuilder()
+        kb_builder.button(text="📖 View Pokedex", callback_data=f"pd_page_{user_id}_1_All")
+        
+        await message.reply(msg2_text, reply_markup=kb_builder.as_markup(), parse_mode="HTML")
+
+        # 5. Send separate streak status message (Message 3)
+        fires = "🔥" * min(max(1, streak_days), 5)
+        msg3_text = f"{fires} {streak_days}-Day Streak! Keep going! 🎯"
+        await message.answer(msg3_text)
 
     except Exception as e:
         # Rollback broken transaction before any further DB operations

@@ -1012,6 +1012,12 @@ async def check_game_answers(message: Message, db: AsyncSession):
     correct_answer = game["answer"]
 
     if guess == correct_answer:
+        from aiogram.types import ReactionTypeEmoji
+        try:
+            await message.react(reactions=[ReactionTypeEmoji(emoji="🎉")])
+        except Exception as e:
+            print(f"Failed to react to game guess: {e}")
+
         user_id = message.from_user.id
         nickname = message.from_user.first_name
 
@@ -1749,7 +1755,7 @@ async def cmd_streak(message: Message, db: AsyncSession):
         f"🏆 **Best**: `{best_days} days`\n"
         f"🏆 **Rank**: `{rank_str}`\n"
         f"🎁 **Progress**: `[{bar_chars}] {capped_count}/3`\n\n"
-        f"👉 *Snatch (catch) 3 Pokémon every day to keep your streak!*"
+        f"👉 *Catch 3 Pokémon every day to keep your streak!*"
     )
     await message.answer(text, parse_mode="Markdown")
 
@@ -1839,7 +1845,7 @@ async def cb_dm_streak(callback: CallbackQuery, db: AsyncSession):
         f"🏆 **Best**: `{best_days} days`\n"
         f"🏆 **Rank**: `{rank_str}`\n"
         f"🎁 **Progress**: `[{bar_chars}] {capped_count}/3`\n\n"
-        f"👉 *Snatch (catch) 3 Pokémon every day to keep your streak!*"
+        f"👉 *Catch 3 Pokémon every day to keep your streak!*"
     )
     await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
     await callback.answer()

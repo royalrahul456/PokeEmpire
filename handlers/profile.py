@@ -10,6 +10,7 @@ from sqlalchemy.orm import joinedload
 from database.models import User, UserPokemon, Pokemon
 from utils.formatters import get_hp_bar, get_progress_bar, get_rarity_emoji, escape_md
 from utils.favorite import get_favorite_id, set_favorite_id
+from utils.settings import send_cover_media, get_custom_cover
 
 router = Router()
 
@@ -879,6 +880,7 @@ async def cb_pokedex_set_filter(callback: CallbackQuery, db: AsyncSession):
     await callback.answer(f"Filtered by: {rarity_filter}")
 
 @router.message(Command("check"))
+@router.message(Command("c"))
 async def cmd_check_pokemon(message: Message, db: AsyncSession):
     parts = message.text.split()
     if len(parts) < 2:
@@ -886,125 +888,171 @@ async def cmd_check_pokemon(message: Message, db: AsyncSession):
         return
 
     query = " ".join(parts[1:]).strip().lower()
-    await check_pokemon_variants(message, db, query, page=1)
-
-
-@router.callback_query(F.data.startswith("check_page_"))
-async def cb_check_page(callback: CallbackQuery, db: AsyncSession):
-    parts = callback.data.split("_")
-    try:
-        pokemon_id = int(parts[2])
-        page = int(parts[3])
-    except (IndexError, ValueError):
-        await callback.answer("⚠️ Invalid page.")
-        return
-
-    poke_stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
-    poke_res = await db.execute(poke_stmt)
-    pokemon = poke_res.scalar_one_or_none()
-    if not pokemon:
-        await callback.answer("⚠️ Pokémon not found.")
-        return
-
-    await check_pokemon_variants(callback.message, db, str(pokemon_id), page=page, edit=True)
-    await callback.answer()
-
-
-async def check_pokemon_variants(message: Message, db: AsyncSession, query: str, page: int = 1, edit: bool = False):
+    
     pokemon_id = None
+    form_index = 0
     pokemon_name_query = None
+    
     if "." in query:
         pq, fq = query.split(".", 1)
         pq = pq.strip()
+        fq = fq.strip()
         if pq.isdigit():
             pokemon_id = int(pq)
         else:
             pokemon_name_query = pq
-    elif query.isdigit():
-        pokemon_id = int(query)
+        if fq.isdigit():
+            form_index = int(fq)
     else:
-        pokemon_name_query = query
-
+        if query.isdigit():
+            pokemon_id = int(query)
+        else:
+            pokemon_name_query = query
+            
     if pokemon_id is not None:
-        poke_stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
+        stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
     else:
-        poke_stmt = select(Pokemon).where(Pokemon.name.ilike(pokemon_name_query))
-
-    poke_res = await db.execute(poke_stmt)
-    pokemon = poke_res.scalar_one_or_none()
-
+        stmt = select(Pokemon).where(Pokemon.name.ilike(pokemon_name_query))
+        
+    res = await db.execute(stmt)
+    pokemon = res.scalar_one_or_none()
+    
     if not pokemon:
         searched_term = pokemon_name_query if pokemon_name_query else str(pokemon_id)
-        text = f"Pokemon '{escape_md(searched_term)}' not found in database."
-        if edit:
-            await message.edit_text(text)
-        else:
-            await message.answer(text)
+        await message.answer(f"Pokemon '{escape_md(searched_term)}' not found in database.", parse_mode="HTML")
         return
-
-    from database.models import PokemonFormMedia
-
-    media_stmt = select(PokemonFormMedia.form_index, PokemonFormMedia.media_value).where(
-        PokemonFormMedia.pokemon_id == pokemon.id
-    ).order_by(PokemonFormMedia.form_index)
-    media_res = await db.execute(media_stmt)
-    configured_forms = media_res.all()
-    form_media_lookup = {form_index: media_value for form_index, media_value in configured_forms}
-
-    all_forms = [0] + [form_index for form_index, _ in configured_forms]
-    all_forms = sorted(set(all_forms))
-
-    total_variants = len(all_forms)
-    page_size = 8
-    total_pages = max(1, (total_variants + page_size - 1) // page_size)
-
-    if page < 1:
-        page = 1
-    if page > total_pages:
-        page = total_pages
-
-    start_idx = (page - 1) * page_size
-    end_idx = start_idx + page_size
-    page_forms = all_forms[start_idx:end_idx]
-
-    text_lines = [
-        f"**{escape_md(pokemon.name.title())}**",
-        f"Generation: `{pokemon.generation}`",
-        f"Total variants: `{total_variants}` - Page `{page}/{total_pages}`",
-        "",
-    ]
-
-    for form_index in page_forms:
-        if form_index == 0:
-            form_name = pokemon.rarity
-            entry_id = str(pokemon.id)
+        
+    caption, reply_markup, media_type, media_value = await build_check_pokemon_payload(pokemon.id, form_index, db)
+    
+    from aiogram.types import FSInputFile
+    if isinstance(media_value, str) and os.path.exists(media_value):
+        media_value = FSInputFile(media_value)
+        
+    try:
+        if media_type == "video":
+            await message.answer_video(video=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+        elif media_type == "animation":
+            await message.answer_animation(animation=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
         else:
-            form_name = get_form_label(form_index, form_media_lookup.get(form_index))
-            entry_id = f"{pokemon.id}.{form_index}"
-        text_lines.append(f"- `{entry_id}` {escape_md(form_name)}")
+            await message.answer_photo(photo=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+    except Exception as e:
+        print(f"Error sending check media: {e}")
+        await message.answer(caption, reply_markup=reply_markup, parse_mode="HTML")
 
-    text = "\n".join(text_lines)
 
-    kb_rows = []
-    if total_pages > 1:
-        prev_page = page - 1 if page > 1 else total_pages
-        next_page = page + 1 if page < total_pages else 1
-        kb_rows.append([
-            InlineKeyboardButton(text="Prev", callback_data=f"check_page_{pokemon.id}_{prev_page}"),
-            InlineKeyboardButton(text=f"{page}/{total_pages}", callback_data="check_page_info_noop"),
-            InlineKeyboardButton(text="Next", callback_data=f"check_page_{pokemon.id}_{next_page}"),
-        ])
-
-    kb_rows.append([
-        InlineKeyboardButton(text="Owners", callback_data=f"show_owners_{pokemon.id}_x_check_{page}")
-    ])
-
-    reply_markup = InlineKeyboardMarkup(inline_keyboard=kb_rows)
-
-    if edit:
-        await message.edit_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+async def build_check_pokemon_payload(pokemon_id: int, form_index: int, db: AsyncSession):
+    # Fetch pokemon
+    stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
+    res = await db.execute(stmt)
+    pokemon = res.scalar_one_or_none()
+    if not pokemon:
+        return None, None, None, None
+        
+    # Resolve media
+    media_type = "photo"
+    media_value = pokemon.image_url
+    if form_index > 0:
+        form_media = await get_single_form_media_value(db, pokemon.id, form_index)
+        if form_media:
+            media_type, media_value = parse_stored_media_value(form_media)
     else:
-        await message.answer(text, reply_markup=reply_markup, parse_mode="Markdown")
+        if pokemon.video_url:
+            media_type = "video"
+            media_value = pokemon.video_url
+            
+    # Resolve form label
+    if form_index > 0:
+        form_media_db = await get_single_form_media_value(db, pokemon.id, form_index)
+        form_label = get_form_label(form_index, form_media_db)
+        r_emoji = "📺" if form_index == 1 else "🔮"
+        rarity_str = f"{r_emoji} {form_label}"
+        name_str = f"{pokemon.name.title()} ({form_label})"
+        id_str = f"{pokemon.id}.{form_index}"
+    else:
+        r_emoji = get_rarity_emoji(pokemon.rarity)
+        rarity_str = f"{r_emoji} {pokemon.rarity}"
+        name_str = pokemon.name.title()
+        id_str = f"{pokemon.id}"
+        
+    caption = (
+        f"<b>🌟 Pokemon Info</b>\n"
+        f"🆔 <b>ID</b>: <code>{id_str}</code>\n"
+        f"⛔ <b>Name</b>: {escape_md(name_str)}\n"
+        f"🎦 <b>Generation</b>: Gen {pokemon.generation}\n"
+        f"🎬 <b>Rarity</b>: {rarity_str}"
+    )
+    
+    # Keyboard has a single button: Owners
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="👥 Owners", callback_data=f"show_check_owners_{pokemon.id}_{form_index}")
+    )
+    return caption, builder.as_markup(), media_type, media_value
+
+
+@router.callback_query(F.data.startswith("show_check_owners_"))
+async def cb_show_check_owners(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_")
+    pokemon_id = int(parts[3])
+    form_index = int(parts[4])
+    
+    # Query owners
+    owners_stmt = (
+        select(User.id, User.nickname, func.count(UserPokemon.id))
+        .join(UserPokemon, UserPokemon.user_id == User.id)
+        .where(UserPokemon.pokemon_id == pokemon_id)
+        .where(UserPokemon.form_index == form_index)
+        .group_by(User.id)
+        .order_by(func.count(UserPokemon.id).desc())
+    )
+    owners_res = await db.execute(owners_stmt)
+    owners = owners_res.all()
+    
+    caption = f"🎦 <b>Who has this pokemon:</b>\n"
+    if owners:
+        owner_rows = []
+        for idx, (uid, nick, count) in enumerate(owners, start=1):
+            display_name = escape_md(nick or "Trainer")
+            owner_rows.append(f"{idx}. <a href=\"tg://user?id={uid}\">{display_name}</a> ×{count}")
+        caption += "\n".join(owner_rows)
+    else:
+        caption += "No trainer owns this species yet."
+        
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🔙 Back", callback_data=f"check_back_{pokemon_id}_{form_index}")
+    )
+    
+    try:
+        await callback.message.edit_caption(caption=caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+    except Exception:
+        try:
+            await callback.message.edit_text(caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+        except Exception:
+            pass
+            
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("check_back_"))
+async def cb_check_back(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_")
+    pokemon_id = int(parts[2])
+    form_index = int(parts[3])
+    
+    caption, reply_markup, _, _ = await build_check_pokemon_payload(pokemon_id, form_index, db)
+    
+    try:
+        await callback.message.edit_caption(caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+    except Exception:
+        try:
+            await callback.message.edit_text(caption, reply_markup=reply_markup, parse_mode="HTML")
+        except Exception:
+            pass
+            
+    await callback.answer()
+
+
 async def get_leaderboard_text(lb_type: str, db: AsyncSession) -> str:
     if lb_type == "coins":
         coins_stmt = select(User).order_by(desc(User.coins)).limit(10)
@@ -1070,13 +1118,15 @@ def get_leaderboard_keyboard() -> InlineKeyboardMarkup:
 @router.message(Command("leaderboard"))
 @router.message(Command("lb"))
 async def cmd_leaderboard(message: Message, db: AsyncSession):
-    arceus_photo = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/493.png"
     text = await get_leaderboard_text("catches", db)
     
-    await message.answer_photo(
-        photo=arceus_photo,
+    await send_cover_media(
+        chat_id=message.chat.id,
+        key="leaderboard",
         caption=text,
         reply_markup=get_leaderboard_keyboard(),
+        bot=message.bot,
+        default_url="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/493.png",
         parse_mode="Markdown"
     )
 
@@ -1161,170 +1211,27 @@ async def cmd_unfav(message: Message, db: AsyncSession):
     await set_favorite_id(user_id, None, db)
     await message.answer("❌ Cleared your favorite cover. A random Pokémon from your bag will be shown instead.")
 
-async def build_search_result_payload(user_id: int, pokemon: Pokemon, form_filter: int | None, db: AsyncSession):
-    requested_form_media = await get_single_form_media_value(db, pokemon.id, form_filter) if form_filter is not None else None
-
-    if form_filter is not None:
-        catches_stmt = select(UserPokemon).where(
-            UserPokemon.user_id == user_id,
-            UserPokemon.pokemon_id == pokemon.id,
-            UserPokemon.form_index == form_filter,
-        ).order_by(UserPokemon.caught_at.desc())
-    else:
-        catches_stmt = select(UserPokemon).where(
-            UserPokemon.user_id == user_id,
-            UserPokemon.pokemon_id == pokemon.id,
-        ).order_by(UserPokemon.caught_at.desc())
-
-    catches_res = await db.execute(catches_stmt)
-    user_catches = catches_res.scalars().all()
-
-    form_token = str(form_filter) if form_filter is not None else "x"
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="Owners", callback_data=f"show_owners_{pokemon.id}_{form_token}_search_{user_id}")]
-        ]
-    )
-
-    media_type = "photo"
-    media_value = pokemon.image_url
-    pokemon_name = escape_md(pokemon.name.title())
-
-    # If the user requested a specific form filter, show that form's media directly if available
-    if form_filter is not None and requested_form_media:
-        resolved_media_type, resolved_media_value = parse_stored_media_value(requested_form_media)
-        if resolved_media_value:
-            media_type = resolved_media_type
-            media_value = resolved_media_value
-
-    if user_catches:
-        best_up = None
-        best_iv_pct = -1
-        for up in user_catches:
-            iv_total = up.iv_hp + up.iv_atk + up.iv_def + up.iv_spd
-            iv_pct = int((iv_total / 124) * 100)
-            if iv_pct > best_iv_pct:
-                best_iv_pct = iv_pct
-                best_up = up
-
-        # Only override with best catch media if no specific form filter was requested
-        if form_filter is None:
-            best_form_media = None
-            if best_up and best_up.form_index > 0:
-                best_form_media = await get_single_form_media_value(db, pokemon.id, best_up.form_index)
-                resolved_media_type, resolved_media_value = parse_stored_media_value(best_form_media)
-                if resolved_media_value:
-                    media_type = resolved_media_type
-                    media_value = resolved_media_value
-
-        best_form_label = get_form_label(best_up.form_index, best_form_media)
-        best_form_id = f"{pokemon.id}.{best_up.form_index}" if best_up.form_index > 0 else str(pokemon.id)
-        shiny_label = "Yes" if best_up.is_shiny else "No"
-
-        request_line = ""
-        total_line = f"Total caught: `{len(user_catches)}`\n\n"
-        if form_filter is not None:
-            requested_label = get_form_label(form_filter, requested_form_media)
-            request_line = f"Requested entry: `{pokemon.id}.{form_filter} {requested_label}`\n"
-            total_line = f"Total caught of this entry: `{len(user_catches)}`\n\n"
-
-        text = (
-            f"**SEARCH RESULTS**\n"
-            f"Species: **{pokemon_name}**\n"
-            f"Pokedex ID: `{pokemon.id}`\n"
-            f"Rarity: `{pokemon.rarity}`\n"
-            f"{request_line}"
-            f"{total_line}"
-            f"Best catch:\n"
-            f"- Form: `{best_form_label}`\n"
-            f"- Entry ID: `{best_form_id}`\n"
-            f"- Shiny: `{shiny_label}`"
-        )
-    else:
-        if form_filter is not None:
-            requested_label = get_form_label(form_filter, requested_form_media)
-            missing_line = f"You have not caught `{pokemon.id}.{form_filter} {requested_label}` yet."
-        else:
-            missing_line = f"You have not caught **{pokemon_name}** yet."
-
-        text = (
-            f"**SEARCH RESULTS**\n"
-            f"Species: **{pokemon_name}**\n"
-            f"Pokedex ID: `{pokemon.id}`\n"
-            f"Rarity: `{pokemon.rarity}`\n"
-            f"Total caught: `0`\n\n"
-            f"{missing_line}"
-        )
-
-    return text, keyboard, media_type, media_value
-
-
-async def send_search_result_message(message: Message, user_id: int, pokemon: Pokemon, form_filter: int | None, db: AsyncSession):
-    text, keyboard, media_type, media_value = await build_search_result_payload(user_id, pokemon, form_filter, db)
-
-    from aiogram.types import FSInputFile
-
-    if isinstance(media_value, str) and os.path.exists(media_value):
-        media_value = FSInputFile(media_value)
-
-    try:
-        if media_type == "video":
-            await message.answer_video(video=media_value, caption=text, reply_markup=keyboard, parse_mode="Markdown")
-        elif media_type == "animation":
-            await message.answer_animation(animation=media_value, caption=text, reply_markup=keyboard, parse_mode="Markdown")
-        else:
-            await message.answer_photo(photo=media_value, caption=text, reply_markup=keyboard, parse_mode="Markdown")
-    except Exception as e:
-        print(f"Error sending search media: {e}")
-        await message.answer(text, reply_markup=keyboard, parse_mode="Markdown")
-
-
-async def restore_search_result(callback: CallbackQuery, requester_id: int, pokemon_id: int, form_filter: int | None, db: AsyncSession):
-    poke_stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
-    poke_res = await db.execute(poke_stmt)
-    pokemon = poke_res.scalar_one_or_none()
-
-    if not pokemon:
-        await callback.answer("Pokemon not found.", show_alert=True)
-        return
-
-    text, keyboard, _, _ = await build_search_result_payload(requester_id, pokemon, form_filter, db)
-
-    try:
-        await callback.message.edit_caption(caption=text, reply_markup=keyboard, parse_mode="Markdown")
-    except Exception:
-        try:
-            await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
-        except Exception:
-            pass
-
-
 @router.message(Command("search"))
 @router.message(Command("s"))
+@router.message(Command("cid"))
 async def cmd_search(message: Message, db: AsyncSession):
-    user_id = message.from_user.id
     parts = message.text.split()
     if len(parts) < 2:
-        await message.answer("Format: `/search <pokemon_name_or_id>[.form_index]`\nExample: `/search bulbasaur` or `/search 6.1`", parse_mode="Markdown")
+        await message.answer("Format: `/search <pokemon_name_or_id>`\nExample: `/search bulbasaur` or `/search 6`", parse_mode="Markdown")
         return
 
     query = " ".join(parts[1:]).strip().lower()
 
     pokemon_id = None
-    form_filter = None
     pokemon_name_query = None
 
     if "." in query:
         pq, fq = query.split(".", 1)
         pq = pq.strip()
-        fq = fq.strip()
-        
         if pq.isdigit():
             pokemon_id = int(pq)
         else:
             pokemon_name_query = pq
-            
-        form_filter = parse_form_filter(fq)
     else:
         if query.isdigit():
             pokemon_id = int(query)
@@ -1334,143 +1241,159 @@ async def cmd_search(message: Message, db: AsyncSession):
     if pokemon_id is not None:
         poke_stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
     else:
-        poke_stmt = select(Pokemon).where(Pokemon.name.ilike(pokemon_name_query))
+        poke_stmt = select(Pokemon).where(Pokemon.name.ilike(f"%{pokemon_name_query}%"))
 
     poke_res = await db.execute(poke_stmt)
-    pokemon = poke_res.scalar_one_or_none()
+    pokemons = poke_res.scalars().all()
 
-    if not pokemon:
+    if not pokemons:
         searched_term = pokemon_name_query if pokemon_name_query else str(pokemon_id)
-        await message.answer(f"Pokemon '{escape_md(searched_term)}' not found in database.", parse_mode="Markdown")
+        await message.answer(f"Pokemon '{escape_md(searched_term)}' not found in database.", parse_mode="HTML")
         return
 
-    await send_search_result_message(message, user_id, pokemon, form_filter, db)
+    # Sort results so the closest match (shortest name or exact name) is selected as the primary_pokemon
+    if pokemon_name_query:
+        pokemons.sort(key=lambda p: (abs(len(p.name) - len(pokemon_name_query)), p.name.lower() != pokemon_name_query.lower()))
+    pokemon = pokemons[0]
+
+    await send_search_result_message(message, pokemon, 1, db)
 
 
-@router.callback_query(F.data.startswith("show_owners_"))
-async def cb_show_owners(callback: CallbackQuery, db: AsyncSession):
-    parts = callback.data.split("_")
-
-    try:
-        pokemon_id = int(parts[2])
-    except (IndexError, ValueError):
-        await callback.answer("Invalid action.")
-        return
-
-    form_filter = None
-    source = "generic"
-    source_payload = None
-
-    if len(parts) >= 4 and parts[3] != "x":
-        try:
-            form_filter = int(parts[3])
-        except ValueError:
-            form_filter = None
-
-    if len(parts) >= 5:
-        source = parts[4]
-    if len(parts) >= 6:
-        source_payload = parts[5]
-
-    poke_stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
-    poke_res = await db.execute(poke_stmt)
-    pokemon = poke_res.scalar_one_or_none()
-
+async def build_variants_search_payload(pokemon_id: int, page: int, db: AsyncSession):
+    # Fetch primary pokemon
+    stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
+    res = await db.execute(stmt)
+    pokemon = res.scalar_one_or_none()
     if not pokemon:
-        await callback.answer("Pokemon not found.")
-        return
-
-    owners_stmt = (
-        select(User.nickname, User.username, func.count(UserPokemon.id))
-        .join(UserPokemon, UserPokemon.user_id == User.id)
-        .where(UserPokemon.pokemon_id == pokemon_id)
+        return "Character not found.", None
+        
+    # Fetch all forms from PokemonFormMedia
+    from database.models import PokemonFormMedia
+    stmt = select(PokemonFormMedia.form_index, PokemonFormMedia.media_value).where(
+        PokemonFormMedia.pokemon_id == pokemon_id
+    ).order_by(PokemonFormMedia.form_index)
+    res = await db.execute(stmt)
+    form_entries = res.all()
+    
+    # Build list of variants: (form_index, label, rarity_emoji, entry_id)
+    base_emoji = get_rarity_emoji(pokemon.rarity)
+    variants = [(0, pokemon.rarity, base_emoji, f"{pokemon.id}")]
+    
+    for form_index, media_value in form_entries:
+        form_label = get_form_label(form_index, media_value)
+        if form_index == 1:
+            form_emoji = "📺" # AMV
+        elif form_index == 2:
+            form_emoji = "⚡" # Dmax
+        elif form_index == 3:
+            form_emoji = "💥" # Gmax
+        elif form_index == 4:
+            form_emoji = "🌀" # Z-Move
+        elif form_index == 5:
+            form_emoji = "🔮" # Terastal
+        else:
+            form_emoji = "🔮"
+        variants.append((form_index, form_label, form_emoji, f"{pokemon.id}.{form_index}"))
+        
+    total_variants = len(variants)
+    page_size = 5
+    total_pages = max(1, (total_variants + page_size - 1) // page_size)
+    
+    if page < 1:
+        page = 1
+    if page > total_pages:
+        page = total_pages
+        
+    start_idx = (page - 1) * page_size
+    end_idx = start_idx + page_size
+    page_variants = variants[start_idx:end_idx]
+    
+    gen_str = str(pokemon.generation)
+    if gen_str.isdigit():
+        series_str = f"Gen {gen_str}"
+    else:
+        series_str = gen_str
+        
+    caption = (
+        f"🦧 <b>{escape_md(pokemon.name.title())}</b>\n"
+        f"┣━ 🎦 {escape_md(series_str)}\n"
+        f"┣━ 📊 Total variants: <b>{total_variants}</b> — Page <b>{page}/{total_pages}</b>\n\n"
     )
-    if form_filter is not None:
-        owners_stmt = owners_stmt.where(UserPokemon.form_index == form_filter)
+    
+    for form_index, label, emoji, entry_id in page_variants:
+        caption += f"┣━ {emoji} {label} | ID: <code>{entry_id}</code>\n"
+        
+    # Build keyboard
+    builder = InlineKeyboardBuilder()
+    if total_pages > 1:
+        if page == 1:
+            builder.row(
+                InlineKeyboardButton(text=f"1/{total_pages}", callback_data="search_noop"),
+                InlineKeyboardButton(text="Next ➡️", callback_data=f"search_page_{pokemon.id}_{page + 1}")
+            )
+        elif page == total_pages:
+            builder.row(
+                InlineKeyboardButton(text="⬅️ Prev", callback_data=f"search_page_{pokemon.id}_{page - 1}"),
+                InlineKeyboardButton(text=f"{total_pages}/{total_pages}", callback_data="search_noop")
+            )
+        else:
+            builder.row(
+                InlineKeyboardButton(text="⬅️ Prev", callback_data=f"search_page_{pokemon.id}_{page - 1}"),
+                InlineKeyboardButton(text=f"{page}/{total_pages}", callback_data="search_noop"),
+                InlineKeyboardButton(text="Next ➡️", callback_data=f"search_page_{pokemon.id}_{page + 1}")
+            )
+            
+    return caption, builder.as_markup()
 
-    owners_stmt = owners_stmt.group_by(User.id).order_by(func.count(UserPokemon.id).desc())
-    owners_res = await db.execute(owners_stmt)
-    owners = owners_res.all()
 
-    pokemon_name = escape_md(pokemon.name.title())
-    if form_filter is not None:
-        form_media_value = await get_single_form_media_value(db, pokemon_id, form_filter)
-        form_label = get_form_label(form_filter, form_media_value)
-        title = f"**OWNERS OF {escape_md(form_label)} {pokemon_name} ({pokemon_id}.{form_filter})**"
-        empty_line = "No trainer owns this entry yet."
-    else:
-        title = f"**OWNERS OF {pokemon_name} ({pokemon_id})**"
-        empty_line = "No trainer owns this species yet."
-
-    if owners:
-        owner_rows = []
-        for idx, (nickname, username, count) in enumerate(owners, start=1):
-            display_name = escape_md(nickname or "Trainer")
-            username_str = f" (@{escape_md(username)})" if username else ""
-            owner_rows.append(f"{idx}. **{display_name}**{username_str} `x{count}`")
-        owners_list = "\n".join(owner_rows)
-    else:
-        owners_list = empty_line
-
-    reply_markup = None
-    if source == "search" and source_payload:
-        form_token = str(form_filter) if form_filter is not None else "x"
-        reply_markup = InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="Back", callback_data=f"owners_back_search_{pokemon_id}_{form_token}_{source_payload}")]]
-        )
-    elif source == "check" and source_payload:
-        reply_markup = InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="Back", callback_data=f"owners_back_check_{pokemon_id}_{source_payload}")]]
-        )
-
-    text = f"{title}\n\n{owners_list}"
-
+async def send_search_result_message(message: Message, pokemon: Pokemon, page: int, db: AsyncSession):
+    caption, reply_markup = await build_variants_search_payload(pokemon.id, page, db)
+    
+    media_value = pokemon.image_url
+    media_type = "photo"
+    
+    if pokemon.video_url:
+        media_type = "video"
+        media_value = pokemon.video_url
+        
+    from aiogram.types import FSInputFile
+    if isinstance(media_value, str) and os.path.exists(media_value):
+        media_value = FSInputFile(media_value)
+        
     try:
-        await callback.message.edit_caption(caption=text, reply_markup=reply_markup, parse_mode="Markdown")
+        if media_type == "video":
+            await message.answer_video(video=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+        else:
+            await message.answer_photo(photo=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+    except Exception as e:
+        print(f"Error sending variants media: {e}")
+        await message.answer(caption, reply_markup=reply_markup, parse_mode="HTML")
+
+
+@router.callback_query(F.data.startswith("search_page_"))
+async def cb_search_page(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_")
+    pokemon_id = int(parts[2])
+    page = int(parts[3])
+    
+    caption, reply_markup = await build_variants_search_payload(pokemon_id, page, db)
+    
+    try:
+        await callback.message.edit_caption(caption=caption, reply_markup=reply_markup, parse_mode="HTML")
     except Exception:
         try:
-            await callback.message.edit_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+            await callback.message.edit_text(caption, reply_markup=reply_markup, parse_mode="HTML")
         except Exception:
             pass
-
+            
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("owners_back_search_"))
-async def cb_owners_back_search(callback: CallbackQuery, db: AsyncSession):
-    parts = callback.data.split("_")
-
-    try:
-        pokemon_id = int(parts[3])
-        requester_id = int(parts[5])
-    except (IndexError, ValueError):
-        await callback.answer("Invalid action.")
-        return
-
-    form_filter = None
-    if len(parts) >= 5 and parts[4] != "x":
-        try:
-            form_filter = int(parts[4])
-        except ValueError:
-            form_filter = None
-
-    await restore_search_result(callback, requester_id, pokemon_id, form_filter, db)
+@router.callback_query(F.data == "search_noop")
+async def cb_search_noop(callback: CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("owners_back_check_"))
-async def cb_owners_back_check(callback: CallbackQuery, db: AsyncSession):
-    parts = callback.data.split("_")
-
-    try:
-        pokemon_id = int(parts[3])
-        page = int(parts[4])
-    except (IndexError, ValueError):
-        await callback.answer("Invalid action.")
-        return
-
-    await check_pokemon_variants(callback.message, db, str(pokemon_id), page=page, edit=True)
-    await callback.answer()
 @router.callback_query(F.data.startswith("profile_view_"))
 async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
     parts = callback.data.split("_")
@@ -1999,16 +1922,51 @@ async def cmd_gift(message: Message, db: AsyncSession):
     form_badge = form_names.get(form_index, f"Form {form_index} ")
     r_emoji = get_rarity_emoji(up.pokemon.rarity)
     
-    sender_name = message.from_user.first_name
-    receiver_name = target_user.nickname or "Trainer"
-    
-    text = (
+    # Resolve media of the gifted Pokémon
+    media_value = up.pokemon.image_url
+    media_type = "photo"
+    if up.form_index > 0:
+        form_media = await get_single_form_media_value(db, up.pokemon_id, up.form_index)
+        if form_media:
+            media_type, media_value = parse_stored_media_value(form_media)
+    else:
+        if up.pokemon.video_url:
+            media_type = "video"
+            media_value = up.pokemon.video_url
+
+    pokemon_display = f"{r_emoji} {shiny_badge}{form_badge}<b>{up.pokemon.name.title()}</b>"
+
+    caption = (
         f"🎁 <b>POKÉMON GIFTED!</b> 🎁\n"
-        f"───────────────\n"
-        f"Trainer <b>{escape_md(sender_name)}</b> gifted a Pokémon to <b>{escape_md(receiver_name)}</b>!\n\n"
-        f"💝 Pokémon: {r_emoji} {shiny_badge}{form_badge}<b>{up.pokemon.name.title()}</b>\n"
-        f"───────────────"
+        f"<blockquote>👤 Sender: <b>{escape_md(sender_name)}</b>\n"
+        f"👤 Recipient: <b>{escape_md(receiver_name)}</b>\n"
+        f"💝 Pokémon: {pokemon_display}</blockquote>"
     )
-    await message.answer(text, parse_mode="HTML")
+
+    from aiogram.types import FSInputFile
+    if isinstance(media_value, str) and os.path.exists(media_value):
+        media_value = FSInputFile(media_value)
+
+    try:
+        if media_type == "video":
+            await message.answer_video(video=media_value, caption=caption, parse_mode="HTML")
+        elif media_type == "animation":
+            await message.answer_animation(animation=media_value, caption=caption, parse_mode="HTML")
+        else:
+            await message.answer_photo(photo=media_value, caption=caption, parse_mode="HTML")
+    except Exception as e:
+        print(f"Error sending player gifted pokemon media: {e}")
+        await message.answer(caption, parse_mode="HTML")
+
+    # Send private DM to recipient
+    dm_text = (
+        f"📣 <b>You received a Gift!</b>\n"
+        f"<blockquote>👤 Sender: <b>{escape_md(sender_name)}</b>\n"
+        f"💝 Pokémon: {pokemon_display}</blockquote>"
+    )
+    try:
+        await message.bot.send_message(chat_id=target_user.id, text=dm_text, parse_mode="HTML")
+    except Exception:
+        pass
 
 

@@ -77,10 +77,6 @@ def get_mines_keyboard(user_id: int, game: dict) -> InlineKeyboardMarkup:
 
 @router.message(Command("mines"))
 async def cmd_mines(message: Message, db: AsyncSession):
-    if message.chat.type != "private":
-        await message.answer("⚠️ Mines can only be played in private DMs to ensure uninterrupted gameplay!")
-        return
-
     user_id = message.from_user.id
     parts = message.text.split()
     

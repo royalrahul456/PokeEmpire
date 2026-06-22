@@ -122,7 +122,44 @@ async def register_bot_commands(bot: Bot):
     except Exception as e:
         logger.error(f"Failed to register bot commands: {e}")
 
+def apply_auto_reply_patch():
+    from aiogram.types import Message
+    
+    original_answer = Message.answer
+    original_answer_photo = Message.answer_photo
+    original_answer_video = Message.answer_video
+    original_answer_animation = Message.answer_animation
+
+    async def patched_answer(self: Message, *args, **kwargs):
+        if self.chat.type != "private":
+            return await self.reply(*args, **kwargs)
+        return await original_answer(self, *args, **kwargs)
+
+    async def patched_answer_photo(self: Message, *args, **kwargs):
+        if self.chat.type != "private":
+            return await self.reply_photo(*args, **kwargs)
+        return await original_answer_photo(self, *args, **kwargs)
+
+    async def patched_answer_video(self: Message, *args, **kwargs):
+        if self.chat.type != "private":
+            return await self.reply_video(*args, **kwargs)
+        return await original_answer_video(self, *args, **kwargs)
+
+    async def patched_answer_animation(self: Message, *args, **kwargs):
+        if self.chat.type != "private":
+            return await self.reply_animation(*args, **kwargs)
+        return await original_answer_animation(self, *args, **kwargs)
+
+    Message.answer = patched_answer
+    Message.answer_photo = patched_answer_photo
+    Message.answer_video = patched_answer_video
+    Message.answer_animation = patched_answer_animation
+    logger.info("Applied global auto-reply monkey patch to Message class for group chats.")
+
 async def main():
+    # Apply the global auto-reply patch for group chats
+    apply_auto_reply_patch()
+    
     # Run database migration check before initializing connection
     check_and_copy_sqlite_db()
 

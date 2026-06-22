@@ -214,6 +214,20 @@ async def cmd_redeem(message: Message, db: AsyncSession):
                 f"Balance: <code>💰 {user.coins:,} coins</code>",
                 parse_mode="HTML"
             )
+            
+            # Send private DM to user
+            dm_text = (
+                f"🎉 <b>Redemption Confirmed!</b>\n"
+                f"───────────────\n"
+                f"You successfully redeemed code <code>{code.code}</code>!\n\n"
+                f"💰 <b>Reward:</b> <code>💰 +{code.reward_value:,} coins</code>\n"
+                f"New Balance: <code>💰 {user.coins:,} coins</code>\n"
+                f"───────────────"
+            )
+            try:
+                await message.bot.send_message(chat_id=user_id, text=dm_text, parse_mode="HTML")
+            except Exception:
+                pass
         else:
             # Grant Pokémon
             poke_stmt = select(Pokemon).where(Pokemon.id == code.reward_value)
@@ -271,6 +285,19 @@ async def cmd_redeem(message: Message, db: AsyncSession):
                 f"───────────────"
             )
             await message.answer(text, parse_mode="HTML")
+            
+            # Send private DM to user
+            dm_text = (
+                f"🎉 <b>Redemption Confirmed!</b>\n"
+                f"───────────────\n"
+                f"You successfully redeemed code <code>{code.code}</code>!\n\n"
+                f"🎁 <b>Reward:</b> {r_emoji} {shiny_badge}{form_badge}<b>{pokemon.name.title()}</b>{serial_str}\n"
+                f"───────────────"
+            )
+            try:
+                await message.bot.send_message(chat_id=user_id, text=dm_text, parse_mode="HTML")
+            except Exception:
+                pass
             
     except Exception as e:
         await db.rollback()

@@ -9,6 +9,7 @@ from sqlalchemy import select, func, distinct, desc, case
 from sqlalchemy.orm import joinedload
 from database.models import User, UserPokemon, Pokemon
 from utils.formatters import get_hp_bar, get_progress_bar, get_rarity_emoji, escape_md
+from utils.favorite import get_favorite_id, set_favorite_id
 
 router = Router()
 
@@ -116,10 +117,7 @@ async def get_player_cover_media(user_id: int, db: AsyncSession) -> tuple[str, s
     Resolves the cover media for a trainer.
     Returns (media_type, media_value)
     """
-    from utils.favorite import get_favorite_id
-    from utils.settings import get_custom_cover
-    
-    fav_val = get_favorite_id(user_id)
+    fav_val = await get_favorite_id(user_id, db)
     media_type = None
     media_value = None
     
@@ -1137,8 +1135,7 @@ async def cmd_fav(message: Message, db: AsyncSession):
         return
         
     p = up.pokemon
-    from utils.favorite import set_favorite_id
-    set_favorite_id(user_id, fav_str)
+    await set_favorite_id(user_id, fav_str, db)
     
     # Check if they own any shiny version of this species
     shiny_stmt = select(UserPokemon.is_shiny).where(
@@ -1154,10 +1151,9 @@ async def cmd_fav(message: Message, db: AsyncSession):
     await message.answer(f"🌟 <b>{shiny_tag}{p.name.title()}</b>{form_suffix} (Pokédex ID: {fav_str}) has been set as your Pokédex cover favorite!", parse_mode="HTML")
 
 @router.message(Command("unfav"))
-async def cmd_unfav(message: Message):
+async def cmd_unfav(message: Message, db: AsyncSession):
     user_id = message.from_user.id
-    from utils.favorite import set_favorite_id
-    set_favorite_id(user_id, None)
+    await set_favorite_id(user_id, None, db)
     await message.answer("❌ Cleared your favorite cover. A random Pokémon from your bag will be shown instead.")
 
 async def build_search_result_payload(user_id: int, pokemon: Pokemon, form_filter: int | None, db: AsyncSession):
@@ -1979,10 +1975,9 @@ async def cmd_gift(message: Message, db: AsyncSession):
     ).limit(1)
     remain_res = await db.execute(remain_stmt)
     if remain_res.scalar() is None:
-        from utils.favorite import get_favorite_id, set_favorite_id
-        fav_val = get_favorite_id(old_user_id)
+        fav_val = await get_favorite_id(old_user_id, db)
         if fav_val and (fav_val == str(pokedex_id) or fav_val.startswith(f"{pokedex_id}.")):
-            set_favorite_id(old_user_id, None)
+            await set_favorite_id(old_user_id, None, db)
             
     await db.commit()
     

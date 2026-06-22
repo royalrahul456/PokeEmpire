@@ -7,7 +7,6 @@ from sqlalchemy import select, func
 import config
 from database.models import User, Pokemon, UserPokemon, RedeemCode, RedeemClaim
 from utils.formatters import escape_md, get_progress_bar, get_rarity_emoji
-from utils.favorite import get_favorite_id
 
 router = Router()
 

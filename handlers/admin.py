@@ -10,6 +10,30 @@ from utils.formatters import get_progress_bar, get_rarity_emoji, escape_md
 
 router = Router()
 
+def parse_stored_media_value(media_value: str | None) -> tuple[str, str | None]:
+    if not media_value:
+        return "photo", None
+    if ":" in media_value:
+        media_type, clean_value = media_value.split(":", 1)
+        if media_type in {"photo", "video", "animation"}:
+            return media_type, clean_value
+    if media_value.startswith("http"):
+        return "photo", media_value
+    return "video", media_value
+
+async def get_single_form_media_value(db: AsyncSession, pokemon_id: int, form_index: int) -> str | None:
+    if form_index <= 0:
+        return None
+
+    from database.models import PokemonFormMedia
+
+    stmt = select(PokemonFormMedia.media_value).where(
+        PokemonFormMedia.pokemon_id == pokemon_id,
+        PokemonFormMedia.form_index == form_index,
+    ).limit(1)
+    res = await db.execute(stmt)
+    return res.scalar_one_or_none()
+
 async def is_user_admin(message: Message) -> bool:
     """Helper to check if the user is a bot administrator or a group administrator."""
     # Global bot admins bypass checks
@@ -316,7 +340,13 @@ async def cmd_gift_coins(message: Message, db: AsyncSession):
         f"💰 New Balance: <b>💰 {target_user.coins} coins</b></blockquote>"
     )
     
-    coin_photo = "https://i.imgur.com/Kz8GmqP.png"
+    from aiogram.types import FSInputFile
+    import os
+
+    coin_photo = "https://raw.githubusercontent.com/royalrahul456/PokeEmpire/main/data/coin_gift.png"
+    if os.path.exists("data/coin_gift.png"):
+        coin_photo = FSInputFile("data/coin_gift.png")
+
     try:
         await message.answer_photo(photo=coin_photo, caption=caption, parse_mode="HTML")
     except Exception as e:
@@ -485,8 +515,6 @@ async def cmd_gift_pokemon(message: Message, db: AsyncSession):
     r_emoji = get_rarity_emoji(pokemon.rarity)
     admin_name = message.from_user.first_name
 
-    from handlers.profile import get_single_form_media_value, parse_stored_media_value
-    
     # Resolve media of the gifted Pokémon
     media_value = pokemon.image_url
     media_type = "photo"

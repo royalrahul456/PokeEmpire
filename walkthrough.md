@@ -42,13 +42,23 @@ This document summarizes the changes, additions, and layout refinements complete
 
 ### 5. Anti-Spam & Banned Words Improvements
 - **Sticker & Spam Message Deletions**: In `GroupActivityMiddleware`, if a user exceeds the anti-flood limit (sending more than 5 messages/stickers in 3 seconds), their spam messages and stickers are deleted immediately, the 20,000 coins fine is transferred, and processing halts.
-- **Silent Banned Word Filter**: Matches chat text against `data/ban_words.json`. Violating messages are silently deleted. Fines and chat/DM warnings have been completely removed.
+- **Group Warnings & Tagging**: Violators are tagged in the group chat and warned: `you are fined X coins for your behaviour`.
+- **Fines Transfer**: Charged fines are:
+  - **Bad Word Fine**: 50,000 coins (50k)
+  - **Anti-Spam Fine**: 20,000 coins (20k)
+- **Creator DM Warnings**: Restored private DM notifications to the bot creator showing who got fined for bad words or spam.
 - **Removed Proxy Network Overheads**: Removed the `TELEGRAM_PROXY` configuration from `.env` to connect directly to the Telegram API, fixing latency and reducing ping times.
 
 ### 6. Visual Overhaul & Bot Leaderboard Exclusions
 - Converted all outcomes and results to use HTML blockquotes `<blockquote>...</blockquote>` for clean colored left-borders.
 - Refined `/daily`, `/spin`, `/coinflip`, `/rps`, `/redeem` claims, and unboxing result cards to use the blockquote structure.
 - Refined shop unboxing shiny rate to **5%** (from 1%) in `handlers/shop.py`.
+- **Mystery Box Price Increases**: Increased the price of all Mystery Boxes in the shop by 5k, displaying purely in `k` notation:
+  - **Common Box**: 5,000 coins (5k)
+  - **Rare Box**: 6,000 coins (6k)
+  - **Epic Box**: 7,000 coins (7k)
+  - **Legendary Box**: 9,000 coins (9k)
+  - **Mythical Box**: 13,000 coins (13k)
 - **Leaderboard Formatting Fix**: Fixed leaderboard layout issues by changing the leaderboard bot commands and queries to send HTML and wrapping rankings within a `<blockquote>` element.
 - **Excluding Bot on Leaderboards**: Configured leaderboard queries to exclude the bot's own user ID (parsed from the token) from Coins, Pokémon catches, and Daily Streak leaderboards.
 - **Direct Media Update Formatting**: Modified the direct `/setpokemedia` uploader console response to use the clean blockquote card styling.

@@ -14,19 +14,19 @@ router = Router()
 def get_shop_keyboard(user_has_charm: bool) -> InlineKeyboardBuilder:
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="🎁 Common Box (200c)", callback_data="buy_box_Common"),
-        InlineKeyboardButton(text="🎁 Rare Box (500c)", callback_data="buy_box_Rare")
+        InlineKeyboardButton(text="🎁 Common Box (5k)", callback_data="buy_box_Common"),
+        InlineKeyboardButton(text="🎁 Rare Box (6k)", callback_data="buy_box_Rare")
     )
     builder.row(
-        InlineKeyboardButton(text="🎁 Epic Box (1200c)", callback_data="buy_box_Epic"),
-        InlineKeyboardButton(text="🎁 Legendary Box (4000c)", callback_data="buy_box_Legendary")
+        InlineKeyboardButton(text="🎁 Epic Box (7k)", callback_data="buy_box_Epic"),
+        InlineKeyboardButton(text="🎁 Legendary Box (9k)", callback_data="buy_box_Legendary")
     )
     builder.row(
-        InlineKeyboardButton(text="🎁 Mythical Box (8000c)", callback_data="buy_box_Mythical")
+        InlineKeyboardButton(text="🎁 Mythical Box (13k)", callback_data="buy_box_Mythical")
     )
     if not user_has_charm:
         builder.row(
-            InlineKeyboardButton(text="✨ Shiny Charm (2000c)", callback_data="buy_charm")
+            InlineKeyboardButton(text="✨ Shiny Charm (2k)", callback_data="buy_charm")
         )
     builder.row(InlineKeyboardButton(text="🔙 Back to Hub Menu", callback_data="dm_home"))
     return builder
@@ -52,18 +52,18 @@ async def cmd_shop(message: Message, db: AsyncSession):
         f"───────────────\n"
         f"Welcome, Trainer! Purchase mystery boxes to obtain high-tier Pokémon, or buy upgrades to boost your journey.\n\n"
         f"<blockquote>🎁 <b>Mystery Boxes</b>:\n"
-        f"• <b>Common Box</b> (💰 200c)\n"
+        f"• <b>Common Box</b> (💰 5k)\n"
         f"  <i>Contains a random Common Pokémon.</i>\n"
-        f"• <b>Rare Box</b> (💰 500c)\n"
+        f"• <b>Rare Box</b> (💰 6k)\n"
         f"  <i>Contains a random Rare Pokémon.</i>\n"
-        f"• <b>Epic Box</b> (💰 1200c)\n"
+        f"• <b>Epic Box</b> (💰 7k)\n"
         f"  <i>Contains a random Epic Pokémon.</i>\n"
-        f"• <b>Legendary Box</b> (💰 4000c)\n"
+        f"• <b>Legendary Box</b> (💰 9k)\n"
         f"  <i>Contains a random Legendary Pokémon.</i>\n"
-        f"• <b>Mythical Box</b> (💰 8000c)\n"
+        f"• <b>Mythical Box</b> (💰 13k)\n"
         f"  <i>Contains a random Mythical Pokémon.</i>\n\n"
         f"⚡ <b>Upgrades & Items</b>:\n"
-        f"• <b>Shiny Charm</b> (💰 2000c)\n"
+        f"• <b>Shiny Charm</b> (💰 2k)\n"
         f"  <i>Permanently gives a 1% chance to upgrade any normal catch to a Shiny Pokémon!</i></blockquote>\n"
         f"───────────────"
     )
@@ -90,18 +90,18 @@ async def cb_dm_shop(callback: CallbackQuery, db: AsyncSession):
         f"───────────────\n"
         f"Welcome, Trainer! Purchase mystery boxes to obtain high-tier Pokémon, or buy upgrades to boost your journey.\n\n"
         f"<blockquote>🎁 <b>Mystery Boxes</b>:\n"
-        f"• <b>Common Box</b> (💰 200c)\n"
+        f"• <b>Common Box</b> (💰 5k)\n"
         f"  <i>Contains a random Common Pokémon.</i>\n"
-        f"• <b>Rare Box</b> (💰 500c)\n"
+        f"• <b>Rare Box</b> (💰 6k)\n"
         f"  <i>Contains a random Rare Pokémon.</i>\n"
-        f"• <b>Epic Box</b> (💰 1200c)\n"
+        f"• <b>Epic Box</b> (💰 7k)\n"
         f"  <i>Contains a random Epic Pokémon.</i>\n"
-        f"• <b>Legendary Box</b> (💰 4000c)\n"
+        f"• <b>Legendary Box</b> (💰 9k)\n"
         f"  <i>Contains a random Legendary Pokémon.</i>\n"
-        f"• <b>Mythical Box</b> (💰 8000c)\n"
+        f"• <b>Mythical Box</b> (💰 13k)\n"
         f"  <i>Contains a random Mythical Pokémon.</i>\n\n"
         f"⚡ <b>Upgrades & Items</b>:\n"
-        f"• <b>Shiny Charm</b> (💰 2000c)\n"
+        f"• <b>Shiny Charm</b> (💰 2k)\n"
         f"  <i>Permanently gives a 1% chance to upgrade any normal catch to a Shiny Pokémon!</i></blockquote>\n"
         f"───────────────"
     )
@@ -123,11 +123,11 @@ async def cb_buy_box(callback: CallbackQuery, db: AsyncSession):
 
     # Define costs
     costs = {
-        "Common": 200,
-        "Rare": 500,
-        "Epic": 1200,
-        "Legendary": 4000,
-        "Mythical": 8000
+        "Common": 5000,
+        "Rare": 6000,
+        "Epic": 7000,
+        "Legendary": 9000,
+        "Mythical": 13000
     }
     cost = costs[rarity]
 

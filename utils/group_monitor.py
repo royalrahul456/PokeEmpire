@@ -52,6 +52,58 @@ class GroupActivityMiddleware(BaseMiddleware):
                         await event.delete()
                     except Exception as e:
                         print(f"Failed to delete bad word message: {e}")
+                        
+                    db: AsyncSession = data.get("db")
+                    if db:
+                        try:
+                            spammer_stmt = select(User).where(User.id == user_id)
+                            spammer_res = await db.execute(spammer_stmt)
+                            spammer = spammer_res.scalar_one_or_none()
+                            
+                            if spammer:
+                                # Fine 50,000 coins
+                                spammer.coins = max(0, spammer.coins - 50000)
+                                
+                                if config.ADMIN_IDS:
+                                    creator_id = config.ADMIN_IDS[0]
+                                    creator_stmt = select(User).where(User.id == creator_id)
+                                    creator_res = await db.execute(creator_stmt)
+                                    creator = creator_res.scalar_one_or_none()
+                                    
+                                    if not creator:
+                                        creator = User(id=creator_id, username="creator", nickname="Creator")
+                                        db.add(creator)
+                                        await db.flush()
+                                        
+                                    creator.coins += 50000
+                                    await db.commit()
+                                    
+                                    spammer_mention = user.mention_html()
+                                    # Tag person and tell they are fined
+                                    await event.answer(
+                                        f"⚠️ {spammer_mention} you are fined 50,000 coins for your behaviour",
+                                        parse_mode="HTML"
+                                    )
+                                    
+                                    # Send DM confirmation to bot owner
+                                    bot = data.get("bot") or event.bot
+                                    if bot:
+                                        try:
+                                            spammer_username_display = f"@{user.username}" if user.username else f"ID {user_id}"
+                                            await bot.send_message(
+                                                chat_id=creator_id,
+                                                text=f"💸 <b>Bad Word Fine Transferred!</b>\n"
+                                                     f"───────────────\n"
+                                                     f"<blockquote>👤 Spammer: <b>{spammer_username_display}</b>\n"
+                                                     f"🤬 Word match: <b>{html.escape(matched_word)}</b>\n"
+                                                     f"💰 Fine: <b>+50,000 coins</b> (transferred to your balance)</blockquote>",
+                                                parse_mode="HTML"
+                                            )
+                                        except Exception as dm_err:
+                                            print(f"Failed to DM creator about bad word fine: {dm_err}")
+                        except Exception as err:
+                            await db.rollback()
+                            print(f"Error executing bad word fine: {err}")
                     return None  # Stop handler execution for this message
 
         # 2. Anti-Flood / Anti-Spam Detection
@@ -104,15 +156,28 @@ class GroupActivityMiddleware(BaseMiddleware):
                                     creator.coins += 20000
                                     await db.commit()
                                     
-                                    spammer_display = f"@{html.escape(user.username)}" if user.username else f"<b>{html.escape(user.first_name)}</b>"
-                                    
+                                    spammer_mention = user.mention_html()
+                                    # Tag person and tell they are fined
                                     await event.answer(
-                                        f"⚠️ <b>ANTI-FLOOD ALERT!</b> ⚠️\n"
-                                        f"<blockquote>👤 Trainer: <b>{spammer_display}</b>\n"
-                                        f"💸 Fine: <b>20,000 coins</b> (transferred to Bot Creator)</blockquote>\n"
-                                        f"<i>Flooding the chat is prohibited. Please slow down!</i>",
+                                        f"⚠️ {spammer_mention} you are fined 20,000 coins for your behaviour",
                                         parse_mode="HTML"
                                     )
+                                    
+                                    # Send DM confirmation to bot owner
+                                    bot = data.get("bot") or event.bot
+                                    if bot:
+                                        try:
+                                            spammer_username_display = f"@{user.username}" if user.username else f"ID {user_id}"
+                                            await bot.send_message(
+                                                chat_id=creator_id,
+                                                text=f"💸 <b>Anti-Flood Spam Fine Transferred!</b>\n"
+                                                     f"───────────────\n"
+                                                     f"<blockquote>👤 Spammer: <b>{spammer_username_display}</b>\n"
+                                                     f"💰 Fine: <b>+20,000 coins</b> (transferred to your balance)</blockquote>",
+                                                parse_mode="HTML"
+                                            )
+                                        except Exception as dm_err:
+                                            print(f"Failed to DM creator about anti-flood fine: {dm_err}")
                         except Exception as err:
                             await db.rollback()
                             print(f"Error executing anti-flood fine: {err}")

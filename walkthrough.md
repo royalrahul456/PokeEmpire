@@ -79,6 +79,14 @@ This document summarizes the changes, additions, and layout refinements complete
 - **Case-Insensitive Group Username Checks**: Updated all checks on `message.chat.username` and `chat.username` to be case-insensitive (converting to lowercase and comparing with `"pokeempireunion"`), resolving the issue where automatic and manual scribble/nameguess games failed to start if the official group had capitalized letters (e.g. `@PokeEmpireUnion`).
 - **Formatted Fine Warnings in k notation**: Updated group warnings and DM confirmation messages for bad words and spam to show `50k` and `20k` fine amounts instead of full numbers, in accordance with the `k` notation requirement.
 
+### 10. Premium Custom Emojis
+- **Automatic Interception**: Implemented dynamic session interception via `bot.session.make_request` to rewrite outgoing message texts and captions, replacing 50+ standard emojis with premium custom Telegram emojis (`<tg-emoji>`).
+- **Markdown-to-HTML Translation**: If a message containing custom emojis is formatted in Markdown, the interceptor automatically translates the markdown to HTML formatting and shifts the `parse_mode` to `HTML` to ensure custom emojis render correctly.
+- **Context-Aware Mapping**:
+  - `🟢` (Green Circle): mapped contextually to Rarity (`5416081784641168838`) or Statuses (`5215522595922779944`).
+  - `🔮` (Crystal Ball): mapped contextually to Terastal Form (`5244955049024581265`) or Epic Rarity (`5271810272640643747`).
+- **Buttons Compatibility**: Strictly targets text and caption fields to ensure inline keyboard/reply buttons are not broken, as Telegram button texts do not support HTML parse mode.
+
 ---
 
 ## Verification & Testing

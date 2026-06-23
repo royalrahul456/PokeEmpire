@@ -1878,14 +1878,34 @@ async def cmd_streak_leaderboard(message: Message, db: AsyncSession):
         return
         
     # Query nicknames and usernames for the top users
-    uids = [uid for uid, _ in top_users]
+    import config
+    bot_id = None
+    if config.BOT_TOKEN and ":" in config.BOT_TOKEN:
+        try:
+            bot_id = int(config.BOT_TOKEN.split(":")[0])
+        except ValueError:
+            pass
+
+    # Filter out bot ID
+    filtered_users = []
+    for uid, uinfo in top_users:
+        if bot_id and uid == bot_id:
+            continue
+        filtered_users.append((uid, uinfo))
+    filtered_users = filtered_users[:10]
+
+    if not filtered_users:
+        await message.answer("🏆 **STREAK LEADERBOARD** 🏆\n───────────────\n\n• *No active streaks recorded yet.*")
+        return
+
+    uids = [uid for uid, _ in filtered_users]
     u_stmt = select(User).where(User.id.in_(uids))
     u_res = await db.execute(u_stmt)
     users_dict = {u.id: u for u in u_res.scalars().all()}
     
     rows = []
     import html
-    for idx, (uid, uinfo) in enumerate(top_users):
+    for idx, (uid, uinfo) in enumerate(filtered_users):
         rank_prefix = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx + 1}."
         user = users_dict.get(uid)
         username = user.username if user else None

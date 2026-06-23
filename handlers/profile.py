@@ -1055,8 +1055,20 @@ async def cb_check_back(callback: CallbackQuery, db: AsyncSession):
 
 async def get_leaderboard_text(lb_type: str, db: AsyncSession) -> str:
     import html
+    import config
+    
+    bot_id = None
+    if config.BOT_TOKEN and ":" in config.BOT_TOKEN:
+        try:
+            bot_id = int(config.BOT_TOKEN.split(":")[0])
+        except ValueError:
+            pass
+
     if lb_type == "coins":
-        coins_stmt = select(User).order_by(desc(User.coins)).limit(10)
+        if bot_id:
+            coins_stmt = select(User).where(User.id != bot_id).order_by(desc(User.coins)).limit(10)
+        else:
+            coins_stmt = select(User).order_by(desc(User.coins)).limit(10)
         coins_res = await db.execute(coins_stmt)
         coins_users = coins_res.scalars().all()
         
@@ -1072,13 +1084,23 @@ async def get_leaderboard_text(lb_type: str, db: AsyncSession) -> str:
             text += "• <i>No trainers registered yet.</i>"
             
     elif lb_type == "catches":
-        catches_stmt = (
-            select(User.username, User.nickname, func.count(UserPokemon.id).label("total_catches"))
-            .join(UserPokemon, UserPokemon.user_id == User.id)
-            .group_by(User.id)
-            .order_by(desc(func.count(UserPokemon.id)))
-            .limit(10)
-        )
+        if bot_id:
+            catches_stmt = (
+                select(User.username, User.nickname, func.count(UserPokemon.id).label("total_catches"))
+                .join(UserPokemon, UserPokemon.user_id == User.id)
+                .where(User.id != bot_id)
+                .group_by(User.id)
+                .order_by(desc(func.count(UserPokemon.id)))
+                .limit(10)
+            )
+        else:
+            catches_stmt = (
+                select(User.username, User.nickname, func.count(UserPokemon.id).label("total_catches"))
+                .join(UserPokemon, UserPokemon.user_id == User.id)
+                .group_by(User.id)
+                .order_by(desc(func.count(UserPokemon.id)))
+                .limit(10)
+            )
         catches_res = await db.execute(catches_stmt)
         catches_data = catches_res.all()
         
@@ -1100,7 +1122,17 @@ async def get_leaderboard_text(lb_type: str, db: AsyncSession) -> str:
         text = "🏆 <b>TOP 10 — Streaks</b>\n\n"
         if top_users:
             text += "<blockquote>"
-            for idx, (user_id, uinfo) in enumerate(top_users):
+            # Filter out bot ID
+            filtered_users = []
+            for user_id, uinfo in top_users:
+                if bot_id and user_id == bot_id:
+                    continue
+                filtered_users.append((user_id, uinfo))
+            
+            # Take top 10 after filter
+            filtered_users = filtered_users[:10]
+            
+            for idx, (user_id, uinfo) in enumerate(filtered_users):
                 rank = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx + 1}."
                 
                 stmt = select(User.username, User.nickname).where(User.id == user_id)

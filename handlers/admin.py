@@ -959,10 +959,20 @@ async def cmd_spawn(message: Message, db: AsyncSession):
         await message.answer("❌ Denied. Only bot owners can trigger a manual spawn.")
         return
 
+    parts = message.text.split()
+    specified_rarity = None
+    if len(parts) >= 2:
+        rarity_input = parts[1].strip().title()
+        if rarity_input in ["Common", "Rare", "Epic", "Legendary", "Mythical"]:
+            specified_rarity = rarity_input
+        else:
+            await message.answer("⚠️ Invalid rarity. Choose from `Common`, `Rare`, `Epic`, `Legendary`, or `Mythical`.")
+            return
+
     # Trigger a wild encounter spawn in this chat
     from services.spawn_service import SpawnService
 
-    success = await SpawnService.trigger_spawn(db, message.chat.id, message.bot)
+    success = await SpawnService.trigger_spawn(db, message.chat.id, message.bot, rarity=specified_rarity)
     if not success:
         await message.answer("❌ Failed to spawn Pokémon. Ensure the database contains Pokémon species.")
 

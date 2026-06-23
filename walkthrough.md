@@ -18,7 +18,7 @@ This document summarizes the changes, additions, and layout refinements complete
      ⏱️ <b>TIME:</b> {seconds}s</blockquote>
      ```
      - Attached inline button `📖 View Pokedex` pointing to the user's Pokedex checklist.
-  3. A separate streak milestone alert: `🔥🔥🔥🔥🔥 {streak}-Day Streak! Keep going! 🎯`
+  3. A separate streak milestone alert: `🔥🔥🔥🔥f {streak}-Day Streak! Keep going! 🎯`
 
 ### 2. Gameplay Rewards (+50 Coins)
 - Upgraded the coin rewards across all bot features:
@@ -38,19 +38,19 @@ This document summarizes the changes, additions, and layout refinements complete
 ### 4. Membership Verification System
 - Created `utils/membership.py` implementing `check_membership` and `MembershipMiddleware`.
 - Users must join the official group `@pokeempireunion` and updates channel `@pokeempireupdates` to interact with the bot in DMs or run commands in groups.
-- Unverified users are intercepted dynamically and shown a custom "Verify Membership" menu with join links and a refresh/verify button.
+- Unverified users are intercepted dynamically and showed a custom "Verify Membership" menu with join links and a refresh/verify button.
 
-### 5. Anti-Spam & Bad Words Fine System
-- Integrated chat anti-flood detection into `GroupActivityMiddleware` in `utils/group_monitor.py`.
-- If a user sends more than 5 messages in 3 seconds, they are fined **20,000 coins**. The coins are deducted from their balance and transferred to the bot creator's account.
-- Integrated a bad-word filter system matching messages against `data/ban_words.json`. Users sending bad words are fined **50,000 coins** (transferred to the creator's balance), and the message is deleted.
-- **Creator DM Warnings Disabled**: Removed private DM warning messages sent to the bot creator when user anti-flood and bad-word fines are charged to prevent inbox flooding.
+### 5. Anti-Spam & Banned Words Improvements
+- **Sticker & Spam Message Deletions**: In `GroupActivityMiddleware`, if a user exceeds the anti-flood limit (sending more than 5 messages/stickers in 3 seconds), their spam messages and stickers are deleted immediately, the 20,000 coins fine is transferred, and processing halts.
+- **Silent Banned Word Filter**: Matches chat text against `data/ban_words.json`. Violating messages are silently deleted. Fines and chat/DM warnings have been completely removed.
+- **Removed Proxy Network Overheads**: Removed the `TELEGRAM_PROXY` configuration from `.env` to connect directly to the Telegram API, fixing latency and reducing ping times.
 
-### 6. Visual Overhaul (Blockquotes)
+### 6. Visual Overhaul & Bot Leaderboard Exclusions
 - Converted all outcomes and results to use HTML blockquotes `<blockquote>...</blockquote>` for clean colored left-borders.
 - Refined `/daily`, `/spin`, `/coinflip`, `/rps`, `/redeem` claims, and unboxing result cards to use the blockquote structure.
 - Refined shop unboxing shiny rate to **5%** (from 1%) in `handlers/shop.py`.
-- **Leaderboard Formatting Fix**: Fixed leaderboard layout issues by changing the leaderboard bot commands and queries to send HTML and wrapping rankings within a `<blockquote>` element for proper formatting.
+- **Leaderboard Formatting Fix**: Fixed leaderboard layout issues by changing the leaderboard bot commands and queries to send HTML and wrapping rankings within a `<blockquote>` element.
+- **Excluding Bot on Leaderboards**: Configured leaderboard queries to exclude the bot's own user ID (parsed from the token) from Coins, Pokémon catches, and Daily Streak leaderboards.
 - **Direct Media Update Formatting**: Modified the direct `/setpokemedia` uploader console response to use the clean blockquote card styling.
 
 ### 7. Database & Latency Optimizations
@@ -58,8 +58,9 @@ This document summarizes the changes, additions, and layout refinements complete
 - Implemented in-memory caching of group spawn thresholds and active message counters in `utils/group_monitor.py` to prevent heavy database write traffic on every user message.
 - Updated settings commands (`/setspawn`, `/toggle_spawns`, `/spawnsetting`) to sync directly with the cache.
 
-### 8. Spawn Rules & Permissions
+### 8. Spawn Rules & Rarity Spawns
 - **Restrict Spawn Command**: Configured `/spawn` manual wild spawns to be runnable exclusively by bot owners/admins (`config.ADMIN_IDS`), blocking general group chat admins.
+- **Manual Spawn Rarity Argument**: Updated `/spawn` to parse an optional rarity argument (e.g. `/spawn legendary`, `/spawn epic`), allowing bot owners to manually spawn a random Pokémon from that specific rarity tier.
 - **Disable Legendary-Only Overrides**: Completely removed the group chat `legendary_only_groups` settings and spawn override checks, ensuring regular group spawns roll normal weights.
 
 ---

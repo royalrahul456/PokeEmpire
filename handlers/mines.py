@@ -81,7 +81,7 @@ async def cmd_mines(message: Message, db: AsyncSession):
     
     # Restrict to official group chat if used in groups
     if message.chat.type in ["group", "supergroup"]:
-        if message.chat.username != "pokeempireunion":
+        if not message.chat.username or message.chat.username.lower() != "pokeempireunion":
             builder = InlineKeyboardBuilder()
             builder.row(InlineKeyboardButton(text="🔗 Join Official GC", url="https://t.me/pokeempireunion"))
             await message.answer(

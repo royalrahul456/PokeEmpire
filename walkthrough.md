@@ -73,6 +73,12 @@ This document summarizes the changes, additions, and layout refinements complete
 - **Manual Spawn Rarity Argument**: Updated `/spawn` to parse an optional rarity argument (e.g. `/spawn legendary`, `/spawn epic`), allowing bot owners to manually spawn a random Pokémon from that specific rarity tier.
 - **Disable Legendary-Only Overrides**: Completely removed the group chat `legendary_only_groups` settings and spawn override checks, ensuring regular group spawns roll normal weights.
 
+### 9. Trivia Expiry & Case-Insensitive Game Checks
+- **HTML Character Escaping**: Wrapped trivia questions and answers with `html.escape` inside `initiate_trivia_game`, `trivia_timeout_task`, and `cb_trivia_answer` to prevent parser crashes on special characters.
+- **Log Timeout Failures**: Configured `trivia_timeout_task` to print error details on exception instead of failing silently.
+- **Case-Insensitive Group Username Checks**: Updated all checks on `message.chat.username` and `chat.username` to be case-insensitive (converting to lowercase and comparing with `"pokeempireunion"`), resolving the issue where automatic and manual scribble/nameguess games failed to start if the official group had capitalized letters (e.g. `@PokeEmpireUnion`).
+- **Formatted Fine Warnings in k notation**: Updated group warnings and DM confirmation messages for bad words and spam to show `50k` and `20k` fine amounts instead of full numbers, in accordance with the `k` notation requirement.
+
 ---
 
 ## Verification & Testing

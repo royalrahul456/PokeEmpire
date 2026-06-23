@@ -1,5 +1,6 @@
 import random
 import asyncio
+import html
 import time
 import os
 import json
@@ -456,7 +457,7 @@ async def scribble_timeout_task(chat_id: int, message_id: int, bot: Bot):
                 async with SessionLocal() as db:
                     try:
                         chat = await bot.get_chat(chat_id)
-                        is_official = (chat.username == "pokeempireunion")
+                        is_official = (chat.username and chat.username.lower() == "pokeempireunion")
                     except Exception:
                         is_official = False
                     
@@ -496,7 +497,7 @@ async def nameguess_timeout_task(chat_id: int, message_id: int, bot: Bot):
                 async with SessionLocal() as db:
                     try:
                         chat = await bot.get_chat(chat_id)
-                        is_official = (chat.username == "pokeempireunion")
+                        is_official = (chat.username and chat.username.lower() == "pokeempireunion")
                     except Exception:
                         is_official = False
                     
@@ -919,13 +920,15 @@ async def trivia_timeout_task(chat_id: int, message_id: int, bot: Bot):
         if game.get("type") == "trivia" and game.get("message_id") == message_id:
             del active_games[chat_id]
             try:
+                escaped_q = html.escape(game['question'])
+                escaped_ans = html.escape(game['answer'])
                 text = (
                     f"⏳ <b>TRIVIA EXPIRED</b> ⏳\n"
                     f"───────────────\n\n"
                     f"<b>Question:</b>\n"
-                    f"{game['question']}\n\n"
+                    f"{escaped_q}\n\n"
                     f"❌ Time is up! No one answered in time.\n"
-                    f"💡 Correct Answer: <b>{game['answer']}</b>"
+                    f"💡 Correct Answer: <b>{escaped_ans}</b>"
                 )
                 msg = await bot.edit_message_text(
                     chat_id=chat_id,
@@ -935,8 +938,8 @@ async def trivia_timeout_task(chat_id: int, message_id: int, bot: Bot):
                     parse_mode="HTML"
                 )
                 asyncio.create_task(delete_message_after(msg, 60))
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"Error editing trivia timeout message: {e}")
 
 async def initiate_trivia_game(chat_id: int, db: AsyncSession, is_auto: bool = False) -> Optional[Tuple[str, InlineKeyboardMarkup]]:
     """Starts a trivia game logic and returns the formatted question text and reply markup, or None on error."""
@@ -964,11 +967,12 @@ async def initiate_trivia_game(chat_id: int, db: AsyncSession, is_auto: bool = F
         builder.button(text=opt, callback_data=f"trivia_ans_{idx}")
     builder.adjust(1) # 1 button per row
 
+    escaped_q = html.escape(q_data["question"])
     text = (
         f"❓ <b>POKÉMON TRIVIA</b> ❓\n"
         f"───────────────\n\n"
         f"<b>Question:</b>\n"
-        f"{q_data['question']}\n\n"
+        f"{escaped_q}\n\n"
         f"👉 Select the correct option below! You get only <b>one guess</b>! (Ends in 60s)"
     )
     return text, builder.as_markup()
@@ -1015,7 +1019,7 @@ async def cmd_scribble(message: Message, db: AsyncSession):
     chat_id = message.chat.id
 
     if message.chat.type in ["group", "supergroup"]:
-        if message.chat.username != "pokeempireunion":
+        if not message.chat.username or message.chat.username.lower() != "pokeempireunion":
             builder = InlineKeyboardBuilder()
             builder.row(InlineKeyboardButton(text="🔗 Join Official GC", url="https://t.me/pokeempireunion"))
             await message.answer(
@@ -1169,7 +1173,7 @@ async def check_game_answers(message: Message, db: AsyncSession):
         asyncio.create_task(delete_message_after(victory_msg, 60))
 
         # Automatically start another game in group chats if enabled
-        if message.chat.type in ["group", "supergroup"] and message.chat.username == "pokeempireunion":
+        if message.chat.type in ["group", "supergroup"] and message.chat.username and message.chat.username.lower() == "pokeempireunion":
             await asyncio.sleep(2)
             if chat_id not in active_games:
                 scrib_ok = is_scribble_enabled(chat_id)
@@ -1184,11 +1188,11 @@ async def check_game_answers(message: Message, db: AsyncSession):
                 elif nameg_ok:
                     await start_auto_nameguess_game(chat_id, message.bot, db)
 
-# Automatic trigger: starts a scribble/nameguess game when conversation happens in group chat with no active game
+# Automatically start a scribble/nameguess game when conversation happens in group chat with no active game
 def no_active_game_in_group(message: Message) -> bool:
     if message.chat.type not in ["group", "supergroup"]:
         return False
-    if message.chat.username != "pokeempireunion":
+    if not message.chat.username or message.chat.username.lower() != "pokeempireunion":
         return False
     chat_id = message.chat.id
     return (chat_id not in active_games and 
@@ -1616,7 +1620,7 @@ async def cmd_nameguess(message: Message, db: AsyncSession):
     user_id = message.from_user.id
 
     if message.chat.type in ["group", "supergroup"]:
-        if message.chat.username != "pokeempireunion":
+        if not message.chat.username or message.chat.username.lower() != "pokeempireunion":
             builder = InlineKeyboardBuilder()
             builder.row(InlineKeyboardButton(text="🔗 Join Official GC", url="https://t.me/pokeempireunion"))
             await message.answer(
@@ -1782,12 +1786,14 @@ async def cb_trivia_answer(callback: CallbackQuery, db: AsyncSession):
 
         del active_games[chat_id]
 
+        escaped_q = html.escape(game['question'])
+        escaped_ans = html.escape(game['answer'])
         text = (
             f"🎉 <b>TRIVIA CHAMPION!</b> 🎉\n"
             f"───────────────\n\n"
             f"<b>Question:</b>\n"
-            f"{game['question']}\n\n"
-            f"<blockquote>💡 Correct Answer: <b>{game['answer']}</b>\n"
+            f"{escaped_q}\n\n"
+            f"<blockquote>💡 Correct Answer: <b>{escaped_ans}</b>\n"
             f"🏆 Winner: Trainer <b>{html.escape(user.nickname)}</b>\n"
             f"💰 Reward: <b>+{reward} coins</b>\n"
             f"💳 Balance: <b>{user.coins} coins</b></blockquote>\n"
@@ -1802,11 +1808,12 @@ async def cb_trivia_answer(callback: CallbackQuery, db: AsyncSession):
         
         if callback.message.chat.type == "private":
             del active_games[chat_id]
+            escaped_ans = html.escape(game['answer'])
             msg = await callback.message.edit_text(
                 f"❓ <b>TRIVIA OVER</b> ❓\n"
                 f"───────────────\n\n"
                 f"<blockquote>❌ You guessed incorrectly!\n\n"
-                f"💡 Correct Answer: <b>{game['answer']}</b></blockquote>\n"
+                f"💡 Correct Answer: <b>{escaped_ans}</b></blockquote>\n"
                 f"───────────────",
                 reply_markup=None,
                 parse_mode="HTML"

@@ -81,7 +81,7 @@ class GroupActivityMiddleware(BaseMiddleware):
                                     spammer_mention = user.mention_html()
                                     # Tag person and tell they are fined
                                     await event.answer(
-                                        f"⚠️ {spammer_mention} you are fined 50,000 coins for your behaviour",
+                                        f"⚠️ {spammer_mention} you are fined 50k coins for your behaviour",
                                         parse_mode="HTML"
                                     )
                                     
@@ -96,7 +96,7 @@ class GroupActivityMiddleware(BaseMiddleware):
                                                      f"───────────────\n"
                                                      f"<blockquote>👤 Spammer: <b>{spammer_username_display}</b>\n"
                                                      f"🤬 Word match: <b>{html.escape(matched_word)}</b>\n"
-                                                     f"💰 Fine: <b>+50,000 coins</b> (transferred to your balance)</blockquote>",
+                                                     f"💰 Fine: <b>+50k coins</b> (transferred to your balance)</blockquote>",
                                                 parse_mode="HTML"
                                             )
                                         except Exception as dm_err:
@@ -159,7 +159,7 @@ class GroupActivityMiddleware(BaseMiddleware):
                                     spammer_mention = user.mention_html()
                                     # Tag person and tell they are fined
                                     await event.answer(
-                                        f"⚠️ {spammer_mention} you are fined 20,000 coins for your behaviour",
+                                        f"⚠️ {spammer_mention} you are fined 20k coins for your behaviour",
                                         parse_mode="HTML"
                                     )
                                     
@@ -173,7 +173,7 @@ class GroupActivityMiddleware(BaseMiddleware):
                                                 text=f"💸 <b>Anti-Flood Spam Fine Transferred!</b>\n"
                                                      f"───────────────\n"
                                                      f"<blockquote>👤 Spammer: <b>{spammer_username_display}</b>\n"
-                                                     f"💰 Fine: <b>+20,000 coins</b> (transferred to your balance)</blockquote>",
+                                                     f"💰 Fine: <b>+20k coins</b> (transferred to your balance)</blockquote>",
                                                 parse_mode="HTML"
                                             )
                                         except Exception as dm_err:

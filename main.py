@@ -202,6 +202,11 @@ async def main():
             token=config.BOT_TOKEN,
             default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
         )
+    
+    # Apply custom premium emoji patch
+    from utils.emoji_patch import patch_bot_emojis
+    patch_bot_emojis(bot)
+
     dp = Dispatcher()
 
     # Register Middlewares

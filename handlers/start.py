@@ -1129,11 +1129,11 @@ async def cb_adm_toggle_nameguess(callback: CallbackQuery, db: AsyncSession):
 @router.callback_query(F.data == "verify_membership")
 async def cb_verify_membership(callback: CallbackQuery, db: AsyncSession):
     from utils.membership import check_membership
-    is_member = await check_membership(callback.bot, callback.from_user.id)
+    is_member = await check_membership(callback.bot, callback.from_user.id, force_refresh=True)
     if is_member:
         await callback.answer("✅ Verification successful! Welcome to PokéEmpire!", show_alert=True)
         await cb_dm_home(callback, db)
     else:
-        await callback.answer("❌ Verification failed. You still haven't joined both our group chat and channel!", show_alert=True)
+        await callback.answer("❌ Verification failed. You still haven't joined our official group chat!", show_alert=True)
 
 

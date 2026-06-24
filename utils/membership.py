@@ -1,45 +1,49 @@
+import time
 import config
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject, Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from typing import Callable, Dict, Any, Awaitable
 
-async def check_membership(bot, user_id: int) -> bool:
+# In-memory cache to prevent hitting Telegram API limits on every message
+# user_id -> (is_member: bool, timestamp: float)
+membership_cache = {}
+
+async def check_membership(bot, user_id: int, force_refresh: bool = False) -> bool:
     """
     Checks if a user is a member of the official group (@pokeempireunion)
-    and updates channel (@pokeempireupdates).
+    with a 5-minute in-memory cache.
     """
     if user_id in config.ADMIN_IDS:
         return True
-        
+
+    now = time.time()
+    # Check cache if not forced to refresh
+    if not force_refresh and user_id in membership_cache:
+        cached_val, cached_time = membership_cache[user_id]
+        if now - cached_time < 300:  # 5 minutes cache
+            return cached_val
+
+    is_member = False
     # Check group chat membership
     try:
         chat_member = await bot.get_chat_member(chat_id="@pokeempireunion", user_id=user_id)
-        if chat_member.status in ["left", "kicked"]:
-            return False
+        if chat_member.status not in ["left", "kicked"]:
+            is_member = True
     except Exception as e:
         print(f"Error checking group membership for {user_id}: {e}")
-        return False
+        is_member = False
 
-    # Check updates channel membership
-    updates_channel = getattr(config, "UPDATES_CHANNEL", "@pokeempireupdates")
-    try:
-        chat_member = await bot.get_chat_member(chat_id=updates_channel, user_id=user_id)
-        if chat_member.status in ["left", "kicked"]:
-            return False
-    except Exception as e:
-        print(f"Error checking channel membership for {user_id}: {e}")
-        return False
-
-    return True
+    # Cache the result
+    membership_cache[user_id] = (is_member, now)
+    return is_member
 
 def get_join_keyboard() -> InlineKeyboardMarkup:
     """
-    Generates inline keyboard markup with links to group, channel and a Verify button.
+    Generates inline keyboard markup with link to the official group chat and a Verify button.
     """
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="👥 Join Group Chat", url="https://t.me/pokeempireunion"),
-            InlineKeyboardButton(text="📢 Join Updates Channel", url="https://t.me/pokeempireupdates")
+            InlineKeyboardButton(text="👥 Join Group Chat", url="https://t.me/pokeempireunion")
         ],
         [
             InlineKeyboardButton(text="🔄 Verify Membership", callback_data="verify_membership")
@@ -49,7 +53,7 @@ def get_join_keyboard() -> InlineKeyboardMarkup:
 
 class MembershipMiddleware(BaseMiddleware):
     """
-    Middleware that enforces membership in official group and channel.
+    Middleware that enforces membership in the official group chat.
     """
     async def __call__(
         self,
@@ -99,12 +103,12 @@ class MembershipMiddleware(BaseMiddleware):
             if not is_member:
                 # Redirect or reply
                 if is_callback:
-                    await event.answer("⚠️ Access Denied! You must join our official Group & Channel.", show_alert=True)
+                    await event.answer("⚠️ Access Denied! You must join our official Group Chat.", show_alert=True)
                     if chat and chat.type == "private":
                         try:
                             await event.message.edit_text(
                                 "🚫 <b>ACCESS DENIED!</b> 🚫\n\n"
-                                "<blockquote>You must be a member of both our official Group Chat and Updates Channel to interact with the bot.</blockquote>",
+                                "<blockquote>You must be a member of our official Group Chat to interact with the bot.</blockquote>",
                                 parse_mode="HTML",
                                 reply_markup=get_join_keyboard()
                             )
@@ -116,7 +120,7 @@ class MembershipMiddleware(BaseMiddleware):
                     if chat and chat.type == "private":
                         await event.answer(
                             "🚫 <b>ACCESS DENIED!</b> 🚫\n\n"
-                            "<blockquote>You must be a member of both our official Group Chat and Updates Channel to interact with the bot.</blockquote>",
+                            "<blockquote>You must be a member of our official Group Chat to interact with the bot.</blockquote>",
                             parse_mode="HTML",
                             reply_markup=get_join_keyboard()
                         )
@@ -124,7 +128,7 @@ class MembershipMiddleware(BaseMiddleware):
                         # Group command
                         await event.reply(
                             "🚫 <b>ACCESS DENIED!</b> 🚫\n"
-                            "<blockquote>You must join our official Group Chat (@pokeempireunion) and updates channel (@pokeempireupdates) to use bot commands!</blockquote>",
+                            "<blockquote>You must join our official Group Chat (@pokeempireunion) to use bot commands!</blockquote>",
                             parse_mode="HTML"
                         )
                     return

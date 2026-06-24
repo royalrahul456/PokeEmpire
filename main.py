@@ -11,7 +11,7 @@ import config
 from database.database import init_db, SessionLocal
 from utils.anti_spam import AntiSpamMiddleware
 from utils.group_monitor import GroupActivityMiddleware
-from utils.membership import MembershipMiddleware
+# from utils.membership import MembershipMiddleware
 
 
 # Import Routers
@@ -263,9 +263,9 @@ async def main():
     # so that banned words and flood spams are deleted/fined immediately for all users.
     dp.message.outer_middleware(GroupActivityMiddleware())
     
-    # Enforce membership checks on messages and callbacks
-    dp.message.outer_middleware(MembershipMiddleware())
-    dp.callback_query.outer_middleware(MembershipMiddleware())
+    # Enforce membership checks on messages and callbacks - DISABLED
+    # dp.message.outer_middleware(MembershipMiddleware())
+    # dp.callback_query.outer_middleware(MembershipMiddleware())
     
     # Throttle commands and button clicks
     dp.message.outer_middleware(AntiSpamMiddleware())

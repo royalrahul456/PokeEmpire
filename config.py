@@ -7,22 +7,38 @@ load_dotenv()
 # Bot Setup
 BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 
-# Resolve relative SQLite database URL to absolute path relative to this config file's directory
+# Check if we are running in Render with persistent volume mount
+PERSISTENT_VOLUME = "/app/data_volume"
 _raw_db_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///pokeempire.db")
-if _raw_db_url.startswith("sqlite+aiosqlite:///"):
-    _db_rel_path = _raw_db_url.replace("sqlite+aiosqlite:///", "")
-    _base_dir = os.path.dirname(os.path.abspath(__file__))
-    if not os.path.isabs(_db_rel_path):
-        DATABASE_URL = f"sqlite+aiosqlite:///{os.path.join(_base_dir, _db_rel_path)}"
+
+if os.path.exists(PERSISTENT_VOLUME) and os.path.isdir(PERSISTENT_VOLUME):
+    # SQLite resolves to persistent storage
+    if _raw_db_url.startswith("sqlite+aiosqlite:///"):
+        DATABASE_URL = "sqlite+aiosqlite:////app/data_volume/pokeempire.db"
     else:
-        DATABASE_URL = _raw_db_url
+        db_url = _raw_db_url
+        if db_url.startswith("postgresql://"):
+            db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        if "sslmode=require" in db_url:
+            db_url = db_url.replace("sslmode=require", "ssl=require")
+        DATABASE_URL = db_url
 else:
-    db_url = _raw_db_url
-    if db_url.startswith("postgresql://"):
-        db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    if "sslmode=require" in db_url:
-        db_url = db_url.replace("sslmode=require", "ssl=require")
-    DATABASE_URL = db_url
+    # Local fallback
+    if _raw_db_url.startswith("sqlite+aiosqlite:///"):
+        _db_rel_path = _raw_db_url.replace("sqlite+aiosqlite:///", "")
+        _base_dir = os.path.dirname(os.path.abspath(__file__))
+        if not os.path.isabs(_db_rel_path):
+            DATABASE_URL = f"sqlite+aiosqlite:///{os.path.join(_base_dir, _db_rel_path)}"
+        else:
+            DATABASE_URL = _raw_db_url
+    else:
+        db_url = _raw_db_url
+        if db_url.startswith("postgresql://"):
+            db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        if "sslmode=require" in db_url:
+            db_url = db_url.replace("sslmode=require", "ssl=require")
+        DATABASE_URL = db_url
+
 
 # Admin List
 _admin_ids_str = os.getenv("ADMIN_IDS", "")
@@ -50,7 +66,12 @@ else:
 
 
 # Directories
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-DATABASE_PATH = os.path.join(BASE_DIR, "pokeempire.db")
+if os.path.exists(PERSISTENT_VOLUME) and os.path.isdir(PERSISTENT_VOLUME):
+    BASE_DIR = PERSISTENT_VOLUME
+    DATA_DIR = "/app/data_volume/data"
+    DATABASE_PATH = "/app/data_volume/pokeempire.db"
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    DATA_DIR = os.path.join(BASE_DIR, "data")
+    DATABASE_PATH = os.path.join(BASE_DIR, "pokeempire.db")
 UPDATES_CHANNEL = os.getenv("UPDATES_CHANNEL", "@pokeempireupdates")

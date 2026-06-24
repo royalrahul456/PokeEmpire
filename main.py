@@ -46,6 +46,7 @@ def check_and_copy_sqlite_db():
     dest_path = os.path.join(dest_dir, "pokeempire.db")
     src_path = "/app/pokeempire.db"
 
+    # 1. Database file migration
     if os.path.exists(dest_dir) and not os.path.exists(dest_path):
         if os.path.exists(src_path):
             logger.info("Migrating existing pokeempire.db to Render Persistent Disk...")
@@ -56,6 +57,23 @@ def check_and_copy_sqlite_db():
                 logger.error(f"Failed to migrate database to persistent storage: {e}")
         else:
             logger.info("No source database found in code directory. A new database will be initialized.")
+
+    # 2. Data directory copy (seed files)
+    if os.path.exists(dest_dir):
+        dest_data_dir = os.path.join(dest_dir, "data")
+        os.makedirs(dest_data_dir, exist_ok=True)
+        
+        src_data_dir = "/app/data"
+        if os.path.exists(src_data_dir):
+            for filename in os.listdir(src_data_dir):
+                src_file = os.path.join(src_data_dir, filename)
+                dest_file = os.path.join(dest_data_dir, filename)
+                if os.path.isfile(src_file) and not os.path.exists(dest_file):
+                    logger.info(f"Copying seed file {filename} to persistent storage...")
+                    try:
+                        shutil.copy2(src_file, dest_file)
+                    except Exception as e:
+                        logger.error(f"Failed to copy seed file {filename}: {e}")
 
 class DbSessionMiddleware:
     """aiogram Middleware that opens a SQLAlchemy async session for each update."""
@@ -176,6 +194,35 @@ async def main():
     # Initialize Database tables and seeds
     await init_db()
     logger.info("Database initialized and seeded successfully.")
+
+    # Load dynamic admins and uploaders from database
+    from database.models import GlobalSetting
+    from sqlalchemy import select
+    try:
+        async with SessionLocal() as db:
+            # Admins
+            stmt = select(GlobalSetting).where(GlobalSetting.key == "dynamic_admin_ids")
+            res = await db.execute(stmt)
+            setting = res.scalar_one_or_none()
+            if setting and setting.value:
+                for val in setting.value.split(","):
+                    if val.strip().isdigit():
+                        uid = int(val)
+                        if uid not in config.ADMIN_IDS:
+                            config.ADMIN_IDS.append(uid)
+            # Uploaders
+            stmt = select(GlobalSetting).where(GlobalSetting.key == "dynamic_uploader_ids")
+            res = await db.execute(stmt)
+            setting = res.scalar_one_or_none()
+            if setting and setting.value:
+                for val in setting.value.split(","):
+                    if val.strip().isdigit():
+                        uid = int(val)
+                        if uid not in config.UPLOADER_IDS:
+                            config.UPLOADER_IDS.append(uid)
+        logger.info("Dynamic Admin & Uploader IDs synced from database successfully.")
+    except Exception as e:
+        logger.error(f"Failed to sync dynamic IDs from database: {e}")
 
     # Load settings cache and migrate json configs
     from utils.settings import load_all_settings_into_cache

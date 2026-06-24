@@ -523,8 +523,7 @@ async def start_auto_scribble_game(chat_id: int, bot: Bot, db: AsyncSession):
     
     try:
         # Select random Pokémon
-        random_id = random.randint(1, 1025)
-        stmt = select(Pokemon).where(Pokemon.id == random_id)
+        stmt = select(Pokemon).order_by(func.random()).limit(1)
         res = await db.execute(stmt)
         pokemon = res.scalar_one_or_none()
 
@@ -593,8 +592,7 @@ async def start_auto_nameguess_game(chat_id: int, bot: Bot, db: AsyncSession):
     
     try:
         # Select random Pokémon
-        random_id = random.randint(1, 1025)
-        stmt = select(Pokemon).where(Pokemon.id == random_id)
+        stmt = select(Pokemon).order_by(func.random()).limit(1)
         res = await db.execute(stmt)
         pokemon = res.scalar_one_or_none()
 
@@ -1038,8 +1036,7 @@ async def cmd_scribble(message: Message, db: AsyncSession):
         return
 
     # Select random Pokémon
-    random_id = random.randint(1, 1025)
-    stmt = select(Pokemon).where(Pokemon.id == random_id)
+    stmt = select(Pokemon).order_by(func.random()).limit(1)
     res = await db.execute(stmt)
     pokemon = res.scalar_one_or_none()
 
@@ -1402,8 +1399,7 @@ async def cb_play_scribble(callback: CallbackQuery, db: AsyncSession):
         return
 
     # Select random Pokémon
-    random_id = random.randint(1, 1025)
-    stmt = select(Pokemon).where(Pokemon.id == random_id)
+    stmt = select(Pokemon).order_by(func.random()).limit(1)
     res = await db.execute(stmt)
     pokemon = res.scalar_one_or_none()
 
@@ -1636,8 +1632,7 @@ async def cmd_nameguess(message: Message, db: AsyncSession):
         return
 
     # Select random Pokémon
-    random_id = random.randint(1, 1025)
-    stmt = select(Pokemon).where(Pokemon.id == random_id)
+    stmt = select(Pokemon).order_by(func.random()).limit(1)
     res = await db.execute(stmt)
     pokemon = res.scalar_one_or_none()
 

@@ -633,6 +633,32 @@ def update_env_uploader_ids(new_ids):
     with open(env_path, "w", encoding="utf-8") as f:
         f.write(new_content)
 
+async def save_dynamic_settings(db: AsyncSession):
+    from database.models import GlobalSetting
+    from sqlalchemy import select
+    
+    # Save admins
+    admins_str = ",".join(map(str, config.ADMIN_IDS))
+    stmt = select(GlobalSetting).where(GlobalSetting.key == "dynamic_admin_ids")
+    res = await db.execute(stmt)
+    setting = res.scalar_one_or_none()
+    if setting:
+        setting.value = admins_str
+    else:
+        db.add(GlobalSetting(key="dynamic_admin_ids", value=admins_str))
+        
+    # Save uploaders
+    uploaders_str = ",".join(map(str, config.UPLOADER_IDS))
+    stmt = select(GlobalSetting).where(GlobalSetting.key == "dynamic_uploader_ids")
+    res = await db.execute(stmt)
+    setting = res.scalar_one_or_none()
+    if setting:
+        setting.value = uploaders_str
+    else:
+        db.add(GlobalSetting(key="dynamic_uploader_ids", value=uploaders_str))
+        
+    await db.commit()
+
 @router.message(Command("makeadmin"))
 async def cmd_make_admin(message: Message, db: AsyncSession):
     # Only bot owner can use this (first admin ID in config.ADMIN_IDS)
@@ -689,8 +715,9 @@ async def cmd_make_admin(message: Message, db: AsyncSession):
     # Add to in-memory list
     config.ADMIN_IDS.append(target_id)
 
-    # Save to .env
+    # Save to .env and database
     update_env_admin_ids(config.ADMIN_IDS)
+    await save_dynamic_settings(db)
 
     text = (
         f"👑 **ADMINISTRATOR ADDED** 👑\n"
@@ -761,8 +788,9 @@ async def cmd_remove_admin(message: Message, db: AsyncSession):
     # Remove from in-memory list
     config.ADMIN_IDS.remove(target_id)
 
-    # Save to .env
+    # Save to .env and database
     update_env_admin_ids(config.ADMIN_IDS)
+    await save_dynamic_settings(db)
 
     text = (
         f"🛡️ **ADMINISTRATOR REMOVED** 🛡️\n"
@@ -831,8 +859,9 @@ async def cmd_make_uploader(message: Message, db: AsyncSession):
     # Add to in-memory list
     config.UPLOADER_IDS.append(target_id)
 
-    # Save to .env
+    # Save to .env and database
     update_env_uploader_ids(config.UPLOADER_IDS)
+    await save_dynamic_settings(db)
 
     announcement = (
         f"🎬 **UPLOADER ADDED** 🎬\n"
@@ -929,6 +958,7 @@ async def cmd_remove_uploader(message: Message, db: AsyncSession):
 
     config.UPLOADER_IDS.remove(target_id)
     update_env_uploader_ids(config.UPLOADER_IDS)
+    await save_dynamic_settings(db)
 
     text = (
         f"🎬 **UPLOADER REMOVED** 🎬\n"
@@ -962,6 +992,11 @@ async def cmd_spawn(message: Message, db: AsyncSession):
     parts = message.text.split()
     specified_rarity = None
     if len(parts) >= 2:
+        # Check if the user is the Bot Owner
+        if not config.ADMIN_IDS or message.from_user.id != config.ADMIN_IDS[0]:
+            await message.answer("❌ Denied. Only the Bot Owner can specify a rarity for manual spawns.")
+            return
+
         rarity_input = parts[1].strip().title()
         if rarity_input in ["Common", "Rare", "Epic", "Legendary", "Mythical"]:
             specified_rarity = rarity_input

@@ -17,8 +17,10 @@ class AntiSpamMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         # Do not throttle normal chat messages (only throttle commands and callbacks)
-        if isinstance(event, Message) and event.text and not event.text.startswith("/"):
-            return await handler(event, data)
+        if isinstance(event, Message):
+            is_command = (event.text and event.text.startswith("/")) or (event.caption and event.caption.startswith("/"))
+            if not is_command:
+                return await handler(event, data)
 
         user_id = user.id
         action = "global_anti_spam"

@@ -20,7 +20,9 @@ async def check_membership(bot, user_id: int, force_refresh: bool = False) -> bo
     # Check cache if not forced to refresh
     if not force_refresh and user_id in membership_cache:
         cached_val, cached_time = membership_cache[user_id]
-        if now - cached_time < 300:  # 5 minutes cache
+        # Cache True (member) for 5 minutes, False (non-member) for 15 seconds
+        cache_duration = 300 if cached_val else 15
+        if now - cached_time < cache_duration:
             return cached_val
 
     is_member = False

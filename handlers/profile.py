@@ -347,7 +347,7 @@ async def cmd_profile(message: Message, db: AsyncSession):
 
     profile_card = (
         f"╭──「 🏆 Trainer Profile 」\n"
-        f"├─➩ 🏓 User: {escape_md(user_nickname)}\n"
+        f"├─➩ 🏓 User: {html.escape(user_nickname)}\n"
         f"├─➩ 🆔 ID: <code>{user.id}</code>\n"
         f"├─➩ 💰 Balance: <code>{formatted_coins} coins</code>\n"
         f"├─➩ ⚡ Pokémon: {unique_caught} (Total Catches: {total_caught})\n"
@@ -919,7 +919,7 @@ async def cmd_check_pokemon(message: Message, db: AsyncSession):
     
     if not pokemon:
         searched_term = pokemon_name_query if pokemon_name_query else str(pokemon_id)
-        await message.answer(f"Pokemon '{escape_md(searched_term)}' not found in database.", parse_mode="HTML")
+        await message.answer(f"Pokemon '{html.escape(searched_term)}' not found in database.", parse_mode="HTML")
         return
         
     caption, reply_markup, media_type, media_value = await build_check_pokemon_payload(pokemon.id, form_index, db)
@@ -977,7 +977,7 @@ async def build_check_pokemon_payload(pokemon_id: int, form_index: int, db: Asyn
     caption = (
         f"<b>🌟 Pokemon Info</b>\n"
         f"🆔 <b>ID</b>: <code>{id_str}</code>\n"
-        f"⛔ <b>Name</b>: {escape_md(name_str)}\n"
+        f"⛔ <b>Name</b>: {html.escape(name_str)}\n"
         f"🎦 <b>Generation</b>: Gen {pokemon.generation}\n"
         f"🎬 <b>Rarity</b>: {rarity_str}"
     )
@@ -1012,7 +1012,7 @@ async def cb_show_check_owners(callback: CallbackQuery, db: AsyncSession):
     if owners:
         owner_rows = []
         for idx, (uid, nick, count) in enumerate(owners, start=1):
-            display_name = escape_md(nick or "Trainer")
+            display_name = html.escape(nick or "Trainer")
             owner_rows.append(f"{idx}. <a href=\"tg://user?id={uid}\">{display_name}</a> ×{count}")
         caption += "\n".join(owner_rows)
     else:
@@ -1296,7 +1296,7 @@ async def cmd_search(message: Message, db: AsyncSession):
 
     if not pokemons:
         searched_term = pokemon_name_query if pokemon_name_query else str(pokemon_id)
-        await message.answer(f"Pokemon '{escape_md(searched_term)}' not found in database.", parse_mode="HTML")
+        await message.answer(f"Pokemon '{html.escape(searched_term)}' not found in database.", parse_mode="HTML")
         return
 
     # Sort results so the closest match (shortest name or exact name) is selected as the primary_pokemon
@@ -1363,8 +1363,8 @@ async def build_variants_search_payload(pokemon_id: int, page: int, db: AsyncSes
         series_str = gen_str
         
     caption = (
-        f"🦧 <b>{escape_md(pokemon.name.title())}</b>\n"
-        f"┣━ 🎦 {escape_md(series_str)}\n"
+        f"🦧 <b>{html.escape(pokemon.name.title())}</b>\n"
+        f"┣━ 🎦 {html.escape(series_str)}\n"
         f"┣━ 📊 Total variants: <b>{total_variants}</b> — Page <b>{page}/{total_pages}</b>\n\n"
     )
     
@@ -1525,9 +1525,9 @@ async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
 
     profile_card = (
         f"╭──「 🏆 Trainer Profile 」\n"
-        f"├─➩ 🏓 User: {escape_md(user_nickname)}\n"
-        f"├─➩ 🆔 ID: `{user_id}`\n"
-        f"├─➩ 💰 Balance: `{formatted_coins} coins`\n"
+        f"├─➩ 🏓 User: {html.escape(user_nickname)}\n"
+        f"├─➩ 🆔 ID: <code>{user_id}</code>\n"
+        f"├─➩ 💰 Balance: <code>{formatted_coins} coins</code>\n"
         f"├─➩ ⚡ Pokémon: {unique_caught} (Total Catches: {total_caught})\n"
         f"├─➩ 🌍 Pokédex: {unique_caught}/{total_species} ({dex_pct:.3f}%)\n"
         f"├─➩ 🎁 Progress:\n"
@@ -1581,7 +1581,7 @@ async def cmd_dex(message: Message, db: AsyncSession):
     pokemon = poke_res.scalar_one_or_none()
     
     if not pokemon:
-        await message.answer(f"❌ Pokémon '{escape_md(query)}' not found.")
+        await message.answer(f"❌ Pokémon '{html.escape(query)}' not found.")
         return
         
     # 2. Get owned form indexes for this user and species
@@ -1989,8 +1989,8 @@ async def cmd_gift(message: Message, db: AsyncSession):
 
     caption = (
         f"🎁 <b>POKÉMON GIFTED!</b> 🎁\n"
-        f"<blockquote>👤 Sender: <b>{escape_md(sender_name)}</b>\n"
-        f"👤 Recipient: <b>{escape_md(receiver_name)}</b>\n"
+        f"<blockquote>👤 Sender: <b>{html.escape(sender_name)}</b>\n"
+        f"👤 Recipient: <b>{html.escape(receiver_name)}</b>\n"
         f"💝 Pokémon: {pokemon_display}</blockquote>"
     )
 
@@ -2012,7 +2012,7 @@ async def cmd_gift(message: Message, db: AsyncSession):
     # Send private DM to recipient
     dm_text = (
         f"📣 <b>You received a Gift!</b>\n"
-        f"<blockquote>👤 Sender: <b>{escape_md(sender_name)}</b>\n"
+        f"<blockquote>👤 Sender: <b>{html.escape(sender_name)}</b>\n"
         f"💝 Pokémon: {pokemon_display}</blockquote>"
     )
     try:

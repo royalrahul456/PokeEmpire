@@ -257,12 +257,19 @@ async def main():
     dp = Dispatcher()
 
     # Register Middlewares
-    dp.update.outer_middleware(MembershipMiddleware())
     dp.update.outer_middleware(DbSessionMiddleware())
-    dp.update.outer_middleware(AntiSpamMiddleware())
     
-    # Message outer middleware to count group conversation activity
+    # Group Activity Middleware must run before membership & antispam checks
+    # so that banned words and flood spams are deleted/fined immediately for all users.
     dp.message.outer_middleware(GroupActivityMiddleware())
+    
+    # Enforce membership checks on messages and callbacks
+    dp.message.outer_middleware(MembershipMiddleware())
+    dp.callback_query.outer_middleware(MembershipMiddleware())
+    
+    # Throttle commands and button clicks
+    dp.message.outer_middleware(AntiSpamMiddleware())
+    dp.callback_query.outer_middleware(AntiSpamMiddleware())
 
     # Register Handler Routers
     dp.include_router(start.router)

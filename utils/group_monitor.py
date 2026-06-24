@@ -207,7 +207,8 @@ class GroupActivityMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         # Skip counting bot commands to prevent spam exploits
-        if event.text and event.text.startswith("/"):
+        is_command = (event.text and event.text.startswith("/")) or (event.caption and event.caption.startswith("/"))
+        if is_command:
             return await handler(event, data)
 
         db: AsyncSession = data.get("db")

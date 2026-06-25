@@ -4,7 +4,7 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 import config
 from database.models import User, Pokemon, UserPokemon, ActiveSpawn
 from utils.formatters import get_progress_bar, get_rarity_emoji, escape_md
@@ -117,6 +117,8 @@ async def cmd_catch(message: Message, db: AsyncSession):
             db.add(user)
             await db.flush()
 
+        user_nickname = user.nickname or nickname
+
         # Create capture entry with random IVs
         iv_hp = random.randint(0, 31)
         iv_atk = random.randint(0, 31)
@@ -128,6 +130,7 @@ async def cmd_catch(message: Message, db: AsyncSession):
         # Award coins on catch
         coins_won = random.randint(80, 130)
         user.coins += coins_won
+        user_coins = user.coins
 
         # Shiny Charm roll (1 in 100 chance to upgrade)
         is_shiny = spawn.is_shiny
@@ -174,7 +177,7 @@ async def cmd_catch(message: Message, db: AsyncSession):
             achievement_unlocked_msg = (
                 f"🏆 <b>ACHIEVEMENT UNLOCKED!</b> 🏆\n"
                 f"───────────────\n"
-                f"🎉 Congratulations to <b>{html.escape(user.nickname or nickname)}</b> for unlocking <b>{milestone_title}</b> by completing <b>{total_catches}</b> catches!"
+                f"🎉 Congratulations to <b>{html.escape(user_nickname)}</b> for unlocking <b>{milestone_title}</b> by completing <b>{total_catches}</b> catches!"
             )
 
         # Increment daily catch streak
@@ -191,7 +194,7 @@ async def cmd_catch(message: Message, db: AsyncSession):
             print(f"Failed to react to message: {e}")
 
         # 2. Send quick coins victory reply (Message 1)
-        msg1_text = f"🎉 +{coins_won} coins! Balance: {user.coins}"
+        msg1_text = f"🎉 +{coins_won} coins! Balance: {user_coins}"
         await message.reply(msg1_text)
 
         # 3. Calculate time taken
@@ -214,7 +217,7 @@ async def cmd_catch(message: Message, db: AsyncSession):
             shiny_upgrade_text = "\n🍀 ✨ <b>Shiny Charm Activated!</b> catch upgraded to <b>Shiny</b>! ✨"
 
         msg2_text = (
-            f"💥 🌟 <b>{escape_md(user.nickname)}</b> caught!{shiny_upgrade_text}\n\n"
+            f"💥 🌟 <b>{escape_md(user_nickname)}</b> caught!{shiny_upgrade_text}\n\n"
             f"<blockquote>⛔ <b>NAME:</b> {poke_display}\n"
             f"🎦 <b>ANIME:</b> Gen {pokemon.generation}\n"
             f"{r_emoji} <b>RARITY:</b> {r_emoji} {pokemon.rarity}\n"

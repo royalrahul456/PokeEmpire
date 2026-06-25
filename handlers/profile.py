@@ -264,6 +264,58 @@ async def edit_player_cover_message(callback: CallbackQuery, user_id: int, capti
         except Exception:
             pass
 
+@router.message(Command("achievements", "achievement"))
+async def cmd_achievements(message: Message, db: AsyncSession):
+    user_id = message.from_user.id
+    nickname = message.from_user.first_name
+
+    # Check if user exists in DB
+    u_stmt = select(User).where(User.id == user_id)
+    u_res = await db.execute(u_stmt)
+    user = u_res.scalar_one_or_none()
+
+    if not user:
+        await message.answer("⚠️ You haven't caught any Pokémon yet! Catch a wild Pokémon using `/catch <name>` to start.")
+        return
+
+    # Count total catches
+    stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == user_id)
+    res = await db.execute(stmt)
+    total_catches = res.scalar() or 0
+
+    ACHIEVEMENTS = [
+        ("🥉 First Blood", 100),
+        ("🥈 Getting Started", 200),
+        ("🥇 Collector", 350),
+        ("💎 Elite Collector", 500),
+        ("🏆 Centurion", 1000),
+        ("🌟 Legend", 5000),
+        ("👑 Grand Master", 10000),
+        ("🔮 Mythic Snatchers", 25000)
+    ]
+
+    unlocked_count = sum(1 for _, target in ACHIEVEMENTS if total_catches >= target)
+
+    lines = []
+    lines.append(f"🏆 <b>Achievements — {html.escape(user.nickname or nickname)}</b>")
+    lines.append(f"Unlocked: {unlocked_count}/8\n")
+
+    for title, target in ACHIEVEMENTS:
+        if total_catches >= target:
+            lines.append(f"✅ {title} — Complete {target} snatches")
+        else:
+            # Generate progress bar
+            fraction = min(1.0, max(0.0, total_catches / target))
+            filled_length = int(fraction * 8)
+            empty_length = 8 - filled_length
+            bar = f"[{'█' * filled_length}{'░' * empty_length}]"
+            lines.append(f"🎁 {title} — {bar} {total_catches}/{target}")
+
+    lines.append(f"\n🎁 Total Snatched: {total_catches}")
+
+    text = "\n".join(lines)
+    await message.answer(text, parse_mode="HTML")
+
 @router.message(Command("profile"))
 async def cmd_profile(message: Message, db: AsyncSession):
     try:
@@ -1215,16 +1267,37 @@ async def cmd_leaderboard(message: Message, db: AsyncSession):
 @router.callback_query(F.data.startswith("lb_type_"))
 async def cb_leaderboard_type(callback: CallbackQuery, db: AsyncSession):
     lb_type = callback.data.replace("lb_type_", "")
+    is_dm = False
+    if lb_type.endswith("_dm"):
+        is_dm = True
+        lb_type = lb_type[:-3]
+        
     text = await get_leaderboard_text(lb_type, db)
     
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🏆 Pokémon", callback_data="lb_type_catches_dm" if is_dm else "lb_type_catches"),
+        InlineKeyboardButton(text="💰 Coins", callback_data="lb_type_coins_dm" if is_dm else "lb_type_coins"),
+        InlineKeyboardButton(text="🔥 Streak", callback_data="lb_type_streak_dm" if is_dm else "lb_type_streak")
+    )
+    if is_dm:
+        builder.row(InlineKeyboardButton(text="🔙 Back to Hub Menu", callback_data="dm_home"))
+        
     try:
         await callback.message.edit_caption(
             caption=text,
-            reply_markup=get_leaderboard_keyboard(),
+            reply_markup=builder.as_markup(),
             parse_mode="HTML"
         )
     except Exception:
-        pass
+        try:
+            await callback.message.edit_text(
+                text=text,
+                reply_markup=builder.as_markup(),
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
     await callback.answer()
 
 @router.message(Command("fav"))

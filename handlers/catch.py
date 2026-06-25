@@ -151,6 +151,32 @@ async def cmd_catch(message: Message, db: AsyncSession):
         db.add(capture)
         await db.commit()
 
+        # Count total captures to check achievement milestone
+        catches_stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == user_id)
+        catches_res = await db.execute(catches_stmt)
+        total_catches = catches_res.scalar() or 0
+        
+        ACHIEVEMENT_MILESTONES = {
+            100: "🥉 First Blood",
+            200: "🥈 Getting Started",
+            350: "🥇 Collector",
+            500: "💎 Elite Collector",
+            1000: "🏆 Centurion",
+            5000: "🌟 Legend",
+            10000: "👑 Grand Master",
+            25000: "🔮 Mythic Snatchers"
+        }
+        
+        achievement_unlocked_msg = None
+        if total_catches in ACHIEVEMENT_MILESTONES:
+            import html
+            milestone_title = ACHIEVEMENT_MILESTONES[total_catches]
+            achievement_unlocked_msg = (
+                f"🏆 <b>ACHIEVEMENT UNLOCKED!</b> 🏆\n"
+                f"───────────────\n"
+                f"🎉 Congratulations to <b>{html.escape(user.nickname or nickname)}</b> for unlocking <b>{milestone_title}</b> by completing <b>{total_catches}</b> snatches!"
+            )
+
         # Increment daily catch streak
         from utils.streak import increment_streak_catch, get_streak_data
         secured, current_count = await increment_streak_catch(user_id)
@@ -204,6 +230,10 @@ async def cmd_catch(message: Message, db: AsyncSession):
         fires = "🔥" * min(max(1, streak_days), 5)
         msg3_text = f"{fires} {streak_days}-Day Streak! Keep going! 🎯"
         await message.answer(msg3_text)
+
+        # 6. Send achievement announcement if unlocked
+        if achievement_unlocked_msg:
+            await message.answer(achievement_unlocked_msg, parse_mode="HTML")
 
     except Exception as e:
         # Rollback broken transaction before any further DB operations

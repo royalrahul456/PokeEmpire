@@ -371,9 +371,9 @@ async def cmd_gen(message: Message, db: AsyncSession):
         
         caption = (
             f"🎉 <b>Redeem Code Created!</b>\n\n"
-            f"💰 <b>Reward:</b> <code>{coins:,} coins</code>\n"
+            f"<blockquote>💰 <b>Reward:</b> <code>{coins:,} coins</code>\n"
             f"🔢 <b>Limit:</b> <code>{limit} redeems</code>\n"
-            f"🔐 <b>Code:</b> <code>{code}</code>"
+            f"🔐 <b>Code:</b> <code>{code}</code></blockquote>"
         )
         
         # Attach coin gift banner
@@ -481,11 +481,11 @@ async def cmd_gen(message: Message, db: AsyncSession):
         
         caption = (
             f"🎉 <b>Redeem Code Created!</b>\n\n"
-            f"🎁 <b>Character:</b> {html.escape(pokemon.name.title())}{form_suffix}{shiny_tag}\n"
+            f"<blockquote>🎁 <b>Character:</b> {html.escape(pokemon.name.title())}{form_suffix}{shiny_tag}\n"
             f"✨ <b>Anime:</b> {html.escape(gen_val)}\n"
             f"{r_emoji} <b>Rarity:</b> {r_emoji} {html.escape(pokemon.rarity)}\n"
             f"🔢 <b>Limit:</b> <code>{limit}</code>\n"
-            f"🔐 <b>Code:</b> <code>{code}</code>"
+            f"🔐 <b>Code:</b> <code>{code}</code></blockquote>"
         )
         
         # Resolve media

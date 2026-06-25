@@ -159,7 +159,44 @@ async def cmd_claim(message: Message, db: AsyncSession):
         f"{r_emoji} Rarity: <b>{r_emoji} {selected_pokemon.rarity}</b></blockquote>"
     )
     
-    await message.answer(text, parse_mode="HTML")
+    # Resolve media for the claimed pokemon: try form 1 (Art/AMV) first, then video_url, then image_url
+    from database.models import PokemonFormMedia
+    from handlers.profile import parse_stored_media_value
+    
+    media_value = None
+    media_type = "photo"
+    
+    form1_stmt = select(PokemonFormMedia.media_value).where(
+        PokemonFormMedia.pokemon_id == selected_pokemon.id,
+        PokemonFormMedia.form_index == 1
+    )
+    form1_res = await db.execute(form1_stmt)
+    form1_media = form1_res.scalar_one_or_none()
+    
+    if form1_media:
+        media_type, media_value = parse_stored_media_value(form1_media)
+    else:
+        if selected_pokemon.video_url:
+            media_type = "video"
+            media_value = selected_pokemon.video_url
+        else:
+            media_type = "photo"
+            media_value = selected_pokemon.image_url
+            
+    from aiogram.types import FSInputFile
+    if isinstance(media_value, str) and os.path.exists(media_value):
+        media_value = FSInputFile(media_value)
+        
+    try:
+        if media_type == "video":
+            await message.answer_video(video=media_value, caption=text, parse_mode="HTML")
+        elif media_type == "animation":
+            await message.answer_animation(animation=media_value, caption=text, parse_mode="HTML")
+        else:
+            await message.answer_photo(photo=media_value, caption=text, parse_mode="HTML")
+    except Exception as e:
+        print(f"Error sending claimed pokemon media: {e}")
+        await message.answer(text, parse_mode="HTML")
 
 @router.message(Command("spin"))
 async def cmd_spin(message: Message, db: AsyncSession):
@@ -1987,20 +2024,31 @@ async def cb_dm_streak(callback: CallbackQuery, db: AsyncSession):
     await callback.answer()
 
 @router.callback_query(F.data == "dm_leaderboard")
-async def cb_dm_leaderboard(callback: CallbackQuery):
-    text = (
-        "\ud83d\udcca **LEADERBOARD**\n"
-        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n"
-        "View rankings across all trainers!\n\n"
-        "\ud83d\udc49 **Commands:**\n"
-        "\u2022 `/leaderboard` or `/lb` \u2014 Top trainers by coins\n"
-        "\u2022 `/streaklb` or `/slb` \u2014 Top streak holders\n"
+async def cb_dm_leaderboard(callback: CallbackQuery, db: AsyncSession):
+    from handlers.profile import get_leaderboard_text
+    text = await get_leaderboard_text("catches", db)
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🏆 Pokémon", callback_data="lb_type_catches_dm"),
+        InlineKeyboardButton(text="💰 Coins", callback_data="lb_type_coins_dm"),
+        InlineKeyboardButton(text="🔥 Streak", callback_data="lb_type_streak_dm")
     )
+    builder.row(InlineKeyboardButton(text="🔙 Back to Hub Menu", callback_data="dm_home"))
+    
     try:
-        await callback.message.edit_caption(caption=text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+        await callback.message.edit_caption(
+            caption=text,
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
     except Exception:
         try:
-            await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="Markdown")
+            await callback.message.edit_text(
+                text=text,
+                reply_markup=builder.as_markup(),
+                parse_mode="HTML"
+            )
         except Exception:
             pass
     await callback.answer()

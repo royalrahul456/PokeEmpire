@@ -7,7 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from database.models import User
 
-DATA_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "user_streaks.json")
+import config
+
+DATA_FILE = os.path.join(config.DATA_DIR, "user_streaks.json")
 
 # Lock to prevent concurrent JSON read/write issues
 _lock = asyncio.Lock()

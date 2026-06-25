@@ -51,6 +51,7 @@ async def cmd_start(message: Message, db: AsyncSession):
         await db.commit()
 
     if message.chat.type == "private":
+        import html
         # Check if the user is the bot owner
         if user_id in config.ADMIN_IDS:
             # Query db metrics for Owner Dashboard
@@ -64,10 +65,10 @@ async def cmd_start(message: Message, db: AsyncSession):
             active_spawns = s_count.scalar() or 0
 
             text = (
-                f"⚡ <b>POKÉEMPIRE OWNER DASHBOARD</b> ⚡\n"
+                f"⚡ <b>𝗣𝗢𝗞𝗘́𝗘𝗠𝗣𝗜𝗥𝗘 𝗢𝗪𝗡𝗘𝗥 𝗗𝗔𝗦𝗛𝗕𝗢𝗔𝗥𝗗</b> ⚡\n"
                 f"───────────────────────────────\n"
-                f"👑 Welcome, Creator <b>{escape_md(nickname)}</b>!\n\n"
-                f"📊 <b>System Metrics</b>:\n"
+                f"👑 Welcome, Creator <b>{html.escape(user.nickname or nickname)}</b>!\n\n"
+                f"📊 <b>System Metrics:</b>\n"
                 f"• 👥 Total Trainers: <code>{total_users}</code>\n"
                 f"• ⚡ Total Catches: <code>{total_catches}</code>\n"
                 f"• 🌳 Active Spawns: <code>{active_spawns}</code>\n\n"
@@ -85,9 +86,9 @@ async def cmd_start(message: Message, db: AsyncSession):
         elif user_id in config.UPLOADER_IDS:
             # Uploader Console
             text = (
-                f"📤 <b>POKÉEMPIRE UPLOADER CONSOLE</b> 📤\n"
+                f"📤 <b>𝗣𝗢𝗞𝗘́𝗘𝗠𝗣𝗜𝗥𝗘 𝗨𝗣𝗟𝗢𝗔𝗗𝗘𝗥 𝗖𝗢𝗡𝗦𝗢𝗟𝗘</b> 📤\n"
                 f"───────────────────────────────\n"
-                f"✨ Welcome, Uploader <b>{escape_md(nickname)}</b>!\n\n"
+                f"✨ Welcome, Uploader <b>{html.escape(user.nickname or nickname)}</b>!\n\n"
                 f"You have uploader privileges. You can upload and configure Pokémon media:\n"
                 f"• <code>/setpokemedia &lt;name or id&gt;</code> — Set photo/AMV for a Pokémon\n"
                 f"• <code>/medialist</code> — View custom media files list\n\n"
@@ -105,13 +106,15 @@ async def cmd_start(message: Message, db: AsyncSession):
         else:
             # Standard premium player dashboard
             text = (
-                f"⚡ <b>POKÉEMPIRE HUB</b> ⚡\n"
+                f"⚡ <b>𝗣𝗢𝗞𝗘́𝗘𝗠𝗣𝗜𝗥𝗘 𝗛𝗨𝗕</b> ⚡\n"
                 f"───────────────────────────────\n"
-                f"✨ Welcome, Trainer <b>{escape_md(nickname)}</b>!\n\n"
-                f"I spawn wild Pokémon in your active Telegram Groups based on group message activity. "
-                f"Be the first to guess their names and catch them!\n\n"
-                f"Use the premium interactive dashboard below to view your profile, browse your collection bag, track your Pokédex checklist, or read the game guide.\n\n"
-                f"👉 <i>Select an option from the menu:</i>"
+                f"👋 Welcome, Trainer <b>{html.escape(user.nickname or nickname)}</b>!\n\n"
+                f"🌲 I spawn wild Pokémon in active groups based on chat activity. Be the first to guess their names and catch them!\n\n"
+                f"🎮 <b>Interactive Console:</b>\n"
+                f"• View your 👤 <b>Profile</b>, collection 🎒 <b>Bag</b>, or global 📊 <b>Leaderboard</b>\n"
+                f"• Challenge players to 🛡️ <b>Battles</b> or trade in the 🔄 <b>Market</b>\n"
+                f"• Secure daily 🔥 <b>Catch Streaks</b> & claim your free 🎁 <b>Daily Pokémon</b>\n\n"
+                f"👉 <i>Use the console buttons below to navigate:</i>"
             )
             await send_cover_media(
                 chat_id=message.chat.id,

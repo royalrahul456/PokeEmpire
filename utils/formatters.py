@@ -44,6 +44,7 @@ def get_rarity_emoji(tier: str) -> str:
         "Gmax": "💥",
         "Z-Move": "🌀",
         "Terastal": "🔮",
+        "Erotic": "👠",
     }
     return emojis.get(tier, "⚪️")
 

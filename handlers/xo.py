@@ -147,7 +147,12 @@ def get_xo_keyboard(game_key: str, board, is_pvp: bool = False) -> InlineKeyboar
     prefix = "xo_pvp_play" if is_pvp else "xo_ai_play"
     
     for idx, cell in enumerate(board):
-        text = cell if cell != "" else "⬜"
+        if cell == "X":
+            text = "❌"
+        elif cell == "O":
+            text = "🔵"
+        else:
+            text = "⬜"
         # Callback data structure: prefix_gamekey_cellidx
         builder.button(text=text, callback_data=f"{prefix}_{game_key}_{idx}")
     
@@ -362,7 +367,7 @@ async def cb_xo_ai_start(callback: CallbackQuery):
         f"🎲 <b>Tic Tac Toe (AI - {difficulty.title()})</b> 🎲\n"
         f"───────────────\n"
         f"Trainer: ❌ <b>{escape_md(callback.from_user.first_name)}</b>\n"
-        f"Opponent: ⭕ <b>AI</b>\n\n"
+        f"Opponent: 🔵 <b>AI</b>\n\n"
         f"🟢 It's your turn! Click an empty square below:"
     )
     
@@ -422,7 +427,7 @@ async def cb_xo_ai_play(callback: CallbackQuery, db: AsyncSession):
         f"🎲 <b>Tic Tac Toe (AI - {game['difficulty'].title()})</b> 🎲\n"
         f"───────────────\n"
         f"Trainer: ❌ <b>{escape_md(game['player_x_name'])}</b>\n"
-        f"Opponent: ⭕ <b>AI</b>\n\n"
+        f"Opponent: 🔵 <b>AI</b>\n\n"
         f"🟢 Your turn! Click an empty square:"
     )
     await edit_xo_message(callback, text, get_xo_keyboard(game_key, board, is_pvp=False))
@@ -564,9 +569,9 @@ async def cb_xo_pvp_accept(callback: CallbackQuery, db: AsyncSession):
     text = (
         f"🎲 <b>Tic Tac Toe PvP</b> 🎲\n"
         f"───────────────\n"
-        f"❌ <b>{escape_md(challenger_name)}</b> vs ⭕ <b>{escape_md(opponent_name)}</b>\n"
+        f"❌ <b>{escape_md(challenger_name)}</b> vs 🔵 <b>{escape_md(opponent_name)}</b>\n"
         f"💰 Bet: 💰 <b>{bet} coins</b> each\n\n"
-        f"🟢 It's <a href='tg://user?id={challenger_id}'>{escape_md(challenger_name)}</a>'s turn! (X)"
+        f"🟢 It's <a href='tg://user?id={challenger_id}'>{escape_md(challenger_name)}</a>'s turn! (❌)"
     )
     
     # Directly edit the cover message caption & keyboard
@@ -623,9 +628,9 @@ async def cb_xo_pvp_play(callback: CallbackQuery, db: AsyncSession):
     text = (
         f"🎲 <b>Tic Tac Toe PvP</b> 🎲\n"
         f"───────────────\n"
-        f"❌ <b>{escape_md(game['player_x_name'])}</b> vs ⭕ <b>{escape_md(game['player_o_name'])}</b>\n"
+        f"❌ <b>{escape_md(game['player_x_name'])}</b> vs 🔵 <b>{escape_md(game['player_o_name'])}</b>\n"
         f"💰 Bet: 💰 <b>{game['bet']} coins</b> each\n\n"
-        f"🟢 It's <a href='tg://user?id={next_player_id}'>{escape_md(next_player_name)}</a>'s turn! ({next_symbol})"
+        f"🟢 It's <a href='tg://user?id={next_player_id}'>{escape_md(next_player_name)}</a>'s turn! ({'❌' if next_symbol == 'X' else '🔵'})"
     )
     
     await edit_xo_message(callback, text, get_xo_keyboard(game_key, board, is_pvp=True))
@@ -661,7 +666,7 @@ async def handle_pvp_game_over(callback: CallbackQuery, game_id: str, winner: st
         text = (
             f"🤝 <b>DRAW!</b> 🤝\n"
             f"───────────────\n"
-            f"❌ <b>{escape_md(game['player_x_name'])}</b> vs ⭕ <b>{escape_md(game['player_o_name'])}</b>\n\n"
+            f"❌ <b>{escape_md(game['player_x_name'])}</b> vs 🔵 <b>{escape_md(game['player_o_name'])}</b>\n\n"
             f"The match ended in a draw! Both players have been refunded their bets of 💰 <b>{bet} coins</b>."
         )
     else:
@@ -685,7 +690,7 @@ async def handle_pvp_game_over(callback: CallbackQuery, game_id: str, winner: st
         text = (
             f"🎉 <b>VICTORY!</b> 🎉\n"
             f"───────────────\n"
-            f"❌ <b>{escape_md(game['player_x_name'])}</b> vs ⭕ <b>{escape_md(game['player_o_name'])}</b>\n\n"
+            f"❌ <b>{escape_md(game['player_x_name'])}</b> vs 🔵 <b>{escape_md(game['player_o_name'])}</b>\n\n"
             f"🏆 <b>Winner</b>: <a href='tg://user?id={winner_id}'>{escape_md(winner_name)}</a>\n"
             f"💰 Earned: 💰 <b>+{bet} coins</b> from the opponent!\n"
             f"{coins_str}"

@@ -314,8 +314,8 @@ async def cmd_redeem(message: Message, db: AsyncSession):
 @router.message(Command("gen"))
 async def cmd_gen(message: Message, db: AsyncSession):
     # Authorization check
-    if not config.ADMIN_IDS or message.from_user.id not in config.ADMIN_IDS:
-        await message.answer("❌ Denied. Only bot administrators can generate redeem codes.")
+    if not config.ADMIN_IDS or message.from_user.id != config.ADMIN_IDS[0]:
+        await message.answer("❌ Denied. Only the Bot Owner can generate redeem codes.")
         return
         
     parts = message.text.split()

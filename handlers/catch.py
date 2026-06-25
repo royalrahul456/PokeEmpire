@@ -174,7 +174,7 @@ async def cmd_catch(message: Message, db: AsyncSession):
             achievement_unlocked_msg = (
                 f"🏆 <b>ACHIEVEMENT UNLOCKED!</b> 🏆\n"
                 f"───────────────\n"
-                f"🎉 Congratulations to <b>{html.escape(user.nickname or nickname)}</b> for unlocking <b>{milestone_title}</b> by completing <b>{total_catches}</b> snatches!"
+                f"🎉 Congratulations to <b>{html.escape(user.nickname or nickname)}</b> for unlocking <b>{milestone_title}</b> by completing <b>{total_catches}</b> catches!"
             )
 
         # Increment daily catch streak

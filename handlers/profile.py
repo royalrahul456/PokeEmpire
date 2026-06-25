@@ -302,7 +302,7 @@ async def cmd_achievements(message: Message, db: AsyncSession):
 
     for title, target in ACHIEVEMENTS:
         if total_catches >= target:
-            lines.append(f"✅ {title} — Complete {target} snatches")
+            lines.append(f"✅ {title} — Complete {target} catches")
         else:
             # Generate progress bar
             fraction = min(1.0, max(0.0, total_catches / target))
@@ -311,7 +311,7 @@ async def cmd_achievements(message: Message, db: AsyncSession):
             bar = f"[{'█' * filled_length}{'░' * empty_length}]"
             lines.append(f"🎁 {title} — {bar} {total_catches}/{target}")
 
-    lines.append(f"\n🎁 Total Snatched: {total_catches}")
+    lines.append(f"\n🎁 Total Catches: {total_catches}")
 
     text = "\n".join(lines)
     await message.answer(text, parse_mode="HTML")

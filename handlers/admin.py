@@ -1015,9 +1015,13 @@ async def cmd_spawn(message: Message, db: AsyncSession):
     # Trigger a wild encounter spawn in this chat
     from services.spawn_service import SpawnService
 
-    success = await SpawnService.trigger_spawn(db, message.chat.id, message.bot, rarity=specified_rarity)
-    if not success:
-        await message.answer("❌ Failed to spawn Pokémon. Ensure the database contains Pokémon species.")
+    try:
+        success = await SpawnService.trigger_spawn(db, message.chat.id, message.bot, rarity=specified_rarity)
+        if not success:
+            await message.answer("❌ Failed to spawn Pokémon. Ensure the bot has permission to send media/messages in this chat.")
+    except Exception as err:
+        print(f"[MANUAL SPAWN EXCEPTION] chat={message.chat.id} error={err}")
+        await message.answer(f"❌ Error executing spawn: `{err}`")
 
 @router.message(Command("spawnchance"))
 async def cmd_spawn_chance(message: Message):

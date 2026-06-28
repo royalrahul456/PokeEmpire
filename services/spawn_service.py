@@ -104,6 +104,9 @@ class SpawnService:
                 except Exception:
                     pass
 
+            if not message_id:
+                return False
+
             # 6. Perform DB operations in a single fast transaction
             # Remove any active spawn in this chat
             await db.execute(delete(ActiveSpawn).where(ActiveSpawn.chat_id == chat_id))
@@ -119,9 +122,8 @@ class SpawnService:
             await db.commit()
 
             # Trigger background despawn timeout task
-            if message_id:
-                import asyncio
-                asyncio.create_task(spawn_timeout_task(chat_id, message_id, bot))
+            import asyncio
+            asyncio.create_task(spawn_timeout_task(chat_id, message_id, bot))
 
             return True
 

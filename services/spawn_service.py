@@ -122,13 +122,11 @@ class SpawnService:
             await db.commit()
 
             # Trigger background despawn timeout task
-            import asyncio
             asyncio.create_task(spawn_timeout_task(chat_id, message_id, bot))
 
             return True
 
 async def spawn_timeout_task(chat_id: int, message_id: int, bot: Bot):
-    import asyncio
     await asyncio.sleep(60)
     
     from database.database import SessionLocal

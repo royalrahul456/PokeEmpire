@@ -29,9 +29,6 @@ class SpawnService:
             _chat_spawn_locks[chat_id] = asyncio.Lock()
             
         spawn_lock = _chat_spawn_locks[chat_id]
-        if spawn_lock.locked():
-            return False
-            
         async with spawn_lock:
             settings = load_spawn_settings()
         

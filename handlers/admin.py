@@ -37,15 +37,23 @@ async def get_single_form_media_value(db: AsyncSession, pokemon_id: int, form_in
 async def is_user_admin(message: Message) -> bool:
     """Helper to check if the user is a bot administrator or a group administrator."""
     # Global bot admins bypass checks
-    if message.from_user.id in config.ADMIN_IDS:
+    if message.from_user and message.from_user.id in config.ADMIN_IDS:
         return True
 
     # Private chat actions are allowed
     if message.chat.type == "private":
         return True
 
+    # Check for Anonymous Group Admins / Linked channel postings
+    if message.sender_chat and message.sender_chat.id == message.chat.id:
+        return True
+    if message.from_user and message.from_user.id in [1087788165, 777000]:
+        return True
+
     # Check Telegram group administrator rights
     try:
+        if not message.from_user:
+            return False
         member = await message.bot.get_chat_member(chat_id=message.chat.id, user_id=message.from_user.id)
         return member.status in ["creator", "administrator"]
     except Exception:

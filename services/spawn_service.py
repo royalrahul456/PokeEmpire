@@ -35,98 +35,98 @@ class SpawnService:
         async with spawn_lock:
             settings = load_spawn_settings()
         
-        if rarity:
-            selected_rarity = rarity
-        else:
-            # 1. Roll rarity tier
-            probs = settings.get("group_rarity_probabilities", RARITY_PROBABILITIES)
-            rarities = list(probs.keys())
-            weights = [probs.get(r, RARITY_PROBABILITIES.get(r, 0)) for r in rarities]
-            selected_rarity = random.choices(rarities, weights=weights, k=1)[0]
+            if rarity:
+                selected_rarity = rarity
+            else:
+                # 1. Roll rarity tier
+                probs = settings.get("group_rarity_probabilities", RARITY_PROBABILITIES)
+                rarities = list(probs.keys())
+                weights = [probs.get(r, RARITY_PROBABILITIES.get(r, 0)) for r in rarities]
+                selected_rarity = random.choices(rarities, weights=weights, k=1)[0]
 
-        # 2. Query Pokémon matching that rarity tier
-        stmt = select(Pokemon).where(Pokemon.rarity == selected_rarity)
-        res = await db.execute(stmt)
-        pokemon_list = res.scalars().all()
-
-        # Fallback in case DB seeding hasn't completed
-        if not pokemon_list:
-            stmt = select(Pokemon)
+            # 2. Query Pokémon matching that rarity tier
+            stmt = select(Pokemon).where(Pokemon.rarity == selected_rarity)
             res = await db.execute(stmt)
             pokemon_list = res.scalars().all()
+
+            # Fallback in case DB seeding hasn't completed
             if not pokemon_list:
-                return False
+                stmt = select(Pokemon)
+                res = await db.execute(stmt)
+                pokemon_list = res.scalars().all()
+                if not pokemon_list:
+                    return False
 
-        selected_pokemon = random.choice(pokemon_list)
+            selected_pokemon = random.choice(pokemon_list)
 
-        # 3. Roll shiny rate (1 in 500)
-        is_shiny = random.randint(1, 500) == 1
+            # 3. Roll shiny rate (1 in 500)
+            is_shiny = random.randint(1, 500) == 1
 
-        # 4. Build spawn text & keyboards
-        status_text = "✨ **SHINY** ✨" if is_shiny else "🌳 **Normal**"
-        caption = (
-            f"🌳 **WILD ENCOUNTER** 🌳\n"
-            f"A wild Pokémon appeared in the tall grass!\n\n"
-            f"✨ **Status**: {status_text}\n"
-            f"✨ **Rarity**: `{selected_rarity}`\n\n"
-            f"👉 Guess the Pokémon and catch it with:\n"
-            f"`/catch <name>`\n"
-            f"───────────────"
-        )
-
-        hint_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔍 Hint (2,000 coins)", callback_data="spawn_hint")]
-        ])
-
-        message_id = None
-
-        # 5. Post spawn photo to the chat
-        try:
-            msg = await bot.send_photo(
-                chat_id=chat_id,
-                photo=selected_pokemon.image_url,
-                caption=caption,
-                reply_markup=hint_keyboard,
-                parse_mode="Markdown"
+            # 4. Build spawn text & keyboards
+            status_text = "✨ **SHINY** ✨" if is_shiny else "🌳 **Normal**"
+            caption = (
+                f"🌳 **WILD ENCOUNTER** 🌳\n"
+                f"A wild Pokémon appeared in the tall grass!\n\n"
+                f"✨ **Status**: {status_text}\n"
+                f"✨ **Rarity**: `{selected_rarity}`\n\n"
+                f"👉 Guess the Pokémon and catch it with:\n"
+                f"`/catch <name>`\n"
+                f"───────────────"
             )
-            message_id = msg.message_id
-        except Exception as e:
-            print(f"Error sending spawn photo to chat {chat_id}: {e}")
-            # Fallback: send a text-only spawn message so players can still catch
+
+            hint_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔍 Hint (2,000 coins)", callback_data="spawn_hint")]
+            ])
+
+            message_id = None
+
+            # 5. Post spawn photo to the chat
             try:
-                r_emoji = "⭐" if selected_rarity == "Legendary" else "✨"
-                fallback = (
-                    f"🌳 **WILD ENCOUNTER** 🌳\n"
-                    f"A wild **{selected_rarity}** Pokémon appeared!\n\n"
-                    f"{r_emoji} **Rarity**: `{selected_rarity}`\n\n"
-                    f"👉 `/catch <name>` to catch it!\n"
-                    f"───────────────"
+                msg = await bot.send_photo(
+                    chat_id=chat_id,
+                    photo=selected_pokemon.image_url,
+                    caption=caption,
+                    reply_markup=hint_keyboard,
+                    parse_mode="Markdown"
                 )
-                msg = await bot.send_message(chat_id=chat_id, text=fallback, reply_markup=hint_keyboard, parse_mode="Markdown")
                 message_id = msg.message_id
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"Error sending spawn photo to chat {chat_id}: {e}")
+                # Fallback: send a text-only spawn message so players can still catch
+                try:
+                    r_emoji = "⭐" if selected_rarity == "Legendary" else "✨"
+                    fallback = (
+                        f"🌳 **WILD ENCOUNTER** 🌳\n"
+                        f"A wild **{selected_rarity}** Pokémon appeared!\n\n"
+                        f"{r_emoji} **Rarity**: `{selected_rarity}`\n\n"
+                        f"👉 `/catch <name>` to catch it!\n"
+                        f"───────────────"
+                    )
+                    msg = await bot.send_message(chat_id=chat_id, text=fallback, reply_markup=hint_keyboard, parse_mode="Markdown")
+                    message_id = msg.message_id
+                except Exception:
+                    pass
 
-        # 6. Perform DB operations in a single fast transaction
-        # Remove any active spawn in this chat
-        await db.execute(delete(ActiveSpawn).where(ActiveSpawn.chat_id == chat_id))
+            # 6. Perform DB operations in a single fast transaction
+            # Remove any active spawn in this chat
+            await db.execute(delete(ActiveSpawn).where(ActiveSpawn.chat_id == chat_id))
 
-        # Insert new active spawn record with message_id already set
-        active = ActiveSpawn(
-            chat_id=chat_id,
-            pokemon_id=selected_pokemon.id,
-            is_shiny=is_shiny,
-            message_id=message_id
-        )
-        db.add(active)
-        await db.commit()
+            # Insert new active spawn record with message_id already set
+            active = ActiveSpawn(
+                chat_id=chat_id,
+                pokemon_id=selected_pokemon.id,
+                is_shiny=is_shiny,
+                message_id=message_id
+            )
+            db.add(active)
+            await db.commit()
 
-        # Trigger background despawn timeout task
-        if message_id:
-            import asyncio
-            asyncio.create_task(spawn_timeout_task(chat_id, message_id, bot))
+            # Trigger background despawn timeout task
+            if message_id:
+                import asyncio
+                asyncio.create_task(spawn_timeout_task(chat_id, message_id, bot))
 
-        return True
+            return True
 
 async def spawn_timeout_task(chat_id: int, message_id: int, bot: Bot):
     import asyncio

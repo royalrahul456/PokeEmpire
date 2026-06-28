@@ -984,19 +984,19 @@ async def cmd_remove_uploader(message: Message, db: AsyncSession):
 
 @router.message(Command("spawn"))
 async def cmd_spawn(message: Message, db: AsyncSession):
-    # Enforce bot admin authorization
-    if message.from_user.id not in config.ADMIN_IDS:
-        await message.answer("❌ Denied. Only bot owners can trigger a manual spawn.")
+    # Ensure command is run in a group chat
+    if message.chat.type not in ["group", "supergroup"]:
+        await message.answer("⚠️ Wild Pokémon only spawn in group chats! Use `/spawn` inside a group chat.")
+        return
+
+    # Enforce authorization (group admin or bot owner)
+    if not await is_user_admin(message):
+        await message.answer("❌ Denied. Only group administrators or bot owners can trigger a manual spawn.")
         return
 
     parts = message.text.split()
     specified_rarity = None
     if len(parts) >= 2:
-        # Check if the user is the Bot Owner
-        if not config.ADMIN_IDS or message.from_user.id != config.ADMIN_IDS[0]:
-            await message.answer("❌ Denied. Only the Bot Owner can specify a rarity for manual spawns.")
-            return
-
         rarity_input = parts[1].strip().title()
         if rarity_input in ["Common", "Rare", "Epic", "Legendary", "Mythical"]:
             specified_rarity = rarity_input

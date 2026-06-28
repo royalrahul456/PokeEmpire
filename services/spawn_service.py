@@ -1,6 +1,8 @@
 import os
 import json
 import random
+import asyncio
+from typing import Dict
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from database.models import Pokemon, ActiveSpawn
@@ -17,12 +19,21 @@ RARITY_PROBABILITIES = {
     "Mythical": 1
 }
 
+_chat_spawn_locks: Dict[int, asyncio.Lock] = {}
+
 class SpawnService:
     @staticmethod
     async def trigger_spawn(db: AsyncSession, chat_id: int, bot: Bot, rarity: str = None) -> bool:
         """Rolls rarity, selects a random Pokémon, rolls shiny status, and spawns it in the group."""
-        
-        settings = load_spawn_settings()
+        if chat_id not in _chat_spawn_locks:
+            _chat_spawn_locks[chat_id] = asyncio.Lock()
+            
+        spawn_lock = _chat_spawn_locks[chat_id]
+        if spawn_lock.locked():
+            return False
+            
+        async with spawn_lock:
+            settings = load_spawn_settings()
         
         if rarity:
             selected_rarity = rarity

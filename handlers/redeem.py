@@ -2,6 +2,7 @@ import random
 import string
 import os
 import html
+import asyncio
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message
@@ -12,6 +13,7 @@ from database.models import User, Pokemon, UserPokemon, RedeemCode, RedeemClaim
 from utils.formatters import escape_md, get_progress_bar, get_rarity_emoji
 
 router = Router()
+redeem_process_lock = asyncio.Lock()
 
 @router.message(Command("createredeem"))
 async def cmd_create_redeem(message: Message, db: AsyncSession):
@@ -161,154 +163,155 @@ async def cmd_redeem(message: Message, db: AsyncSession):
         
     code_str = parts[1].upper()
     
-    # Fetch code
-    stmt = select(RedeemCode).where(RedeemCode.code == code_str)
-    res = await db.execute(stmt)
-    code = res.scalar_one_or_none()
-    
-    if not code:
-        await message.answer("❌ Invalid redeem code. Please check spelling and try again.")
-        return
+    async with redeem_process_lock:
+        # Fetch code
+        stmt = select(RedeemCode).where(RedeemCode.code == code_str)
+        res = await db.execute(stmt)
+        code = res.scalar_one_or_none()
         
-    # Check limit
-    if code.usage_count >= code.usage_limit:
-        await message.answer("❌ This redeem code has expired (limit reached).")
-        return
-        
-    # Ensure user exists in database
-    u_stmt = select(User).where(User.id == user_id)
-    u_res = await db.execute(u_stmt)
-    user = u_res.scalar_one_or_none()
-    if not user:
-        # Create user
-        user = User(
-            id=user_id,
-            username=message.from_user.username,
-            nickname=message.from_user.first_name
-        )
-        db.add(user)
-        await db.flush()
-        
-    # Check if already claimed by this user
-    claim_stmt = select(RedeemClaim).where(RedeemClaim.code_id == code.id, RedeemClaim.user_id == user_id)
-    claim_res = await db.execute(claim_stmt)
-    if claim_res.scalar_one_or_none():
-        await message.answer("❌ You have already claimed this redeem code!")
-        return
-        
-    # Process reward
-    try:
-        # Register claim
-        claim = RedeemClaim(user_id=user_id, code_id=code.id)
-        db.add(claim)
-        
-        # Increment code count
-        code.usage_count += 1
-        
-        if code.reward_type == "coins":
-            user.coins += code.reward_value
-            await db.commit()
+        if not code:
+            await message.answer("❌ Invalid redeem code. Please check spelling and try again.")
+            return
             
-            import html
-            await message.answer(
-                f"🎉 <b>REDEEM SUCCESSFUL!</b> 🎉\n"
-                f"───────────────\n"
-                f"<blockquote>👤 Trainer: <b>{html.escape(user.nickname or 'Trainer')}</b>\n"
-                f"🎫 Code: <code>{code.code}</code>\n"
-                f"💰 Reward: <b>+{code.reward_value:,} coins</b>\n"
-                f"💳 Balance: <b>{user.coins:,} coins</b></blockquote>",
-                parse_mode="HTML"
+        # Check limit
+        if code.usage_count >= code.usage_limit:
+            await message.answer("❌ This redeem code has expired (limit reached).")
+            return
+            
+        # Ensure user exists in database
+        u_stmt = select(User).where(User.id == user_id)
+        u_res = await db.execute(u_stmt)
+        user = u_res.scalar_one_or_none()
+        if not user:
+            # Create user
+            user = User(
+                id=user_id,
+                username=message.from_user.username,
+                nickname=message.from_user.first_name
             )
+            db.add(user)
+            await db.flush()
             
-            # Send private DM to user
-            dm_text = (
-                f"🎉 <b>Redemption Confirmed!</b>\n"
-                f"───────────────\n"
-                f"<blockquote>🎫 Code: <code>{code.code}</code>\n"
-                f"💰 Reward: <b>+{code.reward_value:,} coins</b>\n"
-                f"💳 Balance: <b>{user.coins:,} coins</b></blockquote>\n"
-                f"───────────────"
-            )
-            try:
-                await message.bot.send_message(chat_id=user_id, text=dm_text, parse_mode="HTML")
-            except Exception:
-                pass
-        else:
-            # Grant Pokémon
-            poke_stmt = select(Pokemon).where(Pokemon.id == code.reward_value)
-            poke_res = await db.execute(poke_stmt)
-            pokemon = poke_res.scalar_one()
+        # Check if already claimed by this user
+        claim_stmt = select(RedeemClaim).where(RedeemClaim.code_id == code.id, RedeemClaim.user_id == user_id)
+        claim_res = await db.execute(claim_stmt)
+        if claim_res.scalar_one_or_none():
+            await message.answer("❌ You have already claimed this redeem code!")
+            return
             
-            # Roll stats/IVs
-            iv_hp = random.randint(0, 31)
-            iv_atk = random.randint(0, 31)
-            iv_def = random.randint(0, 31)
-            iv_spd = random.randint(0, 31)
-            iv_total = iv_hp + iv_atk + iv_def + iv_spd
-            iv_pct = int((iv_total / 124) * 100)
+        # Process reward
+        try:
+            # Register claim
+            claim = RedeemClaim(user_id=user_id, code_id=code.id)
+            db.add(claim)
             
-            form_index = code.reward_form_index
-            serial_number = None
-            if form_index > 0:
-                serial_number = f"#{pokemon.id:03d}-{random.randint(1000, 9999)}"
+            # Increment code count
+            code.usage_count += 1
+            
+            if code.reward_type == "coins":
+                user.coins += code.reward_value
+                await db.commit()
                 
-            new_poke = UserPokemon(
-                user_id=user_id,
-                pokemon_id=pokemon.id,
-                is_shiny=code.reward_is_shiny,
-                is_amv=(form_index == 1),
-                form_index=form_index,
-                serial_number=serial_number,
-                level=1,
-                xp=0,
-                iv_hp=iv_hp,
-                iv_atk=iv_atk,
-                iv_def=iv_def,
-                iv_spd=iv_spd
-            )
-            db.add(new_poke)
-            await db.commit()
-            
-            form_names = {
-                0: "",
-                1: "AMV ",
-                2: "Dmax ",
-                3: "Gmax ",
-                4: "Z-Move ",
-                5: "Terastal "
-            }
-            form_badge = form_names.get(form_index, f"Form {form_index} ")
-            shiny_badge = "✨ Shiny " if code.reward_is_shiny else ""
-            serial_str = f"\n🎫 <b>Serial Number:</b> <code>{serial_number}</code>" if serial_number else ""
-            r_emoji = get_rarity_emoji(pokemon.rarity)
-            
-            import html
-            text = (
-                f"🎉 <b>REDEEM SUCCESSFUL!</b> 🎉\n"
-                f"───────────────\n"
-                f"<blockquote>👤 Trainer: <b>{html.escape(user.nickname or 'Trainer')}</b>\n"
-                f"🎫 Code: <code>{code.code}</code>\n"
-                f"🎁 Reward: {r_emoji} {shiny_badge}{form_badge}<b>{pokemon.name.title()}</b>{serial_str}</blockquote>"
-            )
-            await message.answer(text, parse_mode="HTML")
-            
-            # Send private DM to user
-            dm_text = (
-                f"🎉 <b>Redemption Confirmed!</b>\n"
-                f"───────────────\n"
-                f"<blockquote>🎫 Code: <code>{code.code}</code>\n"
-                f"🎁 Reward: {r_emoji} {shiny_badge}{form_badge}<b>{pokemon.name.title()}</b>{serial_str}</blockquote>\n"
-                f"───────────────"
-            )
-            try:
-                await message.bot.send_message(chat_id=user_id, text=dm_text, parse_mode="HTML")
-            except Exception:
-                pass
-            
-    except Exception as e:
-        await db.rollback()
-        print(f"[REDEEM CLAIM ERROR] user={user_id} code={code_str} error={e}")
-        await message.answer("❌ An error occurred during redemption. Please try again.")
+                import html
+                await message.answer(
+                    f"🎉 <b>REDEEM SUCCESSFUL!</b> 🎉\n"
+                    f"───────────────\n"
+                    f"<blockquote>👤 Trainer: <b>{html.escape(user.nickname or 'Trainer')}</b>\n"
+                    f"🎫 Code: <code>{code.code}</code>\n"
+                    f"💰 Reward: <b>+{code.reward_value:,} coins</b>\n"
+                    f"💳 Balance: <b>{user.coins:,} coins</b></blockquote>",
+                    parse_mode="HTML"
+                )
+                
+                # Send private DM to user
+                dm_text = (
+                    f"🎉 <b>Redemption Confirmed!</b>\n"
+                    f"───────────────\n"
+                    f"<blockquote>🎫 Code: <code>{code.code}</code>\n"
+                    f"💰 Reward: <b>+{code.reward_value:,} coins</b>\n"
+                    f"💳 Balance: <b>{user.coins:,} coins</b></blockquote>\n"
+                    f"───────────────"
+                )
+                try:
+                    await message.bot.send_message(chat_id=user_id, text=dm_text, parse_mode="HTML")
+                except Exception:
+                    pass
+            else:
+                # Grant Pokémon
+                poke_stmt = select(Pokemon).where(Pokemon.id == code.reward_value)
+                poke_res = await db.execute(poke_stmt)
+                pokemon = poke_res.scalar_one()
+                
+                # Roll stats/IVs
+                iv_hp = random.randint(0, 31)
+                iv_atk = random.randint(0, 31)
+                iv_def = random.randint(0, 31)
+                iv_spd = random.randint(0, 31)
+                iv_total = iv_hp + iv_atk + iv_def + iv_spd
+                iv_pct = int((iv_total / 124) * 100)
+                
+                form_index = code.reward_form_index
+                serial_number = None
+                if form_index > 0:
+                    serial_number = f"#{pokemon.id:03d}-{random.randint(1000, 9999)}"
+                    
+                new_poke = UserPokemon(
+                    user_id=user_id,
+                    pokemon_id=pokemon.id,
+                    is_shiny=code.reward_is_shiny,
+                    is_amv=(form_index == 1),
+                    form_index=form_index,
+                    serial_number=serial_number,
+                    level=1,
+                    xp=0,
+                    iv_hp=iv_hp,
+                    iv_atk=iv_atk,
+                    iv_def=iv_def,
+                    iv_spd=iv_spd
+                )
+                db.add(new_poke)
+                await db.commit()
+                
+                form_names = {
+                    0: "",
+                    1: "AMV ",
+                    2: "Dmax ",
+                    3: "Gmax ",
+                    4: "Z-Move ",
+                    5: "Terastal "
+                }
+                form_badge = form_names.get(form_index, f"Form {form_index} ")
+                shiny_badge = "✨ Shiny " if code.reward_is_shiny else ""
+                serial_str = f"\n🎫 <b>Serial Number:</b> <code>{serial_number}</code>" if serial_number else ""
+                r_emoji = get_rarity_emoji(pokemon.rarity)
+                
+                import html
+                text = (
+                    f"🎉 <b>REDEEM SUCCESSFUL!</b> 🎉\n"
+                    f"───────────────\n"
+                    f"<blockquote>👤 Trainer: <b>{html.escape(user.nickname or 'Trainer')}</b>\n"
+                    f"🎫 Code: <code>{code.code}</code>\n"
+                    f"🎁 Reward: {r_emoji} {shiny_badge}{form_badge}<b>{pokemon.name.title()}</b>{serial_str}</blockquote>"
+                )
+                await message.answer(text, parse_mode="HTML")
+                
+                # Send private DM to user
+                dm_text = (
+                    f"🎉 <b>Redemption Confirmed!</b>\n"
+                    f"───────────────\n"
+                    f"<blockquote>🎫 Code: <code>{code.code}</code>\n"
+                    f"🎁 Reward: {r_emoji} {shiny_badge}{form_badge}<b>{pokemon.name.title()}</b>{serial_str}</blockquote>\n"
+                    f"───────────────"
+                )
+                try:
+                    await message.bot.send_message(chat_id=user_id, text=dm_text, parse_mode="HTML")
+                except Exception:
+                    pass
+                
+        except Exception as e:
+            await db.rollback()
+            print(f"[REDEEM CLAIM ERROR] user={user_id} code={code_str} error={e}")
+            await message.answer("❌ An error occurred during redemption. Please try again.")
 
 
 @router.message(Command("gen"))

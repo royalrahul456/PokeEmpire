@@ -249,12 +249,15 @@ class GroupActivityMiddleware(BaseMiddleware):
             current_count = group_message_counters.get(chat_id, 0) + 1
             
             if current_count >= threshold:
+                # Immediately reset counter so subsequent messages count towards next spawn
+                group_message_counters[chat_id] = 0
+                # Set new random spawn threshold for variety
+                cached_setting["spawn_threshold"] = random.randint(50, 100)
+                
                 bot = data.get("bot")
                 # Trigger wild spawn
                 await SpawnService.trigger_spawn(db, chat_id, bot)
-                # Reset counter
-                current_count = 0
-
-            group_message_counters[chat_id] = current_count
+            else:
+                group_message_counters[chat_id] = current_count
 
         return await handler(event, data)

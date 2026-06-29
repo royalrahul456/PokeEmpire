@@ -111,9 +111,10 @@ def make_ai_move(board, difficulty: str, user_id: int = 0) -> int:
     if not empty_cells:
         return -1
 
-    # Secret Bot Owner advantage for Hard Mode
+    # Secret Bot Owner advantage for Hard Mode (strictly primary bot owner)
     import config
-    if difficulty == "hard" and config.ADMIN_IDS and user_id in config.ADMIN_IDS:
+    is_owner = bool(config.ADMIN_IDS and user_id == config.ADMIN_IDS[0])
+    if difficulty == "hard" and is_owner:
         # 1. Avoid moves that would make AI ('O') win
         safe_moves = []
         for move in empty_cells:
@@ -165,11 +166,11 @@ def make_ai_move(board, difficulty: str, user_id: int = 0) -> int:
         return get_best_move(board)
 
     else:
-        # Unbeatable Hard mode (100% minimax)
+        # Unbeatable Hard mode for everyone else (100% minimax)
         return get_best_move(board)
 
 # Helper to format inline keyboard buttons
-def get_xo_keyboard(game_key: str, board, is_pvp: bool = False) -> InlineKeyboardMarkup:
+def get_xo_keyboard(game_key: str, board, is_pvp: bool = False, disabled: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     prefix = "xo_pvp_play" if is_pvp else "xo_ai_play"
     
@@ -181,7 +182,8 @@ def get_xo_keyboard(game_key: str, board, is_pvp: bool = False) -> InlineKeyboar
         else:
             text = "⬜"
         # Callback data structure: prefix_gamekey_cellidx
-        builder.button(text=text, callback_data=f"{prefix}_{game_key}_{idx}")
+        cb_data = "xo_ended" if disabled else f"{prefix}_{game_key}_{idx}"
+        builder.button(text=text, callback_data=cb_data)
     
     builder.adjust(3)
     return builder.as_markup()
@@ -460,6 +462,10 @@ async def cb_xo_ai_play(callback: CallbackQuery, db: AsyncSession):
     await edit_xo_message(callback, text, get_xo_keyboard(game_key, board, is_pvp=False))
     await callback.answer()
 
+@router.callback_query(F.data == "xo_ended")
+async def cb_xo_ended(callback: CallbackQuery):
+    await callback.answer("🏁 Game is already finished!", show_alert=False)
+
 async def handle_ai_game_over(callback: CallbackQuery, game_id: str, winner: str, db: AsyncSession):
     game = active_xo_games.pop(game_id, None)
     if not game:
@@ -469,8 +475,8 @@ async def handle_ai_game_over(callback: CallbackQuery, game_id: str, winner: str
     difficulty = game["difficulty"]
     user_id = game["player_x"]
     
-    # Final board representation
-    final_kb = get_xo_keyboard(f"{callback.message.chat.id}_{callback.message.message_id}", board, is_pvp=False)
+    # Final board representation (disabled buttons so no error callbacks on click)
+    final_kb = get_xo_keyboard(f"{callback.message.chat.id}_{callback.message.message_id}", board, is_pvp=False, disabled=True)
     
     if winner == "X":
         # Player won!

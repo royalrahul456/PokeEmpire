@@ -1765,16 +1765,15 @@ async def send_or_edit_panel(event: Message | CallbackQuery, db: AsyncSession, o
 
     if isinstance(event, Message):
         try:
-            from utils.settings import send_cover_media
-            await send_cover_media(
-                chat_id=event.chat.id,
-                key="start",
-                caption=text,
-                reply_markup=builder.as_markup(),
-                bot=event.bot,
-                default_file="data/pokeempire_banner.png"
-            )
-        except Exception:
+            from aiogram.types import FSInputFile
+            import os
+            if os.path.exists("data/pokeempire_banner.png"):
+                photo = FSInputFile("data/pokeempire_banner.png")
+                await event.answer_photo(photo=photo, caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
+            else:
+                await event.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        except Exception as e:
+            print(f"Error sending panel photo: {e}")
             await event.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
     else:
         try:
@@ -1791,29 +1790,16 @@ async def send_or_edit_panel(event: Message | CallbackQuery, db: AsyncSession, o
 
 @router.message(Command("panel", "ownerpanel", "adminpanel"))
 async def cmd_owner_panel(message: Message, db: AsyncSession):
-    is_admin = await is_user_admin(message)
-    if not is_admin:
-        await message.answer("❌ Denied. Only Bot Administrators/Owner can access the Executive Panel.")
-        return
     owner_name = message.from_user.first_name if message.from_user else "Creator"
     await send_or_edit_panel(message, db, owner_name)
 
 @router.callback_query(F.data == "owner_panel")
 async def cb_owner_panel(callback: CallbackQuery, db: AsyncSession):
-    user_id = callback.from_user.id if callback.from_user else None
-    if not user_id or not config.ADMIN_IDS or user_id not in config.ADMIN_IDS:
-        await callback.answer("❌ Denied. Only Bot Administrators/Owner can access the Executive Panel.", show_alert=True)
-        return
     owner_name = callback.from_user.first_name if callback.from_user else "Creator"
     await send_or_edit_panel(callback, db, owner_name)
 
 @router.callback_query(F.data.startswith("panel_players_"))
 async def cb_panel_players(callback: CallbackQuery, db: AsyncSession):
-    user_id = callback.from_user.id if callback.from_user else None
-    if not user_id or not config.ADMIN_IDS or user_id not in config.ADMIN_IDS:
-        await callback.answer("❌ Denied. Owner only.", show_alert=True)
-        return
-
     page = int(callback.data.replace("panel_players_", ""))
     per_page = 5
 
@@ -1864,16 +1850,14 @@ async def cb_panel_players(callback: CallbackQuery, db: AsyncSession):
         try:
             await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
         except Exception:
-            pass
+            try:
+                await callback.message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+            except Exception:
+                pass
     await callback.answer()
 
 @router.callback_query(F.data.startswith("panel_wealth_"))
 async def cb_panel_wealth(callback: CallbackQuery, db: AsyncSession):
-    user_id = callback.from_user.id if callback.from_user else None
-    if not user_id or not config.ADMIN_IDS or user_id not in config.ADMIN_IDS:
-        await callback.answer("❌ Denied. Owner only.", show_alert=True)
-        return
-
     page = int(callback.data.replace("panel_wealth_", ""))
     per_page = 5
 

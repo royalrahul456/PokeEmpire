@@ -400,6 +400,93 @@ async def cmd_gift_coins(message: Message, db: AsyncSession):
     except Exception:
         pass
 
+@router.message(Command("deletecoins", "dltcoins", "removecoins", "takecoins"))
+async def cmd_delete_coins(message: Message, db: AsyncSession):
+    # Only bot owner can use this
+    if not config.ADMIN_IDS or message.from_user.id != config.ADMIN_IDS[0]:
+        await message.answer("❌ Denied. Only the Bot Owner can use this command.")
+        return
+
+    parts = message.text.split()
+    target_user = None
+    amount_str = None
+
+    if message.reply_to_message:
+        if len(parts) < 2:
+            await message.answer("⚠️ Format: Reply to a user's message with `/deletecoins <amount>` (or `all`)")
+            return
+        amount_str = parts[1]
+        target_tg_user = message.reply_to_message.from_user
+
+        user_stmt = select(User).where(User.id == target_tg_user.id)
+        user_res = await db.execute(user_stmt)
+        target_user = user_res.scalar_one_or_none()
+        if not target_user:
+            await message.answer("❌ Target user is not registered in the database.")
+            return
+    else:
+        if len(parts) < 3:
+            await message.answer("⚠️ Format: `/deletecoins <@username/user_id> <amount>` (or reply with `/deletecoins <amount>`)")
+            return
+        
+        arg1 = parts[1]
+        arg2 = parts[2]
+
+        # Determine which argument is target and which is amount
+        if arg1.isdigit() or arg1.startswith("@"):
+            target_str = arg1
+            amount_str = arg2
+        else:
+            target_str = arg2
+            amount_str = arg1
+
+        if target_str.isdigit():
+            u_id = int(target_str)
+            user_stmt = select(User).where(User.id == u_id)
+            user_res = await db.execute(user_stmt)
+            target_user = user_res.scalar_one_or_none()
+            if not target_user:
+                await message.answer(f"❌ User ID {u_id} is not registered in the database.")
+                return
+        elif target_str.startswith("@"):
+            username = target_str.replace("@", "").strip()
+            user_stmt = select(User).where(User.username.ilike(username))
+            user_res = await db.execute(user_stmt)
+            target_user = user_res.scalar_one_or_none()
+            if not target_user:
+                await message.answer(f"❌ User with username @{username} not found in database.")
+                return
+        else:
+            await message.answer("⚠️ Target must be a user ID or @username.")
+            return
+
+    # Deduct coins
+    if amount_str.lower() in ["all", "full", "max"]:
+        deleted_amount = target_user.coins
+        target_user.coins = 0
+    elif amount_str.isdigit():
+        sub_amount = int(amount_str)
+        deleted_amount = min(target_user.coins, sub_amount)
+        target_user.coins = max(0, target_user.coins - sub_amount)
+    else:
+        await message.answer("⚠️ Amount must be a number or `all`.")
+        return
+
+    await db.commit()
+
+    admin_name = message.from_user.first_name
+    recipient_name = target_user.nickname or "Trainer"
+    caption = (
+        f"🗑️ <b>Coins Removed!</b>\n"
+        f"───────────────\n"
+        f"<blockquote>👤 Owner: <b>{escape_md(admin_name)}</b>\n"
+        f"👤 Target: <b>{escape_md(recipient_name)}</b>\n"
+        f"🔥 Removed: <b>-{deleted_amount:,} coins</b>\n"
+        f"💳 New Balance: <b>💰 {target_user.coins:,} coins</b></blockquote>"
+    )
+    
+    await message.answer(caption, parse_mode="HTML")
+
 @router.message(Command("giftpokemon"))
 async def cmd_gift_pokemon(message: Message, db: AsyncSession):
     # Only bot owner can use this

@@ -275,10 +275,10 @@ async def main():
     dp.callback_query.outer_middleware(AntiSpamMiddleware())
 
     # Register Handler Routers
+    dp.include_router(admin.router)
     dp.include_router(start.router)
     dp.include_router(profile.router)
     dp.include_router(catch.router)
-    dp.include_router(admin.router)
     dp.include_router(games.router)
     dp.include_router(shop.router)
     dp.include_router(trade.router)

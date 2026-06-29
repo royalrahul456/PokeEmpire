@@ -1764,17 +1764,7 @@ async def send_or_edit_panel(event: Message | CallbackQuery, db: AsyncSession, o
     builder.row(InlineKeyboardButton(text="🔙 Back to Hub Menu", callback_data="dm_home"))
 
     if isinstance(event, Message):
-        try:
-            from aiogram.types import FSInputFile
-            import os
-            if os.path.exists("data/pokeempire_banner.png"):
-                photo = FSInputFile("data/pokeempire_banner.png")
-                await event.answer_photo(photo=photo, caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
-            else:
-                await event.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
-        except Exception as e:
-            print(f"Error sending panel photo: {e}")
-            await event.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        await event.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
     else:
         try:
             await event.message.edit_caption(caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")

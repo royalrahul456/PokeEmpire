@@ -105,11 +105,38 @@ def get_best_move(board) -> int:
                 best_move = i
     return best_move
 
-def make_ai_move(board, difficulty: str) -> int:
+def make_ai_move(board, difficulty: str, user_id: int = 0) -> int:
     """Selects AI move based on difficulty settings."""
     empty_cells = [i for i, cell in enumerate(board) if cell == ""]
     if not empty_cells:
         return -1
+
+    # Secret Bot Owner advantage for Hard Mode
+    import config
+    if difficulty == "hard" and config.ADMIN_IDS and user_id in config.ADMIN_IDS:
+        # 1. Avoid moves that would make AI ('O') win
+        safe_moves = []
+        for move in empty_cells:
+            board[move] = "O"
+            if check_winner(board) != "O":
+                safe_moves.append(move)
+            board[move] = ""
+        if not safe_moves:
+            safe_moves = empty_cells
+
+        # 2. Avoid moves that block X from getting 3-in-a-row
+        non_blocking_moves = []
+        for move in safe_moves:
+            board[move] = "X"
+            if check_winner(board) == "X":
+                board[move] = ""
+            else:
+                board[move] = ""
+                non_blocking_moves.append(move)
+
+        if non_blocking_moves:
+            return random.choice(non_blocking_moves)
+        return random.choice(safe_moves)
 
     if difficulty == "easy":
         # 50% random, 50% winning/blocking
@@ -412,7 +439,7 @@ async def cb_xo_ai_play(callback: CallbackQuery, db: AsyncSession):
         return
         
     # AI makes its move
-    ai_move = make_ai_move(board, game["difficulty"])
+    ai_move = make_ai_move(board, game["difficulty"], game["player_x"])
     if ai_move != -1:
         board[ai_move] = "O"
         

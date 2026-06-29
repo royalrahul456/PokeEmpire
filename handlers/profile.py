@@ -316,6 +316,38 @@ async def cmd_achievements(message: Message, db: AsyncSession):
     text = "\n".join(lines)
     await message.answer(text, parse_mode="HTML")
 
+@router.message(Command("balance", "bal", "coins", "wallet"))
+async def cmd_balance(message: Message, db: AsyncSession):
+    try:
+        user_id = message.from_user.id
+        u_stmt = select(User).where(User.id == user_id)
+        u_res = await db.execute(u_stmt)
+        user = u_res.scalar_one_or_none()
+
+        if not user:
+            user = User(
+                id=user_id,
+                username=message.from_user.username,
+                nickname=message.from_user.first_name or "Trainer",
+                coins=500
+            )
+            db.add(user)
+            await db.commit()
+
+        import html
+        name = html.escape(user.nickname or message.from_user.first_name or "Trainer")
+        text = (
+            f"💰 <b>TRAINER BALANCE</b> 💰\n"
+            f"───────────────\n"
+            f"👤 <b>Trainer</b>: <b>{name}</b>\n"
+            f"💳 <b>Current Balance</b>: 💰 <b>{user.coins:,} coins</b>\n"
+            f"───────────────"
+        )
+        await message.answer(text, parse_mode="HTML")
+    except Exception as e:
+        print(f"Error in cmd_balance: {e}")
+        await message.answer("❌ An error occurred while retrieving your balance.")
+
 @router.message(Command("profile"))
 async def cmd_profile(message: Message, db: AsyncSession):
     try:

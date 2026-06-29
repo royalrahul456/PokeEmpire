@@ -1707,3 +1707,213 @@ async def cmd_ban_words(message: Message):
         f"───────────────",
         parse_mode="HTML"
     )
+
+# -------------------------------------------------------------
+# EXECUTIVE OWNER PANEL (/panel) & PLAYER ANALYTICS
+# -------------------------------------------------------------
+
+async def send_or_edit_panel(event: Message | CallbackQuery, db: AsyncSession, owner_name: str):
+    from sqlalchemy import func, sum
+    import html
+    
+    u_count = await db.execute(select(func.count(User.id)))
+    total_users = u_count.scalar() or 0
+
+    c_count = await db.execute(select(func.count(UserPokemon.id)))
+    total_catches = c_count.scalar() or 0
+
+    s_count = await db.execute(select(func.count(ActiveSpawn.chat_id)))
+    active_spawns = s_count.scalar() or 0
+
+    coins_sum = await db.execute(select(func.sum(User.coins)))
+    total_coins = coins_sum.scalar() or 0
+
+    shiny_count = await db.execute(select(func.count(UserPokemon.id)).where(UserPokemon.is_shiny == True))
+    total_shinies = shiny_count.scalar() or 0
+
+    text = (
+        f"👑 <b>EXECUTIVE OWNER PANEL</b> 👑\n"
+        f"💎 <i>System Analytics & Master Command Console</i>\n"
+        f"───────────────────────────────\n"
+        f"👤 <b>Master Creator</b>: <b>{html.escape(owner_name)}</b>\n\n"
+        f"<blockquote>📊 <b>EMPIRE ANALYTICS</b>\n"
+        f"• 👥 Total Trainers: <code>{total_users:,}</code>\n"
+        f"• ⚡ Total Catches: <code>{total_catches:,}</code>\n"
+        f"• ✨ Total Shinies: <code>{total_shinies:,}</code>\n"
+        f"• 💰 Economy Circulation: <code>{total_coins:,} coins</code>\n"
+        f"• 🌳 Active Group Spawns: <code>{active_spawns:,}</code></blockquote>\n\n"
+        f"<blockquote>⚡ <b>EXECUTIVE COMMAND REFERENCE</b>\n"
+        f"• <b>Spawns</b>: <code>/spawn [rarity]</code> | <code>/spawnchance</code>\n"
+        f"• <b>Economy</b>: <code>/giftcoins</code> | <code>/deletecoins</code> | <code>/balance</code>\n"
+        f"• <b>Pokémon</b>: <code>/giftpokemon</code> | <code>/gen</code>\n"
+        f"• <b>Admins</b>: <code>/addadmin</code> | <code>/removeadmin</code> | <code>/adminlist</code>\n"
+        f"• <b>Group Controls</b>: <code>/setspawn</code> | <code>/toggle_spawns</code> | <code>/banword</code></blockquote>\n"
+        f"───────────────────────────────"
+    )
+
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="👥 Browse All Players", callback_data="panel_players_1"),
+        InlineKeyboardButton(text="🏆 Wealth Leaderboard", callback_data="panel_wealth_1")
+    )
+    builder.row(
+        InlineKeyboardButton(text="⚡ Trigger Wild Spawn", callback_data="panel_spawn_prompt"),
+        InlineKeyboardButton(text="🎫 Generate Redeem Code", callback_data="panel_gen_prompt")
+    )
+    builder.row(
+        InlineKeyboardButton(text="👑 Manage Admins", callback_data="owner_adminlist"),
+        InlineKeyboardButton(text="📋 Custom Media Files", callback_data="owner_medialist")
+    )
+    builder.row(InlineKeyboardButton(text="🔙 Back to Hub Menu", callback_data="dm_home"))
+
+    if isinstance(event, Message):
+        from utils.settings import send_cover_media
+        await send_cover_media(
+            chat_id=event.chat.id,
+            key="start",
+            caption=text,
+            reply_markup=builder.as_markup(),
+            bot=event.bot,
+            default_file="data/pokeempire_banner.png"
+        )
+    else:
+        try:
+            await event.message.edit_caption(caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        except Exception:
+            try:
+                await event.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+            except Exception:
+                pass
+        await event.answer()
+
+@router.message(Command("panel", "ownerpanel", "adminpanel"))
+async def cmd_owner_panel(message: Message, db: AsyncSession):
+    if not config.ADMIN_IDS or message.from_user.id != config.ADMIN_IDS[0]:
+        await message.answer("❌ Denied. Only the Bot Owner can access the Executive Panel.")
+        return
+    await send_or_edit_panel(message, db, message.from_user.first_name)
+
+@router.callback_query(F.data == "owner_panel")
+async def cb_owner_panel(callback: CallbackQuery, db: AsyncSession):
+    if not config.ADMIN_IDS or callback.from_user.id != config.ADMIN_IDS[0]:
+        await callback.answer("❌ Denied. Only the Bot Owner can access the Executive Panel.", show_alert=True)
+        return
+    await send_or_edit_panel(callback, db, callback.from_user.first_name)
+
+@router.callback_query(F.data.startswith("panel_players_"))
+async def cb_panel_players(callback: CallbackQuery, db: AsyncSession):
+    if not config.ADMIN_IDS or callback.from_user.id != config.ADMIN_IDS[0]:
+        await callback.answer("❌ Denied. Owner only.", show_alert=True)
+        return
+
+    page = int(callback.data.replace("panel_players_", ""))
+    per_page = 5
+
+    # Count total users
+    count_res = await db.execute(select(func.count(User.id)))
+    total_users = count_res.scalar() or 0
+    max_pages = max(1, (total_users + per_page - 1) // per_page)
+    page = max(1, min(page, max_pages))
+
+    offset = (page - 1) * per_page
+    stmt = select(User).order_by(User.id).offset(offset).limit(per_page)
+    res = await db.execute(stmt)
+    users = res.scalars().all()
+
+    import html
+    lines = [f"👥 <b>ALL TRAINERS DIRECTORY (Page {page}/{max_pages})</b>\n───────────────────────────────"]
+    
+    for u in users:
+        u_name = html.escape(u.nickname or u.username or "Trainer")
+        u_handle = f" (@{html.escape(u.username)})" if u.username else ""
+        
+        # Count catches for this user
+        c_stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == u.id)
+        c_res = await db.execute(c_stmt)
+        u_catches = c_res.scalar() or 0
+
+        lines.append(
+            f"• 👤 <b>{u_name}</b>{u_handle}\n"
+            f"  └ 🆔 <code>{u.id}</code> | 💰 <code>{u.coins:,}</code> coins | 🎒 <code>{u_catches:,}</code> caught"
+        )
+
+    lines.append("───────────────────────────────")
+    text = "\n\n".join(lines)
+
+    builder = InlineKeyboardBuilder()
+    nav_btns = []
+    if page > 1:
+        nav_btns.append(InlineKeyboardButton(text="◀️ Prev", callback_data=f"panel_players_{page-1}"))
+    if page < max_pages:
+        nav_btns.append(InlineKeyboardButton(text="Next ➡️", callback_data=f"panel_players_{page+1}"))
+    if nav_btns:
+        builder.row(*nav_btns)
+    builder.row(InlineKeyboardButton(text="🔙 Back to Executive Panel", callback_data="owner_panel"))
+
+    try:
+        await callback.message.edit_caption(caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    except Exception:
+        try:
+            await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        except Exception:
+            pass
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("panel_wealth_"))
+async def cb_panel_wealth(callback: CallbackQuery, db: AsyncSession):
+    if not config.ADMIN_IDS or callback.from_user.id != config.ADMIN_IDS[0]:
+        await callback.answer("❌ Denied. Owner only.", show_alert=True)
+        return
+
+    page = int(callback.data.replace("panel_wealth_", ""))
+    per_page = 5
+
+    count_res = await db.execute(select(func.count(User.id)))
+    total_users = count_res.scalar() or 0
+    max_pages = max(1, (total_users + per_page - 1) // per_page)
+    page = max(1, min(page, max_pages))
+
+    offset = (page - 1) * per_page
+    stmt = select(User).order_by(User.coins.desc()).offset(offset).limit(per_page)
+    res = await db.execute(stmt)
+    users = res.scalars().all()
+
+    import html
+    lines = [f"🏆 <b>WEALTHY TRAINERS RANKINGS (Page {page}/{max_pages})</b>\n───────────────────────────────"]
+    
+    medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+    for idx, u in enumerate(users):
+        rank_idx = offset + idx
+        medal = medals[rank_idx] if rank_idx < len(medals) else f"{rank_idx+1}."
+        u_name = html.escape(u.nickname or u.username or "Trainer")
+        lines.append(f"{medal} 👤 <b>{u_name}</b> (<code>{u.id}</code>)\n   └ 💰 Balance: <b>{u.coins:,} coins</b>")
+
+    lines.append("───────────────────────────────")
+    text = "\n\n".join(lines)
+
+    builder = InlineKeyboardBuilder()
+    nav_btns = []
+    if page > 1:
+        nav_btns.append(InlineKeyboardButton(text="◀️ Prev", callback_data=f"panel_wealth_{page-1}"))
+    if page < max_pages:
+        nav_btns.append(InlineKeyboardButton(text="Next ➡️", callback_data=f"panel_wealth_{page+1}"))
+    if nav_btns:
+        builder.row(*nav_btns)
+    builder.row(InlineKeyboardButton(text="🔙 Back to Executive Panel", callback_data="owner_panel"))
+
+    try:
+        await callback.message.edit_caption(caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    except Exception:
+        try:
+            await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        except Exception:
+            pass
+    await callback.answer()
+
+@router.callback_query(F.data == "panel_spawn_prompt")
+async def cb_panel_spawn_prompt(callback: CallbackQuery):
+    await callback.answer("👉 Use /spawn or /spawn <rarity> in any group chat to trigger a wild encounter!", show_alert=True)
+
+@router.callback_query(F.data == "panel_gen_prompt")
+async def cb_panel_gen_prompt(callback: CallbackQuery):
+    await callback.answer("👉 Use /gen <code_name> <usage_limit> <coins|pokemon_id> <value> to generate a redeem code!", show_alert=True)

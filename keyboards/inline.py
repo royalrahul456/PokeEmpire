@@ -97,6 +97,7 @@ def get_admin_menu_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="❓ Guide", callback_data="dm_help")
     )
     builder.row(
+        InlineKeyboardButton(text="👑 Executive Panel (/panel)", callback_data="owner_panel"),
         InlineKeyboardButton(text="🛠️ Owner Tools", callback_data="owner_tools")
     )
     return builder.as_markup()

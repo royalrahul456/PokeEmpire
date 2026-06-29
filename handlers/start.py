@@ -65,14 +65,17 @@ async def cmd_start(message: Message, db: AsyncSession):
             active_spawns = s_count.scalar() or 0
 
             text = (
-                f"⚡ <b>𝗣𝗢𝗞𝗘́𝗘𝗠𝗣𝗜𝗥𝗘 𝗢𝗪𝗡𝗘𝗥 𝗗𝗔𝗦𝗛𝗕𝗢𝗔𝗥𝗗</b> ⚡\n"
+                f"⚡ <b>POKÉEMPIRE CREATOR DASHBOARD</b> ⚡\n"
+                f"💎 <i>Master Control & Operations Center</i>\n"
                 f"───────────────────────────────\n"
-                f"👑 Welcome, Creator <b>{html.escape(user.nickname or nickname)}</b>!\n\n"
-                f"📊 <b>System Metrics:</b>\n"
-                f"• 👥 Total Trainers: <code>{total_users}</code>\n"
-                f"• ⚡ Total Catches: <code>{total_catches}</code>\n"
-                f"• 🌳 Active Spawns: <code>{active_spawns}</code>\n\n"
-                f"Use the console below to manage your profile, view checklists, or configure cover media and global settings!"
+                f"👑 Welcome back, Creator <b>{html.escape(user.nickname or nickname)}</b>!\n\n"
+                f"<blockquote>📊 <b>REAL-TIME SYSTEM METRICS</b>\n"
+                f"• 👥 Total Trainers: <code>{total_users:,}</code>\n"
+                f"• ⚡ Total Pokémon Caught: <code>{total_catches:,}</code>\n"
+                f"• 🌳 Active Group Spawns: <code>{active_spawns:,}</code></blockquote>\n\n"
+                f"👑 <b>Executive Control Panel</b>:\n"
+                f"Type ⚡ <code>/panel</code> to launch the full Executive Operations Console!\n"
+                f"───────────────────────────────"
             )
             
             await send_cover_media(
@@ -86,13 +89,15 @@ async def cmd_start(message: Message, db: AsyncSession):
         elif user_id in config.UPLOADER_IDS:
             # Uploader Console
             text = (
-                f"📤 <b>𝗣𝗢𝗞𝗘́𝗘𝗠𝗣𝗜𝗥𝗘 𝗨𝗣𝗟𝗢𝗔𝗗𝗘𝗥 𝗖𝗢𝗡𝗦𝗢𝗟𝗘</b> 📤\n"
+                f"📤 <b>POKÉEMPIRE UPLOADER CONSOLE</b> 📤\n"
+                f"✨ <i>Media Management Hub</i>\n"
                 f"───────────────────────────────\n"
                 f"✨ Welcome, Uploader <b>{html.escape(user.nickname or nickname)}</b>!\n\n"
-                f"You have uploader privileges. You can upload and configure Pokémon media:\n"
-                f"• <code>/setpokemedia &lt;name or id&gt;</code> — Set photo/AMV for a Pokémon\n"
-                f"• <code>/medialist</code> — View custom media files list\n\n"
-                f"Use the premium uploader dashboard below to manage your profile or explore your collection checklist."
+                f"<blockquote>📋 <b>UPLOADER PRIVILEGES</b>\n"
+                f"• <code>/setpokemedia &lt;name/id&gt;</code> — Set photo/video/AMV media\n"
+                f"• <code>/medialist</code> — View active uploaded media assets</blockquote>\n\n"
+                f"👉 <i>Use the dashboard below to navigate your profile & collection:</i>\n"
+                f"───────────────────────────────"
             )
             
             await send_cover_media(
@@ -105,16 +110,27 @@ async def cmd_start(message: Message, db: AsyncSession):
             )
         else:
             # Standard premium player dashboard
+            # Query caught count for this player
+            c_stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == user_id)
+            c_res = await db.execute(c_stmt)
+            user_catches = c_res.scalar() or 0
+
+            from utils.streak import get_streak_data
+            s_data = await get_streak_data(user_id, db)
+            user_streak = s_data.get("current_streak", 0)
+
             text = (
-                f"⚡ <b>𝗣𝗢𝗞𝗘́𝗘𝗠𝗣𝗜𝗥𝗘 𝗛𝗨𝗕</b> ⚡\n"
+                f"⚡ <b>POKÉEMPIRE HUB</b> ⚡\n"
+                f"✨ <i>Your Ultimate Pokémon Companion</i>\n"
                 f"───────────────────────────────\n"
                 f"👋 Welcome, Trainer <b>{html.escape(user.nickname or nickname)}</b>!\n\n"
-                f"🌲 I spawn wild Pokémon in active groups based on chat activity. Be the first to guess their names and catch them!\n\n"
-                f"🎮 <b>Interactive Console:</b>\n"
-                f"• View your 👤 <b>Profile</b>, collection 🎒 <b>Bag</b>, or global 📊 <b>Leaderboard</b>\n"
-                f"• Challenge players to 🛡️ <b>Battles</b> or trade in the 🔄 <b>Market</b>\n"
-                f"• Secure daily 🔥 <b>Catch Streaks</b> & claim your free 🎁 <b>Daily Pokémon</b>\n\n"
-                f"👉 <i>Use the console buttons below to navigate:</i>"
+                f"<blockquote>🎒 <b>TRAINER QUICK STATS</b>\n"
+                f"• 💳 Coin Balance: <code>💰 {user.coins:,} coins</code>\n"
+                f"• 🏆 Caught Collection: <code>{user_catches:,} Pokémon</code>\n"
+                f"• 🔥 Daily Catch Streak: <code>{user_streak} Days</code></blockquote>\n\n"
+                f"🌲 Wild Pokémon spawn in your active groups based on chat activity! Guess their names & catch them with <code>/catch</code>.\n\n"
+                f"👉 <i>Select an option from the interactive menu below:</i>\n"
+                f"───────────────────────────────"
             )
             await send_cover_media(
                 chat_id=message.chat.id,
@@ -259,14 +275,17 @@ async def cb_dm_home(callback: CallbackQuery, db: AsyncSession):
         active_spawns = s_count.scalar() or 0
 
         text = (
-            f"⚡ <b>POKÉEMPIRE OWNER DASHBOARD</b> ⚡\n"
+            f"⚡ <b>POKÉEMPIRE CREATOR DASHBOARD</b> ⚡\n"
+            f"💎 <i>Master Control & Operations Center</i>\n"
             f"───────────────────────────────\n"
-            f"👑 Welcome, Creator <b>{escape_md(nickname)}</b>!\n\n"
-            f"📊 <b>System Metrics</b>:\n"
-            f"• 👥 Total Trainers: <code>{total_users}</code>\n"
-            f"• ⚡ Total Catches: <code>{total_catches}</code>\n"
-            f"• 🌳 Active Spawns: <code>{active_spawns}</code>\n\n"
-            f"Use the console below to manage your profile, view checklists, or configure cover media and global settings!"
+            f"👑 Welcome back, Creator <b>{escape_md(nickname)}</b>!\n\n"
+            f"<blockquote>📊 <b>REAL-TIME SYSTEM METRICS</b>\n"
+            f"• 👥 Total Trainers: <code>{total_users:,}</code>\n"
+            f"• ⚡ Total Pokémon Caught: <code>{total_catches:,}</code>\n"
+            f"• 🌳 Active Group Spawns: <code>{active_spawns:,}</code></blockquote>\n\n"
+            f"👑 <b>Executive Control Panel</b>:\n"
+            f"Type ⚡ <code>/panel</code> to launch the full Executive Operations Console!\n"
+            f"───────────────────────────────"
         )
         
         try:
@@ -280,12 +299,14 @@ async def cb_dm_home(callback: CallbackQuery, db: AsyncSession):
     elif user_id in config.UPLOADER_IDS:
         text = (
             f"📤 <b>POKÉEMPIRE UPLOADER CONSOLE</b> 📤\n"
+            f"✨ <i>Media Management Hub</i>\n"
             f"───────────────────────────────\n"
             f"✨ Welcome, Uploader <b>{escape_md(nickname)}</b>!\n\n"
-            f"You have uploader privileges. You can upload and configure Pokémon media:\n"
-            f"• <code>/setpokemedia &lt;name or id&gt;</code> — Set photo/AMV for a Pokémon\n"
-            f"• <code>/medialist</code> — View custom media files list\n\n"
-            f"Use the premium uploader dashboard below to manage your profile or explore your collection checklist."
+            f"<blockquote>📋 <b>UPLOADER PRIVILEGES</b>\n"
+            f"• <code>/setpokemedia &lt;name/id&gt;</code> — Set photo/video/AMV media\n"
+            f"• <code>/medialist</code> — View active uploaded media assets</blockquote>\n\n"
+            f"👉 <i>Use the dashboard below to navigate your profile & collection:</i>\n"
+            f"───────────────────────────────"
         )
         
         try:
@@ -296,14 +317,26 @@ async def cb_dm_home(callback: CallbackQuery, db: AsyncSession):
             except Exception:
                 pass
     else:
+        c_stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == user_id)
+        c_res = await db.execute(c_stmt)
+        user_catches = c_res.scalar() or 0
+
+        from utils.streak import get_streak_data
+        s_data = await get_streak_data(user_id, db)
+        user_streak = s_data.get("current_streak", 0)
+
         text = (
             f"⚡ <b>POKÉEMPIRE HUB</b> ⚡\n"
+            f"✨ <i>Your Ultimate Pokémon Companion</i>\n"
             f"───────────────────────────────\n"
-            f"✨ Welcome, Trainer <b>{escape_md(nickname)}</b>!\n\n"
-            f"I spawn wild Pokémon in your active Telegram Groups based on group message activity. "
-            f"Be the first to guess their names and catch them!\n\n"
-            f"Use the premium interactive dashboard below to view your profile, browse your collection bag, track your Pokédex checklist, or read the game guide.\n\n"
-            f"👉 <i>Select an option from the menu:</i>"
+            f"👋 Welcome, Trainer <b>{escape_md(nickname)}</b>!\n\n"
+            f"<blockquote>🎒 <b>TRAINER QUICK STATS</b>\n"
+            f"• 💳 Coin Balance: <code>💰 {user.coins:,} coins</code>\n"
+            f"• 🏆 Caught Collection: <code>{user_catches:,} Pokémon</code>\n"
+            f"• 🔥 Daily Catch Streak: <code>{user_streak} Days</code></blockquote>\n\n"
+            f"🌲 Wild Pokémon spawn in your active groups based on chat activity! Guess their names & catch them with <code>/catch</code>.\n\n"
+            f"👉 <i>Select an option from the interactive menu below:</i>\n"
+            f"───────────────────────────────"
         )
         try:
             await callback.message.edit_caption(caption=text, reply_markup=get_dm_menu_keyboard(), parse_mode="HTML")

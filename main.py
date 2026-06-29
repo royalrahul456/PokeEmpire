@@ -137,6 +137,7 @@ async def register_bot_commands(bot: Bot):
         BotCommand(command="endmines", description="Forcibly end active Mines game"),
         BotCommand(command="redeem", description="Claim a promo/gift code"),
         BotCommand(command="gen", description="Generate a redeem code (Bot Owner only)"),
+        BotCommand(command="panel", description="Executive Owner Console (Bot Owner only)"),
         BotCommand(command="leaderboard", description="Global standings ranks"),
         BotCommand(command="banword", description="Ban a word in group chats (Admins only)"),
         BotCommand(command="removebanword", description="Unban a word (Admins only)"),

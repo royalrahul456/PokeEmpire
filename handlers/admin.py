@@ -1788,21 +1788,26 @@ async def send_or_edit_panel(event: Message | CallbackQuery, db: AsyncSession, o
 
 @router.message(Command("panel", "ownerpanel", "adminpanel"))
 async def cmd_owner_panel(message: Message, db: AsyncSession):
-    if not config.ADMIN_IDS or message.from_user.id != config.ADMIN_IDS[0]:
-        await message.answer("❌ Denied. Only the Bot Owner can access the Executive Panel.")
+    user_id = message.from_user.id if message.from_user else None
+    if not user_id or not config.ADMIN_IDS or user_id not in config.ADMIN_IDS:
+        await message.answer("❌ Denied. Only Bot Administrators/Owner can access the Executive Panel.")
         return
-    await send_or_edit_panel(message, db, message.from_user.first_name)
+    owner_name = message.from_user.first_name if message.from_user else "Creator"
+    await send_or_edit_panel(message, db, owner_name)
 
 @router.callback_query(F.data == "owner_panel")
 async def cb_owner_panel(callback: CallbackQuery, db: AsyncSession):
-    if not config.ADMIN_IDS or callback.from_user.id != config.ADMIN_IDS[0]:
-        await callback.answer("❌ Denied. Only the Bot Owner can access the Executive Panel.", show_alert=True)
+    user_id = callback.from_user.id if callback.from_user else None
+    if not user_id or not config.ADMIN_IDS or user_id not in config.ADMIN_IDS:
+        await callback.answer("❌ Denied. Only Bot Administrators/Owner can access the Executive Panel.", show_alert=True)
         return
-    await send_or_edit_panel(callback, db, callback.from_user.first_name)
+    owner_name = callback.from_user.first_name if callback.from_user else "Creator"
+    await send_or_edit_panel(callback, db, owner_name)
 
 @router.callback_query(F.data.startswith("panel_players_"))
 async def cb_panel_players(callback: CallbackQuery, db: AsyncSession):
-    if not config.ADMIN_IDS or callback.from_user.id != config.ADMIN_IDS[0]:
+    user_id = callback.from_user.id if callback.from_user else None
+    if not user_id or not config.ADMIN_IDS or user_id not in config.ADMIN_IDS:
         await callback.answer("❌ Denied. Owner only.", show_alert=True)
         return
 
@@ -1861,7 +1866,8 @@ async def cb_panel_players(callback: CallbackQuery, db: AsyncSession):
 
 @router.callback_query(F.data.startswith("panel_wealth_"))
 async def cb_panel_wealth(callback: CallbackQuery, db: AsyncSession):
-    if not config.ADMIN_IDS or callback.from_user.id != config.ADMIN_IDS[0]:
+    user_id = callback.from_user.id if callback.from_user else None
+    if not user_id or not config.ADMIN_IDS or user_id not in config.ADMIN_IDS:
         await callback.answer("❌ Denied. Owner only.", show_alert=True)
         return
 

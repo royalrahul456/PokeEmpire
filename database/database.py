@@ -90,6 +90,24 @@ async def init_db():
             except Exception:
                 pass
 
+        # User streak columns
+        streak_cols = [
+            ("current_streak", "INTEGER DEFAULT 0"),
+            ("best_streak", "INTEGER DEFAULT 0"),
+            ("last_secured_date", "VARCHAR(20)"),
+            ("last_catch_date", "VARCHAR(20)"),
+            ("catches_today", "INTEGER DEFAULT 0")
+        ]
+        for col, col_type in streak_cols:
+            try:
+                if "postgresql" in DATABASE_URL:
+                    await conn.execute(text(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col} {col_type}"))
+                else:
+                    await conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {col_type}"))
+                print(f"✅ Migrated database: added {col} column to users")
+            except Exception:
+                pass
+
         # Pokemon table custom media column
         try:
             if "postgresql" in DATABASE_URL:

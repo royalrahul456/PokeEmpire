@@ -12,6 +12,11 @@ class User(Base):
     last_daily_at = Column(DateTime, nullable=True)
     last_spin_at = Column(DateTime, nullable=True)
     has_shiny_charm = Column(Boolean, default=False, nullable=False)
+    current_streak = Column(Integer, default=0, nullable=False)
+    best_streak = Column(Integer, default=0, nullable=False)
+    last_secured_date = Column(String(20), nullable=True)
+    last_catch_date = Column(String(20), nullable=True)
+    catches_today = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)
 
     # Relationships

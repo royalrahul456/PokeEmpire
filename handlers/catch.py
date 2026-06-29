@@ -182,8 +182,8 @@ async def cmd_catch(message: Message, db: AsyncSession):
 
         # Increment daily catch streak
         from utils.streak import increment_streak_catch, get_streak_data
-        secured, current_count = await increment_streak_catch(user_id)
-        streak_info = await get_streak_data(user_id)
+        secured, current_count = await increment_streak_catch(user_id, db)
+        streak_info = await get_streak_data(user_id, db)
         streak_days = streak_info.get("current_streak", 0)
 
         # 1. Set emoji reaction on correct guess message

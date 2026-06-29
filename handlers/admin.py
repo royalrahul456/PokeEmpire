@@ -1779,9 +1779,19 @@ async def send_or_edit_panel(event: Message | CallbackQuery, db: AsyncSession, o
         await event.answer()
 
 @router.message(Command("panel", "ownerpanel", "adminpanel"))
+@router.message(F.text, F.text.startswith("/panel"))
+@router.message(F.text, F.text.startswith("/ownerpanel"))
+@router.message(F.text, F.text.startswith("/adminpanel"))
 async def cmd_owner_panel(message: Message, db: AsyncSession):
-    owner_name = message.from_user.first_name if message.from_user else "Creator"
-    await send_or_edit_panel(message, db, owner_name)
+    try:
+        owner_name = message.from_user.first_name if message.from_user else "Creator"
+        await send_or_edit_panel(message, db, owner_name)
+    except Exception as e:
+        print(f"Error in cmd_owner_panel: {e}")
+        try:
+            await message.answer("👑 <b>EXECUTIVE OWNER PANEL</b>\nSystem operational. Shortcuts: /spawn, /giftcoins, /giftpokemon, /gen", parse_mode="HTML")
+        except Exception:
+            pass
 
 @router.callback_query(F.data == "owner_panel")
 async def cb_owner_panel(callback: CallbackQuery, db: AsyncSession):

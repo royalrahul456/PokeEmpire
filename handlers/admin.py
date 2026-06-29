@@ -1713,7 +1713,7 @@ async def cmd_ban_words(message: Message):
 # -------------------------------------------------------------
 
 async def send_or_edit_panel(event: Message | CallbackQuery, db: AsyncSession, owner_name: str):
-    from sqlalchemy import func, sum
+    from sqlalchemy import func
     import html
     
     u_count = await db.execute(select(func.count(User.id)))
@@ -1733,49 +1733,49 @@ async def send_or_edit_panel(event: Message | CallbackQuery, db: AsyncSession, o
 
     text = (
         f"👑 <b>EXECUTIVE OWNER PANEL</b> 👑\n"
-        f"💎 <i>System Analytics & Master Command Console</i>\n"
-        f"───────────────────────────────\n"
-        f"👤 <b>Master Creator</b>: <b>{html.escape(owner_name)}</b>\n\n"
-        f"<blockquote>📊 <b>EMPIRE ANALYTICS</b>\n"
-        f"• 👥 Total Trainers: <code>{total_users:,}</code>\n"
-        f"• ⚡ Total Catches: <code>{total_catches:,}</code>\n"
-        f"• ✨ Total Shinies: <code>{total_shinies:,}</code>\n"
-        f"• 💰 Economy Circulation: <code>{total_coins:,} coins</code>\n"
-        f"• 🌳 Active Group Spawns: <code>{active_spawns:,}</code></blockquote>\n\n"
-        f"<blockquote>⚡ <b>EXECUTIVE COMMAND REFERENCE</b>\n"
-        f"• <b>Spawns</b>: <code>/spawn [rarity]</code> | <code>/spawnchance</code>\n"
-        f"• <b>Economy</b>: <code>/giftcoins</code> | <code>/deletecoins</code> | <code>/balance</code>\n"
-        f"• <b>Pokémon</b>: <code>/giftpokemon</code> | <code>/gen</code>\n"
-        f"• <b>Admins</b>: <code>/addadmin</code> | <code>/removeadmin</code> | <code>/adminlist</code>\n"
-        f"• <b>Group Controls</b>: <code>/setspawn</code> | <code>/toggle_spawns</code> | <code>/banword</code></blockquote>\n"
-        f"───────────────────────────────"
+        f"💎 <i>System Analytics & Control Center</i>\n"
+        f"───────────────\n"
+        f"👤 Creator: <b>{html.escape(owner_name)}</b>\n\n"
+        f"<blockquote>📊 <b>EMPIRE METRICS</b>\n"
+        f"• 👥 Trainers: <code>{total_users:,}</code>\n"
+        f"• ⚡ Catches: <code>{total_catches:,}</code> (✨ <code>{total_shinies:,}</code>)\n"
+        f"• 💰 Economy: <code>{total_coins:,} coins</code>\n"
+        f"• 🌳 Spawns: <code>{active_spawns:,} active</code></blockquote>\n\n"
+        f"<blockquote>⚡ <b>EXECUTIVE SHORTCUTS</b>\n"
+        f"• <code>/spawn [rarity]</code> | <code>/spawnchance</code>\n"
+        f"• <code>/giftcoins</code> | <code>/deletecoins</code> | <code>/balance</code>\n"
+        f"• <code>/giftpokemon</code> | <code>/gen</code> | <code>/addadmin</code></blockquote>\n"
+        f"───────────────"
     )
 
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="👥 Browse All Players", callback_data="panel_players_1"),
-        InlineKeyboardButton(text="🏆 Wealth Leaderboard", callback_data="panel_wealth_1")
+        InlineKeyboardButton(text="👥 Browse Players", callback_data="panel_players_1"),
+        InlineKeyboardButton(text="🏆 Wealth Ranks", callback_data="panel_wealth_1")
     )
     builder.row(
-        InlineKeyboardButton(text="⚡ Trigger Wild Spawn", callback_data="panel_spawn_prompt"),
-        InlineKeyboardButton(text="🎫 Generate Redeem Code", callback_data="panel_gen_prompt")
+        InlineKeyboardButton(text="⚡ Trigger Spawn", callback_data="panel_spawn_prompt"),
+        InlineKeyboardButton(text="🎫 Redeem Codes", callback_data="panel_gen_prompt")
     )
     builder.row(
         InlineKeyboardButton(text="👑 Manage Admins", callback_data="owner_adminlist"),
-        InlineKeyboardButton(text="📋 Custom Media Files", callback_data="owner_medialist")
+        InlineKeyboardButton(text="📋 Custom Media", callback_data="owner_medialist")
     )
     builder.row(InlineKeyboardButton(text="🔙 Back to Hub Menu", callback_data="dm_home"))
 
     if isinstance(event, Message):
-        from utils.settings import send_cover_media
-        await send_cover_media(
-            chat_id=event.chat.id,
-            key="start",
-            caption=text,
-            reply_markup=builder.as_markup(),
-            bot=event.bot,
-            default_file="data/pokeempire_banner.png"
-        )
+        try:
+            from utils.settings import send_cover_media
+            await send_cover_media(
+                chat_id=event.chat.id,
+                key="start",
+                caption=text,
+                reply_markup=builder.as_markup(),
+                bot=event.bot,
+                default_file="data/pokeempire_banner.png"
+            )
+        except Exception:
+            await event.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
     else:
         try:
             await event.message.edit_caption(caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
@@ -1783,13 +1783,16 @@ async def send_or_edit_panel(event: Message | CallbackQuery, db: AsyncSession, o
             try:
                 await event.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
             except Exception:
-                pass
+                try:
+                    await event.message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+                except Exception:
+                    pass
         await event.answer()
 
 @router.message(Command("panel", "ownerpanel", "adminpanel"))
 async def cmd_owner_panel(message: Message, db: AsyncSession):
-    user_id = message.from_user.id if message.from_user else None
-    if not user_id or not config.ADMIN_IDS or user_id not in config.ADMIN_IDS:
+    is_admin = await is_user_admin(message)
+    if not is_admin:
         await message.answer("❌ Denied. Only Bot Administrators/Owner can access the Executive Panel.")
         return
     owner_name = message.from_user.first_name if message.from_user else "Creator"

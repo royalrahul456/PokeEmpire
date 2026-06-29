@@ -301,7 +301,7 @@ async def main():
         retry_count = 0
         while True:
             try:
-                await dp.start_polling(bot, skip_updates=True)
+                await dp.start_polling(bot, skip_updates=False)
                 break
             except Exception as e:
                 retry_count += 1

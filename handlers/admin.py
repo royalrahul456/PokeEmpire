@@ -1778,7 +1778,7 @@ async def send_or_edit_panel(event: Message | CallbackQuery, db: AsyncSession, o
                     pass
         await event.answer()
 
-@router.message(Command("panel", "ownerpanel", "adminpanel"))
+@router.message(Command("panel", "p", "ownerpanel", "adminpanel", "control", "admin"))
 async def cmd_owner_panel(message: Message, db: AsyncSession):
     try:
         owner_name = message.from_user.first_name if message.from_user else "Creator"

@@ -75,3 +75,4 @@ else:
     DATA_DIR = os.path.join(BASE_DIR, "data")
     DATABASE_PATH = os.path.join(BASE_DIR, "pokeempire.db")
 UPDATES_CHANNEL = os.getenv("UPDATES_CHANNEL", "@pokeempireupdates")
+DATABASE_CHANNEL = os.getenv("DATABASE_CHANNEL", "@pokeempiredatabase")

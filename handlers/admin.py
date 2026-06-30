@@ -1,6 +1,6 @@
 from aiogram import Router, F, Bot
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -1092,11 +1092,36 @@ async def cmd_spawn(message: Message, db: AsyncSession):
     parts = message.text.split()
     specified_rarity = None
     if len(parts) >= 2:
-        rarity_input = parts[1].strip().title()
-        if rarity_input in ["Common", "Rare", "Epic", "Legendary", "Mythical"]:
-            specified_rarity = rarity_input
+        user_id = message.from_user.id if message.from_user else None
+        if not user_id or user_id not in config.ADMIN_IDS:
+            await message.answer("❌ Denied. Only Bot Owners/Administrators can specify a rarity for manual spawns.")
+            return
+
+        rarity_input = parts[1].strip()
+        
+        # Load dynamic custom rarities
+        from utils.settings import global_settings_cache
+        import json
+        custom_rarities_str = global_settings_cache.get("custom_rarities", "{}")
+        custom_rarities = {}
+        try:
+            custom_rarities = json.loads(custom_rarities_str)
+        except Exception:
+            pass
+
+        valid_rarities = {"Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical"}
+        valid_rarities.update(custom_rarities.keys())
+
+        matching_rarity = None
+        for r in valid_rarities:
+            if r.lower() == rarity_input.lower():
+                matching_rarity = r
+                break
+
+        if matching_rarity:
+            specified_rarity = matching_rarity
         else:
-            await message.answer("⚠️ Invalid rarity. Choose from `Common`, `Rare`, `Epic`, `Legendary`, or `Mythical`.")
+            await message.answer(f"⚠️ Invalid rarity. Choose from: {', '.join(valid_rarities)}")
             return
 
     # Trigger a wild encounter spawn in this chat
@@ -1269,6 +1294,7 @@ async def cmd_set_poke_media(message: Message, db: AsyncSession):
         by_user = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
         if form_index > 0:
             await post_media_update_to_channel(message.bot, pokemon, form_index, db_media_value, by_user)
+            await update_database_channel_chart(message.bot, db)
 
         await message.answer(
             f"✅ <b>MEDIA UPDATED SUCCESS</b>\n"
@@ -1448,6 +1474,7 @@ async def on_poke_media_received(message: Message, db: AsyncSession):
     by_user = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
     if form_index > 0:
         await post_media_update_to_channel(message.bot, pokemon, form_index, db_media_value, by_user)
+        await update_database_channel_chart(message.bot, db)
 
     await message.answer(
         f"✅ <b>MEDIA UPDATED SUCCESS</b>\n"
@@ -1643,6 +1670,16 @@ async def post_media_update_to_channel(bot: Bot, pokemon: Pokemon, form_index: i
             await bot.send_photo(chat_id=config.UPDATES_CHANNEL, photo=media_id, caption=caption, parse_mode="HTML")
     except Exception as e:
         print(f"⚠️ Failed to post update to channel {config.UPDATES_CHANNEL}: {e}")
+
+    try:
+        if media_type == "video":
+            await bot.send_video(chat_id=config.DATABASE_CHANNEL, video=media_id, caption=caption, parse_mode="HTML")
+        elif media_type == "animation":
+            await bot.send_animation(chat_id=config.DATABASE_CHANNEL, animation=media_id, caption=caption, parse_mode="HTML")
+        else:
+            await bot.send_photo(chat_id=config.DATABASE_CHANNEL, photo=media_id, caption=caption, parse_mode="HTML")
+    except Exception as e:
+        print(f"⚠️ Failed to post update to database channel {config.DATABASE_CHANNEL}: {e}")
 
 @router.message(Command("banword"))
 async def cmd_ban_word(message: Message):
@@ -1905,3 +1942,435 @@ async def cb_panel_spawn_prompt(callback: CallbackQuery):
 @router.callback_query(F.data == "panel_gen_prompt")
 async def cb_panel_gen_prompt(callback: CallbackQuery):
     await callback.answer("👉 Use /gen <code_name> <usage_limit> <coins|pokemon_id> <value> to generate a redeem code!", show_alert=True)
+
+
+# -------------------------------------------------------------
+# DATABASE CHANNEL DYNAMIC CHART & ADMIN DB COMMANDS
+# -------------------------------------------------------------
+
+async def update_database_channel_chart(bot: Bot, db: AsyncSession):
+    from database.models import Pokemon, PokemonFormMedia, GlobalSetting
+    from datetime import datetime, timezone, timedelta
+    
+    try:
+        # Get all Pokémon with custom media
+        stmt = select(PokemonFormMedia, Pokemon).join(Pokemon).order_by(Pokemon.id, PokemonFormMedia.form_index)
+        res = await db.execute(stmt)
+        records = res.all()
+        
+        poke_media = {}
+        for pfm, p in records:
+            if p not in poke_media:
+                poke_media[p] = {}
+            poke_media[p][pfm.form_index] = pfm.media_value
+
+        lines = []
+        for p, forms in poke_media.items():
+            art_status = "✅" if (1 in forms and forms[1].startswith("photo:")) else "❌"
+            amv_status = "✅" if (1 in forms and not forms[1].startswith("photo:")) else "❌"
+            dmax_status = "✅" if 2 in forms else "❌"
+            gmax_status = "✅" if 3 in forms else "❌"
+            zmove_status = "✅" if 4 in forms else "❌"
+            terastal_status = "✅" if 5 in forms else "❌"
+            
+            form_str = (
+                f"🎨 Art {art_status} | "
+                f"📺 AMV {amv_status} | "
+                f"⚡ Dmax {dmax_status} | "
+                f"💥 Gmax {gmax_status} | "
+                f"🌀 Z-Move {zmove_status} | "
+                f"🔮 Tera {terastal_status}"
+            )
+            lines.append(f"• <b>#{p.id:03d} {p.name.title()}</b>\n  └ {form_str}")
+
+        # IST Time
+        utc_now = datetime.now(timezone.utc)
+        ist_time = utc_now + timedelta(hours=5, minutes=30)
+        time_str = ist_time.strftime("%d %b %Y, %I:%M %p IST")
+
+        chart_header = (
+            f"📊 <b>POKÉEMPIRE MEDIA DIRECTORY</b>\n"
+            f"<i>Live Database Chart of Configured Custom Forms</i>\n"
+            f"───────────────────────────────\n\n"
+        )
+        chart_footer = (
+            f"\n───────────────────────────────\n"
+            f"⌛ <i>Last Updated: {time_str}</i>"
+        )
+
+        chunks = []
+        current_chunk = chart_header
+        for line in lines:
+            if len(current_chunk) + len(line) + len(chart_footer) + 5 > 4000:
+                current_chunk += chart_footer
+                chunks.append(current_chunk)
+                current_chunk = chart_header + line + "\n"
+            else:
+                current_chunk += line + "\n"
+        current_chunk += chart_footer
+        chunks.append(current_chunk)
+
+        # Save/update message IDs
+        stmt = select(GlobalSetting).where(GlobalSetting.key == "database_chart_message_ids")
+        res = await db.execute(stmt)
+        setting = res.scalar_one_or_none()
+        
+        old_msg_ids = []
+        if setting and setting.value:
+            try:
+                old_msg_ids = [int(x) for x in setting.value.split(",") if x.strip().isdigit()]
+            except Exception:
+                pass
+
+        new_msg_ids = []
+        for idx, chunk_text in enumerate(chunks):
+            msg_id = old_msg_ids[idx] if idx < len(old_msg_ids) else None
+            if msg_id:
+                try:
+                    await bot.edit_message_text(
+                        chat_id=config.DATABASE_CHANNEL,
+                        message_id=msg_id,
+                        text=chunk_text,
+                        parse_mode="HTML"
+                    )
+                    new_msg_ids.append(msg_id)
+                except Exception:
+                    msg_id = None
+            
+            if not msg_id:
+                try:
+                    sent_msg = await bot.send_message(
+                        chat_id=config.DATABASE_CHANNEL,
+                        text=chunk_text,
+                        parse_mode="HTML"
+                    )
+                    new_msg_ids.append(sent_msg.message_id)
+                    if idx == 0:
+                        try:
+                            await bot.pin_chat_message(chat_id=config.DATABASE_CHANNEL, message_id=sent_msg.message_id)
+                        except Exception:
+                            pass
+                except Exception as e:
+                    print(f"⚠️ Failed to send database chart chunk: {e}")
+
+        # Delete excess old messages
+        if len(old_msg_ids) > len(new_msg_ids):
+            for excess_id in old_msg_ids[len(new_msg_ids):]:
+                try:
+                    await bot.delete_message(chat_id=config.DATABASE_CHANNEL, message_id=excess_id)
+                except Exception:
+                    pass
+
+        new_ids_str = ",".join(map(str, new_msg_ids))
+        if setting:
+            setting.value = new_ids_str
+        else:
+            setting = GlobalSetting(key="database_chart_message_ids", value=new_ids_str)
+            db.add(setting)
+        await db.commit()
+    except Exception as chart_err:
+        print(f"⚠️ Failed to update database channel chart: {chart_err}")
+
+
+@router.message(Command("addrarity", "newrarity"))
+async def cmd_add_rarity(message: Message, db: AsyncSession):
+    if not message.from_user or message.from_user.id not in config.ADMIN_IDS:
+        await message.answer("❌ Denied. Only Bot Owner/Administrators can configure new rarities.")
+        return
+
+    parts = message.text.split()
+    if len(parts) < 3:
+        await message.answer(
+            "⚠️ <b>Usage:</b>\n"
+            "<code>/addrarity &lt;RarityName&gt; &lt;Emoji&gt;</code>\n\n"
+            "Format requirements:\n"
+            "• RarityName: <b>TitleCase Alphanumeric only</b> (e.g. <code>Divine</code>, <code>SuperRare</code>, <code>Commoner</code>)\n"
+            "• Emoji: A valid emoji symbol (e.g. 🔱, 🔥, 👑)",
+            parse_mode="HTML"
+        )
+        return
+
+    rarity_name = parts[1].strip()
+    rarity_emoji = parts[2].strip()
+
+    # Validate alphanumeric
+    if not rarity_name.isalnum():
+        await message.answer("❌ Invalid format! The RarityName must be alphanumeric only (letters and numbers, no special symbols or spaces).")
+        return
+
+    # Enforce Title Case format (e.g. SuperRare)
+    rarity_name = rarity_name[0].upper() + rarity_name[1:]
+
+    from database.models import GlobalSetting
+    import json
+
+    # Load custom rarities
+    stmt = select(GlobalSetting).where(GlobalSetting.key == "custom_rarities")
+    res = await db.execute(stmt)
+    setting = res.scalar_one_or_none()
+
+    custom_rarities = {}
+    if setting and setting.value:
+        try:
+            custom_rarities = json.loads(setting.value)
+        except Exception:
+            pass
+
+    custom_rarities[rarity_name] = rarity_emoji
+    val_str = json.dumps(custom_rarities)
+
+    if setting:
+        setting.value = val_str
+    else:
+        setting = GlobalSetting(key="custom_rarities", value=val_str)
+        db.add(setting)
+    
+    await db.commit()
+
+    # Update dynamic cache
+    from utils.settings import global_settings_cache
+    global_settings_cache["custom_rarities"] = val_str
+
+    # Notify all configured Uploaders
+    for uploader_id in config.UPLOADER_IDS:
+        try:
+            await message.bot.send_message(
+                chat_id=uploader_id,
+                text=(
+                    f"🔔 <b>New Rarity Created!</b>\n"
+                    f"A new Pokémon rarity is now active:\n"
+                    f"• 💎 <b>Rarity</b>: {rarity_name}\n"
+                    f"• 🎭 <b>Emoji</b>: {rarity_emoji}\n\n"
+                    f"You can now upload Pokémon forms of this rarity tier."
+                ),
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+
+    await message.answer(
+        f"✅ <b>RARITY ADDED SUCCESSFULLY</b>\n"
+        f"───────────────\n"
+        f"• 💎 Rarity: <b>{rarity_name}</b>\n"
+        f"• 🎭 Emoji: {rarity_emoji}\n\n"
+        f"Uploader list has been notified.",
+        parse_mode="HTML"
+    )
+
+
+@router.message(Command("addpokemon", "newpokemon"))
+async def cmd_add_pokemon(message: Message, db: AsyncSession):
+    if not message.from_user or message.from_user.id not in config.ADMIN_IDS:
+        await message.answer("❌ Denied. Only Bot Owner/Administrators can register new Pokémon.")
+        return
+
+    parts = message.text.split()
+    if len(parts) < 6:
+        await message.answer(
+            "⚠️ <b>Usage:</b>\n"
+            "<code>/addpokemon &lt;id&gt; &lt;name&gt; &lt;rarity&gt; &lt;generation&gt; &lt;image_url&gt; [video_url]</code>\n\n"
+            "Format requirements:\n"
+            "• id: Integer ID (e.g. <code>152</code>)\n"
+            "• name: Lowercase Pokémon name (e.g. <code>chikorita</code>)\n"
+            "• rarity: Standard or dynamic custom rarity (e.g. <code>Common</code>, <code>Divine</code>)\n"
+            "• generation: Generation index (1 to 9)\n"
+            "• image_url: Artwork URL or file_id",
+            parse_mode="HTML"
+        )
+        return
+
+    try:
+        pokemon_id = int(parts[1])
+        name = parts[2].strip().lower()
+        rarity_input = parts[3].strip()
+        generation = int(parts[4])
+        image_url = parts[5].strip()
+        video_url = parts[6].strip() if len(parts) >= 7 else None
+    except ValueError:
+        await message.answer("❌ Validation error: Check that ID and Generation are integers.")
+        return
+
+    # Load custom rarities to validate
+    from utils.settings import global_settings_cache
+    import json
+    custom_rarities_str = global_settings_cache.get("custom_rarities", "{}")
+    custom_rarities = {}
+    try:
+        custom_rarities = json.loads(custom_rarities_str)
+    except Exception:
+        pass
+
+    valid_rarities = {"Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical", "Limited", "Limited Edition"}
+    valid_rarities.update(custom_rarities.keys())
+
+    matching_rarity = None
+    for r in valid_rarities:
+        if r.lower() == rarity_input.lower():
+            matching_rarity = r
+            break
+
+    if not matching_rarity:
+        await message.answer(f"❌ Invalid rarity '{rarity_input}'. Choose from: {', '.join(valid_rarities)}")
+        return
+
+    from database.models import Pokemon
+
+    # Check existence
+    stmt = select(Pokemon).where((Pokemon.id == pokemon_id) | (Pokemon.name == name))
+    res = await db.execute(stmt)
+    if res.scalar_one_or_none():
+        await message.answer(f"❌ A Pokémon with ID {pokemon_id} or Name '{name}' already exists.")
+        return
+
+    pokemon = Pokemon(
+        id=pokemon_id,
+        name=name,
+        rarity=matching_rarity,
+        generation=generation,
+        image_url=image_url,
+        video_url=video_url
+    )
+    db.add(pokemon)
+    await db.commit()
+
+    # Post announcement to DATABASE_CHANNEL
+    r_emoji = get_rarity_emoji(matching_rarity)
+    caption = (
+        f"✨ <b>NEW POKÉMON REGISTERED!</b>\n\n"
+        f"<blockquote>🆔 <b>ID</b>: #{pokemon_id:03d}\n"
+        f"📛 <b>Name</b>: {name.title()}\n"
+        f"📺 <b>Generation</b>: Gen {generation}\n"
+        f"💎 <b>Rarity</b>: {r_emoji} {matching_rarity}\n"
+        f"👤 <b>Added By</b>: {message.from_user.first_name if message.from_user else 'Creator'}</blockquote>"
+    )
+
+    try:
+        if video_url:
+            await message.bot.send_video(chat_id=config.DATABASE_CHANNEL, video=video_url, caption=caption, parse_mode="HTML")
+        else:
+            await message.bot.send_photo(chat_id=config.DATABASE_CHANNEL, photo=image_url, caption=caption, parse_mode="HTML")
+    except Exception as channel_err:
+        print(f"⚠️ Failed to post new pokemon announcement to DATABASE_CHANNEL: {channel_err}")
+
+    await message.answer(
+        f"✅ <b>POKÉMON ADDED SUCCESSFULLY</b>\n"
+        f"───────────────\n"
+        f"• 👾 Pokémon: <b>{name.title()}</b> (ID: #{pokemon_id})\n"
+        f"• 💎 Rarity: {r_emoji} <b>{matching_rarity}</b>\n\n"
+        f"Registered and announced to database channel.",
+        parse_mode="HTML"
+    )
+
+
+@router.message(Command("syncdatabase", "syncdb"))
+async def cmd_sync_database(message: Message, db: AsyncSession):
+    if not message.from_user or message.from_user.id not in config.ADMIN_IDS:
+        await message.answer("❌ Denied. Only Bot Owner/Administrators can trigger database synchronization.")
+        return
+
+    progress_msg = await message.answer("⏳ <b>Database sync started...</b>\nFetching records...", parse_mode="HTML")
+
+    from database.models import Pokemon, PokemonFormMedia
+    
+    # 1. Fetch all Pokémon
+    stmt = select(Pokemon).order_by(Pokemon.id)
+    res = await db.execute(stmt)
+    pokemon_list = res.scalars().all()
+
+    sent_count = 0
+    total_count = len(pokemon_list)
+
+    # 2. Iterate and send
+    for p in pokemon_list:
+        r_emoji = get_rarity_emoji(p.rarity)
+        caption = (
+            f"✨ <b>NEW POKÉMON REGISTERED!</b>\n\n"
+            f"<blockquote>🆔 <b>ID</b>: #{p.id:03d}\n"
+            f"📛 <b>Name</b>: {p.name.title()}\n"
+            f"📺 <b>Generation</b>: Gen {p.generation}\n"
+            f"💎 <b>Rarity</b>: {r_emoji} {p.rarity}\n"
+            f"👤 <b>Added By</b>: Database Sync</blockquote>"
+        )
+        try:
+            if p.video_url and not p.video_url.startswith("photo:"):
+                # Clean video value
+                clean_vid = p.video_url.replace("video:", "")
+                await message.bot.send_video(chat_id=config.DATABASE_CHANNEL, video=clean_vid, caption=caption, parse_mode="HTML")
+            else:
+                clean_img = p.image_url.replace("photo:", "")
+                await message.bot.send_photo(chat_id=config.DATABASE_CHANNEL, photo=clean_img, caption=caption, parse_mode="HTML")
+            
+            sent_count += 1
+            if sent_count % 10 == 0:
+                await progress_msg.edit_text(f"⏳ <b>Database sync...</b>\nSent {sent_count}/{total_count} Pokémon entries.", parse_mode="HTML")
+            
+            await asyncio.sleep(0.5) # Prevent flooding limits
+        except Exception as e:
+            print(f"⚠️ Sync failed for Pokémon #{p.id}: {e}")
+
+    # 3. Synchronize dynamic forms/media as well
+    stmt = select(PokemonFormMedia, Pokemon).join(Pokemon).order_by(Pokemon.id, PokemonFormMedia.form_index)
+    res = await db.execute(stmt)
+    media_records = res.all()
+
+    media_sent = 0
+    for pfm, p in media_records:
+        # Clean prefix
+        media_id = pfm.media_value
+        media_type = "video"
+        if pfm.media_value.startswith("video:"):
+            media_id = pfm.media_value.replace("video:", "")
+            media_type = "video"
+        elif pfm.media_value.startswith("photo:"):
+            media_id = pfm.media_value.replace("photo:", "")
+            media_type = "photo"
+        elif pfm.media_value.startswith("animation:"):
+            media_id = pfm.media_value.replace("animation:", "")
+            media_type = "animation"
+        else:
+            if pfm.media_value.startswith("http"):
+                media_type = "photo"
+
+        is_img = "✅" if media_type == "photo" else "❌"
+        is_vid = "✅" if media_type in ["video", "animation"] else "❌"
+
+        form_names = {1: "AMV/Art", 2: "Dmax", 3: "Gmax", 4: "Z-Move", 5: "Terastal"}
+        rarity_label = form_names.get(pfm.form_index, f"Form {pfm.form_index}")
+        if pfm.form_index == 1 and pfm.media_value.startswith("photo:"):
+            rarity_label = "Art"
+
+        caption = (
+            f"✨ <b>NEW POKÉMON MEDIA ADDED!</b>\n\n"
+            f"<blockquote>🆔 <b>ID</b>: #{p.id:03d}.{pfm.form_index}\n"
+            f"📛 <b>Name</b>: {p.name.title()}\n"
+            f"📺 <b>Generation</b>: Gen {p.generation}\n"
+            f"💎 <b>Rarity</b>: {rarity_label}\n"
+            f"🖼️ <b>Image</b>: {is_img}\n"
+            f"🎥 <b>Video</b>: {is_vid}\n"
+            f"👤 <b>By</b>: Database Sync</blockquote>"
+        )
+        try:
+            if media_type == "video":
+                await message.bot.send_video(chat_id=config.DATABASE_CHANNEL, video=media_id, caption=caption, parse_mode="HTML")
+            elif media_type == "animation":
+                await message.bot.send_animation(chat_id=config.DATABASE_CHANNEL, animation=media_id, caption=caption, parse_mode="HTML")
+            else:
+                await message.bot.send_photo(chat_id=config.DATABASE_CHANNEL, photo=media_id, caption=caption, parse_mode="HTML")
+            
+            media_sent += 1
+            await asyncio.sleep(0.5) # Prevent flooding limits
+        except Exception as e:
+            print(f"⚠️ Sync failed for media #{p.id}.{pfm.form_index}: {e}")
+
+    # Build directory list
+    await update_database_channel_chart(message.bot, db)
+
+    await progress_msg.edit_text(
+        f"✅ <b>DATABASE SYNC COMPLETE</b>\n"
+        f"───────────────\n"
+        f"• 👾 Pokémon entries sent: <b>{sent_count}</b>\n"
+        f"• 🎨 Custom form media sent: <b>{media_sent}</b>\n\n"
+        f"All database items synchronized and pinned directory chart updated.",
+        parse_mode="HTML"
+    )
+

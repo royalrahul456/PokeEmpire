@@ -46,6 +46,18 @@ def get_rarity_emoji(tier: str) -> str:
         "Terastal": "🔮",
         "Erotic": "👠",
     }
+    
+    # Try dynamic custom rarities from global cache
+    try:
+        from utils.settings import global_settings_cache
+        import json
+        custom_rarities_str = global_settings_cache.get("custom_rarities", "{}")
+        custom_rarities = json.loads(custom_rarities_str)
+        if tier in custom_rarities:
+            return custom_rarities[tier]
+    except Exception:
+        pass
+
     return emojis.get(tier, "⚪️")
 
 def format_monster_stats(base_stats: Dict[str, int], ivs: Optional[Dict[str, int]] = None) -> str:

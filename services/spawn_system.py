@@ -106,8 +106,8 @@ class SpawnSystem:
         sp_atk_iv = random.randint(10 if is_boosted else 0, 31)
         sp_def_iv = random.randint(10 if is_boosted else 0, 31)
 
-        # Roll for shiny
-        is_shiny = random.random() < config.SHINY_RATE
+        # Roll for shiny (disabled)
+        is_shiny = False
 
         # Calculate HP with formula: ((2 * BaseHP + HP_IV) * Level) // 100 + Level + 10
         base_hp = monster_data["base_stats"]["hp"]

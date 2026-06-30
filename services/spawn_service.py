@@ -56,8 +56,8 @@ class SpawnService:
 
             selected_pokemon = random.choice(pokemon_list)
 
-            # 3. Roll shiny rate (1 in 500)
-            is_shiny = random.randint(1, 500) == 1
+            # 3. Roll shiny rate (disabled for automatic wild spawns)
+            is_shiny = False
 
             # 4. Build spawn text & keyboards
             status_text = "✨ **SHINY** ✨" if is_shiny else "🌳 **Normal**"

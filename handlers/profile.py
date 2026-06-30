@@ -391,13 +391,40 @@ async def cmd_profile(message: Message, db: AsyncSession):
         rarity_res = await db.execute(rarity_stmt)
         rarity_counts = {r: count for r, count in rarity_res.all()}
 
-        commons = rarity_counts.get("Common", 0)
-        uncommons = rarity_counts.get("Uncommon", 0)
-        mediums = rarity_counts.get("Medium", 0)
-        rares = rarity_counts.get("Rare", 0)
-        epics = rarity_counts.get("Epic", 0)
-        legendaries = rarity_counts.get("Legendary", 0)
-        mythicals = rarity_counts.get("Mythical", 0)
+        # Standard list
+        standard_breakdown = [
+            ("Common", "⚪️"),
+            ("Uncommon", "🟢"),
+            ("Medium", "🔵"),
+            ("Rare", "🟣"),
+            ("Epic", "🔮"),
+            ("Legendary", "🌟"),
+            ("Mythical", "🌌")
+        ]
+        
+        # Load custom rarities
+        from utils.settings import global_settings_cache
+        import json
+        custom_rarities_str = global_settings_cache.get("custom_rarities", "{}")
+        custom_rarities = {}
+        try:
+            custom_rarities = json.loads(custom_rarities_str)
+        except Exception:
+            pass
+
+        breakdown_lines = []
+        for r_name, r_emoji in standard_breakdown:
+            cnt = rarity_counts.get(r_name, 0)
+            breakdown_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
+            
+        for r_name, r_emoji in custom_rarities.items():
+            if r_name in ["Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical"]:
+                continue
+            cnt = rarity_counts.get(r_name, 0)
+            breakdown_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
+            
+        breakdown_lines.append(f"├─➩ ✨ Shiny: {total_shiny}")
+        rarity_breakdown_text = "\n".join(breakdown_lines)
 
         # Count form-based (AMV/Art=1, Dmax=2, Gmax=3, Z-Move=4, Terastal=5)
         form_counts_stmt = select(UserPokemon.form_index, func.count(distinct(UserPokemon.pokemon_id))).where(
@@ -471,14 +498,7 @@ async def cmd_profile(message: Message, db: AsyncSession):
             f"├─➩ 🏆 Best Streak: <code>{best_streak} days</code>\n"
             f"╰───────────────────\n\n"
             f"╭─ Rarity Breakdown ─\n"
-            f"├─➩ ⚪️ Common: {commons}\n"
-            f"├─➩ 🟢 Uncommon: {uncommons}\n"
-            f"├─➩ 🔵 Medium: {mediums}\n"
-            f"├─➩ 🟣 Rare: {rares}\n"
-            f"├─➩ 🔮 Epic: {epics}\n"
-            f"├─➩ 🌟 Legendary: {legendaries}\n"
-            f"├─➩ 🌌 Mythical: {mythicals}\n"
-            f"├─➩ ✨ Shiny: {total_shiny}\n"
+            f"{rarity_breakdown_text}\n"
             f"╰───────────────────\n\n"
             f"╭─ Forms Breakdown ─\n"
             f"├─➩ 🎬 AMV / Art: {amv_count}\n"
@@ -854,6 +874,29 @@ def get_rarity_filter_keyboard(user_id: int, current_page: int, current_filter: 
         InlineKeyboardButton(text="🌀 Z-Move", callback_data=f"pd_setfilter_{user_id}_Z-Move"),
         InlineKeyboardButton(text="🔮 Terastal", callback_data=f"pd_setfilter_{user_id}_Terastal")
     )
+    
+    # Dynamic custom rarities
+    from utils.settings import global_settings_cache
+    import json
+    custom_rarities_str = global_settings_cache.get("custom_rarities", "{}")
+    custom_rarities = {}
+    try:
+        custom_rarities = json.loads(custom_rarities_str)
+    except Exception:
+        pass
+        
+    custom_buttons = []
+    for r_name, r_emoji in custom_rarities.items():
+        if r_name in ["Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical"]:
+            continue
+        custom_buttons.append(
+            InlineKeyboardButton(text=f"{r_emoji} {r_name}", callback_data=f"pd_setfilter_{user_id}_{r_name}")
+        )
+        
+    for i in range(0, len(custom_buttons), 2):
+        row_btns = custom_buttons[i:i+2]
+        builder.row(*row_btns)
+        
     builder.row(
         InlineKeyboardButton(text="🌍 All", callback_data=f"pd_setfilter_{user_id}_All"),
         InlineKeyboardButton(text="🔙 Back", callback_data=f"pd_page_{user_id}_{current_page}_{current_filter}")
@@ -1622,13 +1665,40 @@ async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
         rarity_res = await db.execute(rarity_stmt)
         rarity_counts = {r: count for r, count in rarity_res.all()}
 
-        commons = rarity_counts.get("Common", 0)
-        uncommons = rarity_counts.get("Uncommon", 0)
-        mediums = rarity_counts.get("Medium", 0)
-        rares = rarity_counts.get("Rare", 0)
-        epics = rarity_counts.get("Epic", 0)
-        legendaries = rarity_counts.get("Legendary", 0)
-        mythicals = rarity_counts.get("Mythical", 0)
+        # Standard list
+        standard_breakdown = [
+            ("Common", "⚪️"),
+            ("Uncommon", "🟢"),
+            ("Medium", "🔵"),
+            ("Rare", "🟣"),
+            ("Epic", "🔮"),
+            ("Legendary", "🌟"),
+            ("Mythical", "🌌")
+        ]
+        
+        # Load custom rarities
+        from utils.settings import global_settings_cache
+        import json
+        custom_rarities_str = global_settings_cache.get("custom_rarities", "{}")
+        custom_rarities = {}
+        try:
+            custom_rarities = json.loads(custom_rarities_str)
+        except Exception:
+            pass
+
+        breakdown_lines = []
+        for r_name, r_emoji in standard_breakdown:
+            cnt = rarity_counts.get(r_name, 0)
+            breakdown_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
+            
+        for r_name, r_emoji in custom_rarities.items():
+            if r_name in ["Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical"]:
+                continue
+            cnt = rarity_counts.get(r_name, 0)
+            breakdown_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
+            
+        breakdown_lines.append(f"├─➩ ✨ Shiny: {total_shiny}")
+        rarity_breakdown_text = "\n".join(breakdown_lines)
 
         # Count form-based (AMV/Art=1, Dmax=2, Gmax=3, Z-Move=4, Terastal=5)
         form_counts_stmt = select(UserPokemon.form_index, func.count(distinct(UserPokemon.pokemon_id))).where(
@@ -1706,14 +1776,7 @@ async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
             f"├─➩ 🏆 Best Streak: <code>{best_streak} days</code>\n"
             f"╰───────────────────\n\n"
             f"╭─ Rarity Breakdown ─\n"
-            f"├─➩ ⚪️ Common: {commons}\n"
-            f"├─➩ 🟢 Uncommon: {uncommons}\n"
-            f"├─➩ 🔵 Medium: {mediums}\n"
-            f"├─➩ 🟣 Rare: {rares}\n"
-            f"├─➩ 🔮 Epic: {epics}\n"
-            f"├─➩ 🌟 Legendary: {legendaries}\n"
-            f"├─➩ 🌌 Mythical: {mythicals}\n"
-            f"├─➩ ✨ Shiny: {total_shiny}\n"
+            f"{rarity_breakdown_text}\n"
             f"╰───────────────────\n\n"
             f"╭─ Forms Breakdown ─\n"
             f"├─➩ 🎬 AMV / Art: {amv_count}\n"

@@ -1302,7 +1302,6 @@ async def cmd_set_poke_media(message: Message, db: AsyncSession):
         by_user = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
         if form_index > 0:
             await post_media_update_to_channel(message.bot, pokemon, form_index, db_media_value, by_user)
-            await update_database_channel_chart(message.bot, db)
 
         await message.answer(
             f"✅ <b>MEDIA UPDATED SUCCESS</b>\n"
@@ -1484,7 +1483,6 @@ async def on_poke_media_received(message: Message, db: AsyncSession):
     by_user = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
     if form_index > 0:
         await post_media_update_to_channel(message.bot, pokemon, form_index, db_media_value, by_user)
-        await update_database_channel_chart(message.bot, db)
 
     await message.answer(
         f"✅ <b>MEDIA UPDATED SUCCESS</b>\n"
@@ -1957,131 +1955,8 @@ async def cb_panel_gen_prompt(callback: CallbackQuery):
 
 
 # -------------------------------------------------------------
-# DATABASE CHANNEL DYNAMIC CHART & ADMIN DB COMMANDS
+# DATABASE CHANNEL ADMIN DB COMMANDS
 # -------------------------------------------------------------
-
-async def update_database_channel_chart(bot: Bot, db: AsyncSession):
-    from database.models import Pokemon, PokemonFormMedia, GlobalSetting
-    from datetime import datetime, timezone, timedelta
-    
-    try:
-        # Get all Pokémon with custom media
-        stmt = select(PokemonFormMedia, Pokemon).join(Pokemon).order_by(Pokemon.id, PokemonFormMedia.form_index)
-        res = await db.execute(stmt)
-        records = res.all()
-        
-        poke_media = {}
-        for pfm, p in records:
-            if p not in poke_media:
-                poke_media[p] = {}
-            poke_media[p][pfm.form_index] = pfm.media_value
-
-        lines = []
-        for p, forms in poke_media.items():
-            art_status = "✅" if (1 in forms and forms[1].startswith("photo:")) else "❌"
-            amv_status = "✅" if (1 in forms and not forms[1].startswith("photo:")) else "❌"
-            dmax_status = "✅" if 2 in forms else "❌"
-            gmax_status = "✅" if 3 in forms else "❌"
-            zmove_status = "✅" if 4 in forms else "❌"
-            terastal_status = "✅" if 5 in forms else "❌"
-            
-            form_str = (
-                f"🎨 Art {art_status} | "
-                f"📺 AMV {amv_status} | "
-                f"⚡ Dmax {dmax_status} | "
-                f"💥 Gmax {gmax_status} | "
-                f"🌀 Z-Move {zmove_status} | "
-                f"🔮 Tera {terastal_status}"
-            )
-            lines.append(f"• <b>#{p.id:03d} {p.name.title()}</b>\n  └ {form_str}")
-
-        # IST Time
-        utc_now = datetime.now(timezone.utc)
-        ist_time = utc_now + timedelta(hours=5, minutes=30)
-        time_str = ist_time.strftime("%d %b %Y, %I:%M %p IST")
-
-        chart_header = (
-            f"📊 <b>POKÉEMPIRE MEDIA DIRECTORY</b>\n"
-            f"<i>Live Database Chart of Configured Custom Forms</i>\n"
-            f"───────────────────────────────\n\n"
-        )
-        chart_footer = (
-            f"\n───────────────────────────────\n"
-            f"⌛ <i>Last Updated: {time_str}</i>"
-        )
-
-        chunks = []
-        current_chunk = chart_header
-        for line in lines:
-            if len(current_chunk) + len(line) + len(chart_footer) + 5 > 4000:
-                current_chunk += chart_footer
-                chunks.append(current_chunk)
-                current_chunk = chart_header + line + "\n"
-            else:
-                current_chunk += line + "\n"
-        current_chunk += chart_footer
-        chunks.append(current_chunk)
-
-        # Save/update message IDs
-        stmt = select(GlobalSetting).where(GlobalSetting.key == "database_chart_message_ids")
-        res = await db.execute(stmt)
-        setting = res.scalar_one_or_none()
-        
-        old_msg_ids = []
-        if setting and setting.value:
-            try:
-                old_msg_ids = [int(x) for x in setting.value.split(",") if x.strip().isdigit()]
-            except Exception:
-                pass
-
-        new_msg_ids = []
-        for idx, chunk_text in enumerate(chunks):
-            msg_id = old_msg_ids[idx] if idx < len(old_msg_ids) else None
-            if msg_id:
-                try:
-                    await bot.edit_message_text(
-                        chat_id=config.DATABASE_CHANNEL,
-                        message_id=msg_id,
-                        text=chunk_text,
-                        parse_mode="HTML"
-                    )
-                    new_msg_ids.append(msg_id)
-                except Exception:
-                    msg_id = None
-            
-            if not msg_id:
-                try:
-                    sent_msg = await bot.send_message(
-                        chat_id=config.DATABASE_CHANNEL,
-                        text=chunk_text,
-                        parse_mode="HTML"
-                    )
-                    new_msg_ids.append(sent_msg.message_id)
-                    if idx == 0:
-                        try:
-                            await bot.pin_chat_message(chat_id=config.DATABASE_CHANNEL, message_id=sent_msg.message_id)
-                        except Exception:
-                            pass
-                except Exception as e:
-                    print(f"⚠️ Failed to send database chart chunk: {e}")
-
-        # Delete excess old messages
-        if len(old_msg_ids) > len(new_msg_ids):
-            for excess_id in old_msg_ids[len(new_msg_ids):]:
-                try:
-                    await bot.delete_message(chat_id=config.DATABASE_CHANNEL, message_id=excess_id)
-                except Exception:
-                    pass
-
-        new_ids_str = ",".join(map(str, new_msg_ids))
-        if setting:
-            setting.value = new_ids_str
-        else:
-            setting = GlobalSetting(key="database_chart_message_ids", value=new_ids_str)
-            db.add(setting)
-        await db.commit()
-    except Exception as chart_err:
-        print(f"⚠️ Failed to update database channel chart: {chart_err}")
 
 
 @router.message(Command("addrarity", "newrarity"))
@@ -2361,8 +2236,7 @@ async def process_pokemon_addition(message: Message, db: AsyncSession):
         except Exception as channel_err:
             print(f"⚠️ Failed to post new pokemon announcement to UPDATES_CHANNEL: {channel_err}")
 
-        # Update dynamic list chart
-        await update_database_channel_chart(message.bot, db)
+
 
         await message.answer(
             f"✅ <b>POKÉMON ADDED SUCCESSFULLY</b>\n"
@@ -2469,8 +2343,7 @@ async def cmd_add_pokemon(message: Message, db: AsyncSession):
         except Exception as channel_err:
             print(f"⚠️ Failed to post new pokemon announcement to UPDATES_CHANNEL: {channel_err}")
 
-        # Update dynamic list chart
-        await update_database_channel_chart(message.bot, db)
+
 
         await message.answer(
             f"✅ <b>POKÉMON ADDED SUCCESSFULLY</b>\n"
@@ -2594,15 +2467,12 @@ async def cmd_sync_database(message: Message, db: AsyncSession):
         except Exception as e:
             print(f"⚠️ Sync failed for media #{p.id}.{pfm.form_index}: {e}")
 
-    # Build directory list
-    await update_database_channel_chart(message.bot, db)
-
     await progress_msg.edit_text(
         f"✅ <b>DATABASE SYNC COMPLETE</b>\n"
         f"───────────────\n"
         f"• 👾 Pokémon entries sent: <b>{sent_count}</b>\n"
         f"• 🎨 Custom form media sent: <b>{media_sent}</b>\n\n"
-        f"All database items synchronized and pinned directory chart updated.",
+        f"All database items synchronized successfully.",
         parse_mode="HTML"
     )
 

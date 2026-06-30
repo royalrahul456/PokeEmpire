@@ -34,6 +34,19 @@ async def get_single_form_media_value(db: AsyncSession, pokemon_id: int, form_in
     res = await db.execute(stmt)
     return res.scalar_one_or_none()
 
+async def get_all_custom_rarities(db: AsyncSession) -> dict:
+    from database.models import GlobalSetting
+    import json
+    stmt = select(GlobalSetting).where(GlobalSetting.key == "custom_rarities")
+    res = await db.execute(stmt)
+    setting = res.scalar_one_or_none()
+    if setting and setting.value:
+        try:
+            return json.loads(setting.value)
+        except Exception:
+            pass
+    return {}
+
 async def is_user_admin(message: Message) -> bool:
     """Helper to check if the user is a bot administrator or a group administrator."""
     # Global bot admins bypass checks
@@ -1107,15 +1120,8 @@ async def cmd_spawn(message: Message, db: AsyncSession):
 
         rarity_input = parts[1].strip()
         
-        # Load dynamic custom rarities
-        from utils.settings import global_settings_cache
-        import json
-        custom_rarities_str = global_settings_cache.get("custom_rarities", "{}")
-        custom_rarities = {}
-        try:
-            custom_rarities = json.loads(custom_rarities_str)
-        except Exception:
-            pass
+        # Load dynamic custom rarities from DB
+        custom_rarities = await get_all_custom_rarities(db)
 
         valid_rarities = {"Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical"}
         valid_rarities.update(custom_rarities.keys())
@@ -2106,15 +2112,8 @@ async def process_pokemon_addition(message: Message, db: AsyncSession):
         data["name"] = text
         data["step"] = "rarity"
         
-        # Load valid rarities
-        from utils.settings import global_settings_cache
-        import json
-        custom_rarities_str = global_settings_cache.get("custom_rarities", "{}")
-        custom_rarities = {}
-        try:
-            custom_rarities = json.loads(custom_rarities_str)
-        except Exception:
-            pass
+        # Load valid rarities from DB
+        custom_rarities = await get_all_custom_rarities(db)
         valid_rarities = ["Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical", "Limited", "Limited Edition"]
         valid_rarities.extend(custom_rarities.keys())
 
@@ -2127,14 +2126,8 @@ async def process_pokemon_addition(message: Message, db: AsyncSession):
     elif step == "rarity":
         text = message.text.strip() if message.text else ""
         
-        from utils.settings import global_settings_cache
-        import json
-        custom_rarities_str = global_settings_cache.get("custom_rarities", "{}")
-        custom_rarities = {}
-        try:
-            custom_rarities = json.loads(custom_rarities_str)
-        except Exception:
-            pass
+        # Load custom rarities from DB
+        custom_rarities = await get_all_custom_rarities(db)
         valid_rarities = {"Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical", "Limited", "Limited Edition"}
         valid_rarities.update(custom_rarities.keys())
 
@@ -2273,16 +2266,8 @@ async def cmd_add_pokemon(message: Message, db: AsyncSession):
             await message.answer("❌ Invalid Name format! Allowed characters are letters, numbers, hyphens -, underscores _, and parentheses ().")
             return
 
-        # Load custom rarities to validate
-        from utils.settings import global_settings_cache
-        import json
-        custom_rarities_str = global_settings_cache.get("custom_rarities", "{}")
-        custom_rarities = {}
-        try:
-            custom_rarities = json.loads(custom_rarities_str)
-        except Exception:
-            pass
-
+        # Load custom rarities from DB to validate
+        custom_rarities = await get_all_custom_rarities(db)
         valid_rarities = {"Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical", "Limited", "Limited Edition"}
         valid_rarities.update(custom_rarities.keys())
 

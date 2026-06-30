@@ -2203,8 +2203,9 @@ async def process_pokemon_addition(message: Message, db: AsyncSession):
 
     elif step == "name":
         text = message.text.strip().lower() if message.text else ""
-        if not text or not text.isalnum():
-            await message.answer("❌ Invalid Name! Please reply with an alphanumeric name (letters and numbers only, or type `/cancel`):")
+        import re
+        if not text or not re.match(r'^[a-zA-Z0-9_\-\(\)]+$', text):
+            await message.answer("❌ Invalid Name! Please reply with a valid name (letters, numbers, hyphens -, underscores _, and parentheses () allowed, or type `/cancel`):")
             return
         
         # Check existence
@@ -2371,6 +2372,11 @@ async def cmd_add_pokemon(message: Message, db: AsyncSession):
             video_url = parts[6].strip() if len(parts) >= 7 else None
         except ValueError:
             await message.answer("❌ Validation error: Check that ID and Generation are integers.")
+            return
+
+        import re
+        if not re.match(r'^[a-zA-Z0-9_\-\(\)]+$', name):
+            await message.answer("❌ Invalid Name format! Allowed characters are letters, numbers, hyphens -, underscores _, and parentheses ().")
             return
 
         # Load custom rarities to validate

@@ -78,10 +78,26 @@ class SpawnService:
             message_id = None
 
             # 5. Post spawn photo to the chat
+            spawn_photo = selected_pokemon.image_url
+            if is_shiny:
+                from database.models import PokemonFormMedia
+                s_media_stmt = select(PokemonFormMedia.media_value).where(
+                    PokemonFormMedia.pokemon_id == selected_pokemon.id,
+                    PokemonFormMedia.form_index == 6
+                )
+                s_media_res = await db.execute(s_media_stmt)
+                s_media = s_media_res.scalar_one_or_none()
+                if s_media:
+                    # Parse prefix
+                    from handlers.admin import parse_stored_media_value
+                    _, s_mval = parse_stored_media_value(s_media)
+                    if s_mval:
+                        spawn_photo = s_mval
+
             try:
                 msg = await bot.send_photo(
                     chat_id=chat_id,
-                    photo=selected_pokemon.image_url,
+                    photo=spawn_photo,
                     caption=caption,
                     reply_markup=hint_keyboard,
                     parse_mode="Markdown"

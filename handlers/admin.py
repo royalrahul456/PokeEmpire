@@ -630,7 +630,8 @@ async def cmd_gift_pokemon(message: Message, db: AsyncSession):
         2: "Dmax ",
         3: "Gmax ",
         4: "Z-Move ",
-        5: "Terastal "
+        5: "Terastal ",
+        6: "Shiny "
     }
     form_badge = form_names.get(form_index, f"Form {form_index} ")
     shiny_badge = "✨ Shiny " if is_shiny else ""
@@ -641,8 +642,15 @@ async def cmd_gift_pokemon(message: Message, db: AsyncSession):
     # Resolve media of the gifted Pokémon
     media_value = pokemon.image_url
     media_type = "photo"
-    if form_index > 0:
-        form_media = await get_single_form_media_value(db, pokemon.id, form_index)
+    
+    resolved_form = form_index
+    if is_shiny and form_index == 0:
+        form_media = await get_single_form_media_value(db, pokemon.id, 6)
+        if form_media:
+            resolved_form = 6
+
+    if resolved_form > 0:
+        form_media = await get_single_form_media_value(db, pokemon.id, resolved_form)
         if form_media:
             media_type, media_value = parse_stored_media_value(form_media)
     else:
@@ -1354,6 +1362,7 @@ async def cmd_set_poke_media(message: Message, db: AsyncSession):
     builder.button(text="💥 Gigantamax Gmax (6.3)", callback_data=f"setpm_3_{pokemon.id}_{message.from_user.id}")
     builder.button(text="🌀 Z-Move (6.4)", callback_data=f"setpm_4_{pokemon.id}_{message.from_user.id}")
     builder.button(text="🔮 Terastal (6.5)", callback_data=f"setpm_5_{pokemon.id}_{message.from_user.id}")
+    builder.button(text="✨ Shiny Form (6.6)", callback_data=f"setpm_6_{pokemon.id}_{message.from_user.id}")
     builder.adjust(2)
 
     await message.answer(
@@ -1384,7 +1393,8 @@ async def cb_set_poke_media_choice(callback: CallbackQuery):
         2: "Dynamax (Dmax)",
         3: "Gigantamax (Gmax)",
         4: "Z-Move",
-        5: "Terastal"
+        5: "Terastal",
+        6: "Shiny Form"
     }
     name = form_names.get(form_index, f"Form {form_index}")
 
@@ -1517,7 +1527,8 @@ async def get_media_list_text(db: AsyncSession) -> str:
         2: "Dmax",
         3: "Gmax",
         4: "Z-Move",
-        5: "Terastal"
+        5: "Terastal",
+        6: "Shiny"
     }
 
     poke_lines = []
@@ -1610,7 +1621,8 @@ async def post_media_update_to_channel(bot: Bot, pokemon: Pokemon, form_index: i
         2: "Dmax",
         3: "Gmax",
         4: "Z-Move",
-        5: "Terastal"
+        5: "Terastal",
+        6: "Shiny"
     }
     form_name = form_names.get(form_index, f"Form {form_index}")
 
@@ -2538,7 +2550,7 @@ async def cmd_sync_database(message: Message, db: AsyncSession):
         is_img = "✅" if media_type == "photo" else "❌"
         is_vid = "✅" if media_type in ["video", "animation"] else "❌"
 
-        form_names = {1: "AMV/Art", 2: "Dmax", 3: "Gmax", 4: "Z-Move", 5: "Terastal"}
+        form_names = {1: "AMV/Art", 2: "Dmax", 3: "Gmax", 4: "Z-Move", 5: "Terastal", 6: "Shiny"}
         rarity_label = form_names.get(pfm.form_index, f"Form {pfm.form_index}")
         if pfm.form_index == 1 and pfm.media_value.startswith("photo:"):
             rarity_label = "Art"

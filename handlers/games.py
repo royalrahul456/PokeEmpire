@@ -166,22 +166,38 @@ async def cmd_claim(message: Message, db: AsyncSession):
     media_value = None
     media_type = "photo"
     
-    form1_stmt = select(PokemonFormMedia.media_value).where(
-        PokemonFormMedia.pokemon_id == selected_pokemon.id,
-        PokemonFormMedia.form_index == 1
-    )
-    form1_res = await db.execute(form1_stmt)
-    form1_media = form1_res.scalar_one_or_none()
+    if is_shiny:
+        s_media_stmt = select(PokemonFormMedia.media_value).where(
+            PokemonFormMedia.pokemon_id == selected_pokemon.id,
+            PokemonFormMedia.form_index == 6
+        )
+        s_media_res = await db.execute(s_media_stmt)
+        s_media = s_media_res.scalar_one_or_none()
+        if s_media:
+            media_type, media_value = parse_stored_media_value(s_media)
+            form1_media = None
+        else:
+            form1_media = None
+    else:
+        form1_stmt = select(PokemonFormMedia.media_value).where(
+            PokemonFormMedia.pokemon_id == selected_pokemon.id,
+            PokemonFormMedia.form_index == 1
+        )
+        form1_res = await db.execute(form1_stmt)
+        form1_media = form1_res.scalar_one_or_none()
     
     if form1_media:
         media_type, media_value = parse_stored_media_value(form1_media)
-    else:
+    elif not is_shiny:
         if selected_pokemon.video_url:
             media_type = "video"
             media_value = selected_pokemon.video_url
         else:
             media_type = "photo"
             media_value = selected_pokemon.image_url
+    else:
+        media_type = "photo"
+        media_value = selected_pokemon.image_url
             
     from aiogram.types import FSInputFile
     if isinstance(media_value, str) and os.path.exists(media_value):

@@ -1793,7 +1793,8 @@ async def cmd_dex(message: Message, db: AsyncSession):
         2: "Dmax",
         3: "Gmax",
         4: "Z-Move",
-        5: "Terastal"
+        5: "Terastal",
+        6: "Shiny"
     }
     form_badges = {
         0: "📸",
@@ -1801,7 +1802,8 @@ async def cmd_dex(message: Message, db: AsyncSession):
         2: "⚡",
         3: "💥",
         4: "🌀",
-        5: "🔮"
+        5: "🔮",
+        6: "✨"
     }
     
     subtypes_text = ""
@@ -1879,8 +1881,42 @@ async def cb_dex_play(callback: CallbackQuery, db: AsyncSession):
     media_type = "photo"
     
     if form_index == 0:
-        media_value = pokemon.image_url
-        media_type = "photo"
+        shiny_stmt = select(UserPokemon.id).where(
+            UserPokemon.user_id == user_id,
+            UserPokemon.pokemon_id == pokemon_id,
+            UserPokemon.is_shiny == True
+        ).limit(1)
+        shiny_res = await db.execute(shiny_stmt)
+        has_shiny = shiny_res.scalar() is not None
+        
+        form_media = None
+        if has_shiny:
+            s_media_stmt = select(PokemonFormMedia).where(
+                PokemonFormMedia.pokemon_id == pokemon_id,
+                PokemonFormMedia.form_index == 6
+            )
+            s_res = await db.execute(s_media_stmt)
+            form_media = s_res.scalar_one_or_none()
+            
+        if form_media:
+            media_value = form_media.media_value
+            if media_value.startswith("video:"):
+                media_type = "video"
+                media_value = media_value.replace("video:", "")
+            elif media_value.startswith("photo:"):
+                media_type = "photo"
+                media_value = media_value.replace("photo:", "")
+            elif media_value.startswith("animation:"):
+                media_type = "animation"
+                media_value = media_value.replace("animation:", "")
+            else:
+                if media_value.startswith("http"):
+                    media_type = "photo"
+                else:
+                    media_type = "video"
+        else:
+            media_value = pokemon.image_url
+            media_type = "photo"
     else:
         media_stmt = select(PokemonFormMedia).where(
             PokemonFormMedia.pokemon_id == pokemon_id,

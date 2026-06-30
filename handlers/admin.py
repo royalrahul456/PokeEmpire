@@ -34,18 +34,7 @@ async def get_single_form_media_value(db: AsyncSession, pokemon_id: int, form_in
     res = await db.execute(stmt)
     return res.scalar_one_or_none()
 
-async def get_all_custom_rarities(db: AsyncSession) -> dict:
-    from database.models import GlobalSetting
-    import json
-    stmt = select(GlobalSetting).where(GlobalSetting.key == "custom_rarities")
-    res = await db.execute(stmt)
-    setting = res.scalar_one_or_none()
-    if setting and setting.value:
-        try:
-            return json.loads(setting.value)
-        except Exception:
-            pass
-    return {}
+from utils.settings import get_all_custom_rarities, get_custom_rarity_forms
 
 async def is_user_admin(message: Message) -> bool:
     """Helper to check if the user is a bot administrator or a group administrator."""
@@ -1343,6 +1332,7 @@ async def cmd_set_poke_media(message: Message, db: AsyncSession):
     # If they typed the dot index directly (e.g. /setpokemedia 6.2)
     if "." in parts[1]:
         active_poke_media_updates[message.from_user.id] = (pokemon.id, form_index)
+        custom_forms = await get_custom_rarity_forms(db)
         form_names = {
             0: "Standard Photo",
             1: "AMV / Art",
@@ -1351,6 +1341,9 @@ async def cmd_set_poke_media(message: Message, db: AsyncSession):
             4: "Z-Move",
             5: "Terastal"
         }
+        for f_idx, (r_name, r_emoji) in custom_forms.items():
+            form_names[f_idx] = f"{r_emoji} {r_name} Form"
+            
         name = form_names.get(form_index, f"Form {form_index}")
         await message.answer(
             f"📥 <b>Ready to update {name} media for {pokemon.name.title()}!</b>\n\n"
@@ -1367,7 +1360,11 @@ async def cmd_set_poke_media(message: Message, db: AsyncSession):
     builder.button(text="💥 Gigantamax Gmax (6.3)", callback_data=f"setpm_3_{pokemon.id}_{message.from_user.id}")
     builder.button(text="🌀 Z-Move (6.4)", callback_data=f"setpm_4_{pokemon.id}_{message.from_user.id}")
     builder.button(text="🔮 Terastal (6.5)", callback_data=f"setpm_5_{pokemon.id}_{message.from_user.id}")
-    builder.button(text="✨ Shiny Form (6.6)", callback_data=f"setpm_6_{pokemon.id}_{message.from_user.id}")
+    
+    custom_forms = await get_custom_rarity_forms(db)
+    for f_idx, (r_name, r_emoji) in custom_forms.items():
+        builder.button(text=f"{r_emoji} {r_name} Form (6.{f_idx})", callback_data=f"setpm_{f_idx}_{pokemon.id}_{message.from_user.id}")
+        
     builder.adjust(2)
 
     await message.answer(
@@ -1379,7 +1376,7 @@ async def cmd_set_poke_media(message: Message, db: AsyncSession):
 
 
 @router.callback_query(F.data.startswith("setpm_"))
-async def cb_set_poke_media_choice(callback: CallbackQuery):
+async def cb_set_poke_media_choice(callback: CallbackQuery, db: AsyncSession):
     parts = callback.data.split("_")
     # Structure: setpm_<form_index>_<pokemon_id>_<owner_id>
     form_index = int(parts[1])
@@ -1392,15 +1389,18 @@ async def cb_set_poke_media_choice(callback: CallbackQuery):
 
     active_poke_media_updates[owner_id] = (pokemon_id, form_index)
 
+    custom_forms = await get_custom_rarity_forms(db)
     form_names = {
         0: "Standard Photo",
         1: "AMV / Art",
         2: "Dynamax (Dmax)",
         3: "Gigantamax (Gmax)",
         4: "Z-Move",
-        5: "Terastal",
-        6: "Shiny Form"
+        5: "Terastal"
     }
+    for f_idx, (r_name, r_emoji) in custom_forms.items():
+        form_names[f_idx] = f"{r_emoji} {r_name} Form"
+        
     name = form_names.get(form_index, f"Form {form_index}")
 
     await callback.message.edit_text(

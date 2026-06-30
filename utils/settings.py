@@ -222,3 +222,44 @@ async def send_cover_media(chat_id: int, key: str, caption: str, reply_markup, b
     except Exception as e:
         print(f"Error sending cover media: {e}. Falling back to default message...")
         return await bot.send_message(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
+
+
+async def get_all_custom_rarities(db) -> dict:
+    from database.models import GlobalSetting
+    import json
+    stmt = select(GlobalSetting).where(GlobalSetting.key == "custom_rarities")
+    res = await db.execute(stmt)
+    setting = res.scalar_one_or_none()
+    if setting and setting.value:
+        try:
+            return json.loads(setting.value)
+        except Exception:
+            pass
+    return {}
+
+async def get_custom_rarity_forms(db) -> dict[int, tuple[str, str]]:
+    custom_rarities = await get_all_custom_rarities(db)
+    standard = {"Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical", "Limited", "Limited Edition"}
+    custom_list = [r for r in custom_rarities.keys() if r not in standard]
+    
+    mapping = {}
+    
+    shiny_name = None
+    for r in custom_list:
+        if r.lower() == "shiny":
+            shiny_name = r
+            break
+            
+    if shiny_name:
+        mapping[6] = (shiny_name, custom_rarities[shiny_name])
+    else:
+        mapping[6] = ("Shiny", "✨")
+        
+    next_idx = 7
+    for r in custom_list:
+        if r.lower() == "shiny":
+            continue
+        mapping[next_idx] = (r, custom_rarities[r])
+        next_idx += 1
+        
+    return mapping

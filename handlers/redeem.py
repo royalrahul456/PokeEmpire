@@ -11,6 +11,7 @@ from sqlalchemy import select, func
 import config
 from database.models import User, Pokemon, UserPokemon, RedeemCode, RedeemClaim
 from utils.formatters import escape_md, get_progress_bar, get_rarity_emoji
+from utils.settings import get_custom_rarity_forms
 
 router = Router()
 redeem_process_lock = asyncio.Lock()
@@ -133,6 +134,7 @@ async def cmd_create_redeem(message: Message, db: AsyncSession):
     db.add(new_code)
     await db.commit()
     
+    custom_forms = await get_custom_rarity_forms(db)
     form_names = {
         0: "",
         1: "AMV ",
@@ -141,6 +143,8 @@ async def cmd_create_redeem(message: Message, db: AsyncSession):
         4: "Z-Move ",
         5: "Terastal "
     }
+    for f_idx, (r_name, r_emoji) in custom_forms.items():
+        form_names[f_idx] = f"{r_name} "
     form_badge = form_names.get(form_index, f"Form {form_index} ")
     shiny_tag = "✨ Shiny " if is_shiny else ""
     r_emoji = get_rarity_emoji(pokemon.rarity)
@@ -272,6 +276,7 @@ async def cmd_redeem(message: Message, db: AsyncSession):
                 db.add(new_poke)
                 await db.commit()
                 
+                custom_forms = await get_custom_rarity_forms(db)
                 form_names = {
                     0: "",
                     1: "AMV ",
@@ -280,6 +285,8 @@ async def cmd_redeem(message: Message, db: AsyncSession):
                     4: "Z-Move ",
                     5: "Terastal "
                 }
+                for f_idx, (r_name, r_emoji) in custom_forms.items():
+                    form_names[f_idx] = f"{r_name} "
                 form_badge = form_names.get(form_index, f"Form {form_index} ")
                 shiny_badge = "✨ Shiny " if code.reward_is_shiny else ""
                 serial_str = f"\n🎫 <b>Serial Number:</b> <code>{serial_number}</code>" if serial_number else ""

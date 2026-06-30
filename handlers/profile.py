@@ -10,7 +10,7 @@ from sqlalchemy.orm import joinedload
 from database.models import User, UserPokemon, Pokemon
 from utils.formatters import get_hp_bar, get_progress_bar, get_rarity_emoji, escape_md
 from utils.favorite import get_favorite_id, set_favorite_id
-from utils.settings import send_cover_media, get_custom_cover
+from utils.settings import send_cover_media, get_custom_cover, get_custom_rarity_forms
 
 router = Router()
 
@@ -1876,14 +1876,14 @@ async def cmd_dex(message: Message, db: AsyncSession):
     configured_media = {row[0]: row[1] for row in media_res.all()}
     
     # 5. Build Subtype Status list
+    custom_forms = await get_custom_rarity_forms(db)
     form_names = {
         0: "Standard",
         1: "AMV/Art",
         2: "Dmax",
         3: "Gmax",
         4: "Z-Move",
-        5: "Terastal",
-        6: "Shiny"
+        5: "Terastal"
     }
     form_badges = {
         0: "📸",
@@ -1891,9 +1891,11 @@ async def cmd_dex(message: Message, db: AsyncSession):
         2: "⚡",
         3: "💥",
         4: "🌀",
-        5: "🔮",
-        6: "✨"
+        5: "🔮"
     }
+    for f_idx, (r_name, r_emoji) in custom_forms.items():
+        form_names[f_idx] = r_name
+        form_badges[f_idx] = r_emoji
     
     subtypes_text = ""
     # We will list Form 0, and any other forms that are configured.
@@ -2090,6 +2092,7 @@ async def cb_dex_back(callback: CallbackQuery, db: AsyncSession):
     media_res = await db.execute(media_stmt)
     configured_media = {row[0]: row[1] for row in media_res.all()}
     
+    custom_forms = await get_custom_rarity_forms(db)
     form_names = {
         0: "Standard",
         1: "AMV/Art",
@@ -2106,6 +2109,9 @@ async def cb_dex_back(callback: CallbackQuery, db: AsyncSession):
         4: "🌀",
         5: "🔮"
     }
+    for f_idx, (r_name, r_emoji) in custom_forms.items():
+        form_names[f_idx] = r_name
+        form_badges[f_idx] = r_emoji
     
     subtypes_text = ""
     available_forms = [0] + sorted([f for f in configured_media.keys() if f > 0])

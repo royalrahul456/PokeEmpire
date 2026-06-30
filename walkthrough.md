@@ -87,6 +87,17 @@ This document summarizes the changes, additions, and layout refinements complete
   - `🔮` (Crystal Ball): mapped contextually to Terastal Form (`5244955049024581265`) or Epic Rarity (`5271810272640643747`).
 - **Buttons Compatibility**: Strictly targets text and caption fields to ensure inline keyboard/reply buttons are not broken, as Telegram button texts do not support HTML parse mode.
 
+### 11. Custom Rarities, Database Channel & Spawn Abuse Fixes
+- **Dynamic Rarity System (`/addrarity`)**: Added `/addrarity <RarityName> <Emoji>` command allowing Bot Owners to configure new custom rarity tiers dynamically. Custom rarities are stored inside database `GlobalSetting` and updated instantly in the memory cache. All active uploaders are notified in private DM upon creation.
+- **Dynamic Rarity Emoji Resolving**: Updated `get_rarity_emoji` formatting function to dynamically load and resolve custom rarity emojis on the fly.
+- **New Pokémon Registration (`/addpokemon`)**: Added `/addpokemon <id> <name> <rarity> <generation> <image_url> [video_url]` to register a new Pokémon directly in the database. Successful registrations automatically post a styled announcement to the database channel.
+- **Database Channel Synchronization (`/syncdatabase`)**: Added `/syncdatabase` (alias `/syncdb`) command to synchronize all existing/old database Pokémon entries and custom form media files to `@pokeempiredatabase` with rate-limiting controls.
+- **Database Channel & Live Directory Chart (`@pokeempiredatabase`)**:
+  - Automatically posts announcements to the database channel when custom media (Art/AMV/etc.) is uploaded via `/setpokemedia` or the callback console.
+  - Automatically compiles and updates a pinned dynamic summary chart (Directory list) of all configured Pokémon and forms, chunking into multiple messages if the text exceeds 4,000 characters.
+- **Manual Spawn Restrictions (`/spawn`)**: Restricted manual spawn rarity selection (e.g. `/spawn Legendary`) strictly to Bot Owners/Admins (`config.ADMIN_IDS`). General group chat administrators can trigger standard random spawns but are blocked from choosing specific rarities to prevent exploit abuse.
+- **Panel UI Fix**: Imported the missing `InlineKeyboardButton` class inside `handlers/admin.py` to resolve the `NameError` causing the `/panel` button callbacks and commands to fail silently.
+
 ---
 
 ## Verification & Testing

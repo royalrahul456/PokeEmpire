@@ -2158,6 +2158,201 @@ async def cmd_add_rarity(message: Message, db: AsyncSession):
     )
 
 
+active_pokemon_additions = {}
+
+@router.message(Command("cancel"))
+async def cmd_cancel_addition(message: Message):
+    if not message.from_user:
+        return
+    user_id = message.from_user.id
+    if user_id in active_pokemon_additions:
+        active_pokemon_additions.pop(user_id, None)
+        await message.answer("❌ Pokémon registration cancelled.")
+    else:
+        await message.answer("❌ No active registration flow to cancel.")
+
+
+@router.message(F.chat.type == "private", F.from_user.id.in_(config.ADMIN_IDS), lambda msg: msg.from_user and msg.from_user.id in active_pokemon_additions)
+async def process_pokemon_addition(message: Message, db: AsyncSession):
+    user_id = message.from_user.id
+    data = active_pokemon_additions[user_id]
+    step = data.get("step")
+
+    if step == "id":
+        text = message.text.strip() if message.text else ""
+        if not text.isdigit():
+            await message.answer("❌ Invalid ID! Please reply with a valid integer ID (or type `/cancel`):")
+            return
+        poke_id = int(text)
+        
+        # Check existence
+        from database.models import Pokemon
+        stmt = select(Pokemon).where(Pokemon.id == poke_id)
+        res = await db.execute(stmt)
+        if res.scalar_one_or_none():
+            await message.answer(f"❌ A Pokémon with ID {poke_id} already exists! Please send a different ID (or type `/cancel`):")
+            return
+        
+        data["id"] = poke_id
+        data["step"] = "name"
+        await message.answer(
+            "📥 <b>[2/5] Register New Pokémon</b>\n"
+            "Please reply with the <b>Pokémon Name</b> (lowercase, e.g. <code>chikorita</code>):",
+            parse_mode="HTML"
+        )
+
+    elif step == "name":
+        text = message.text.strip().lower() if message.text else ""
+        if not text or not text.isalnum():
+            await message.answer("❌ Invalid Name! Please reply with an alphanumeric name (letters and numbers only, or type `/cancel`):")
+            return
+        
+        # Check existence
+        from database.models import Pokemon
+        stmt = select(Pokemon).where(Pokemon.name == text)
+        res = await db.execute(stmt)
+        if res.scalar_one_or_none():
+            await message.answer(f"❌ A Pokémon named '{text}' already exists! Please send a different name (or type `/cancel`):")
+            return
+
+        data["name"] = text
+        data["step"] = "rarity"
+        
+        # Load valid rarities
+        from utils.settings import global_settings_cache
+        import json
+        custom_rarities_str = global_settings_cache.get("custom_rarities", "{}")
+        custom_rarities = {}
+        try:
+            custom_rarities = json.loads(custom_rarities_str)
+        except Exception:
+            pass
+        valid_rarities = ["Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical", "Limited", "Limited Edition"]
+        valid_rarities.extend(custom_rarities.keys())
+
+        await message.answer(
+            f"📥 <b>[3/5] Register New Pokémon</b>\n"
+            f"Please reply with the <b>Rarity</b> (e.g. <code>{', '.join(valid_rarities[:5])}</code>, or custom one):",
+            parse_mode="HTML"
+        )
+
+    elif step == "rarity":
+        text = message.text.strip() if message.text else ""
+        
+        from utils.settings import global_settings_cache
+        import json
+        custom_rarities_str = global_settings_cache.get("custom_rarities", "{}")
+        custom_rarities = {}
+        try:
+            custom_rarities = json.loads(custom_rarities_str)
+        except Exception:
+            pass
+        valid_rarities = {"Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical", "Limited", "Limited Edition"}
+        valid_rarities.update(custom_rarities.keys())
+
+        matching_rarity = None
+        for r in valid_rarities:
+            if r.lower() == text.lower():
+                matching_rarity = r
+                break
+
+        if not matching_rarity:
+            await message.answer(f"❌ Invalid rarity! Choose from: {', '.join(valid_rarities)} (or type `/cancel`):")
+            return
+
+        data["rarity"] = matching_rarity
+        data["step"] = "generation"
+        await message.answer(
+            "📥 <b>[4/5] Register New Pokémon</b>\n"
+            "Please reply with the <b>Generation</b> index (1 to 9):",
+            parse_mode="HTML"
+        )
+
+    elif step == "generation":
+        text = message.text.strip() if message.text else ""
+        if not text.isdigit() or not (1 <= int(text) <= 9):
+            await message.answer("❌ Invalid Generation! Please reply with an integer between 1 and 9 (or type `/cancel`):")
+            return
+        
+        data["generation"] = int(text)
+        data["step"] = "pic"
+        await message.answer(
+            "📥 <b>[5/5] Register New Pokémon</b>\n"
+            "📸 <b>Please send/upload the Pokémon picture!</b> (Attach a photo, image, or video file):",
+            parse_mode="HTML"
+        )
+
+    elif step == "pic":
+        file_id = None
+        video_url = None
+        
+        if message.photo:
+            file_id = message.photo[-1].file_id
+        elif message.document and message.document.mime_type and message.document.mime_type.startswith("image/"):
+            file_id = message.document.file_id
+        elif message.video:
+            video_url = message.video.file_id
+            file_id = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/1.png"
+        elif message.animation:
+            video_url = message.animation.file_id
+            file_id = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/1.png"
+        else:
+            await message.answer("❌ Please upload/send an actual photo, video, or document file (or type `/cancel`):")
+            return
+
+        pokemon_id = data["id"]
+        name = data["name"]
+        rarity = data["rarity"]
+        generation = data["generation"]
+        image_url = file_id
+
+        # Clean state
+        active_pokemon_additions.pop(user_id, None)
+
+        from database.models import Pokemon
+        pokemon = Pokemon(
+            id=pokemon_id,
+            name=name,
+            rarity=rarity,
+            generation=generation,
+            image_url=image_url,
+            video_url=video_url
+        )
+        db.add(pokemon)
+        await db.commit()
+
+        # Post announcement to DATABASE_CHANNEL
+        r_emoji = get_rarity_emoji(rarity)
+        caption = (
+            f"✨ <b>NEW POKÉMON REGISTERED!</b>\n\n"
+            f"<blockquote>🆔 <b>ID</b>: #{pokemon_id:03d}\n"
+            f"📛 <b>Name</b>: {name.title()}\n"
+            f"📺 <b>Generation</b>: Gen {generation}\n"
+            f"💎 <b>Rarity</b>: {r_emoji} {rarity}\n"
+            f"👤 <b>Added By</b>: {message.from_user.first_name if message.from_user else 'Creator'}</blockquote>"
+        )
+
+        try:
+            if video_url:
+                await message.bot.send_video(chat_id=config.DATABASE_CHANNEL, video=video_url, caption=caption, parse_mode="HTML")
+            else:
+                await message.bot.send_photo(chat_id=config.DATABASE_CHANNEL, photo=image_url, caption=caption, parse_mode="HTML")
+        except Exception as channel_err:
+            print(f"⚠️ Failed to post new pokemon announcement to DATABASE_CHANNEL: {channel_err}")
+
+        # Update dynamic list chart
+        await update_database_channel_chart(message.bot, db)
+
+        await message.answer(
+            f"✅ <b>POKÉMON ADDED SUCCESSFULLY</b>\n"
+            f"───────────────\n"
+            f"• 👾 Pokémon: <b>{name.title()}</b> (ID: #{pokemon_id})\n"
+            f"• 💎 Rarity: {r_emoji} <b>{rarity}</b>\n\n"
+            f"Registered and announced to database channel.",
+            parse_mode="HTML"
+        )
+
+
 @router.message(Command("addpokemon", "newpokemon"))
 async def cmd_add_pokemon(message: Message, db: AsyncSession):
     if not message.from_user or message.from_user.id not in config.ADMIN_IDS:
@@ -2165,101 +2360,104 @@ async def cmd_add_pokemon(message: Message, db: AsyncSession):
         return
 
     parts = message.text.split()
-    if len(parts) < 6:
+    if len(parts) >= 6:
+        # Command line fast path
+        try:
+            pokemon_id = int(parts[1])
+            name = parts[2].strip().lower()
+            rarity_input = parts[3].strip()
+            generation = int(parts[4])
+            image_url = parts[5].strip()
+            video_url = parts[6].strip() if len(parts) >= 7 else None
+        except ValueError:
+            await message.answer("❌ Validation error: Check that ID and Generation are integers.")
+            return
+
+        # Load custom rarities to validate
+        from utils.settings import global_settings_cache
+        import json
+        custom_rarities_str = global_settings_cache.get("custom_rarities", "{}")
+        custom_rarities = {}
+        try:
+            custom_rarities = json.loads(custom_rarities_str)
+        except Exception:
+            pass
+
+        valid_rarities = {"Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical", "Limited", "Limited Edition"}
+        valid_rarities.update(custom_rarities.keys())
+
+        matching_rarity = None
+        for r in valid_rarities:
+            if r.lower() == rarity_input.lower():
+                matching_rarity = r
+                break
+
+        if not matching_rarity:
+            await message.answer(f"❌ Invalid rarity '{rarity_input}'. Choose from: {', '.join(valid_rarities)}")
+            return
+
+        from database.models import Pokemon
+
+        # Check existence
+        stmt = select(Pokemon).where((Pokemon.id == pokemon_id) | (Pokemon.name == name))
+        res = await db.execute(stmt)
+        if res.scalar_one_or_none():
+            await message.answer(f"❌ A Pokémon with ID {pokemon_id} or Name '{name}' already exists.")
+            return
+
+        pokemon = Pokemon(
+            id=pokemon_id,
+            name=name,
+            rarity=matching_rarity,
+            generation=generation,
+            image_url=image_url,
+            video_url=video_url
+        )
+        db.add(pokemon)
+        await db.commit()
+
+        # Post announcement to DATABASE_CHANNEL
+        r_emoji = get_rarity_emoji(matching_rarity)
+        caption = (
+            f"✨ <b>NEW POKÉMON REGISTERED!</b>\n\n"
+            f"<blockquote>🆔 <b>ID</b>: #{pokemon_id:03d}\n"
+            f"📛 <b>Name</b>: {name.title()}\n"
+            f"📺 <b>Generation</b>: Gen {generation}\n"
+            f"💎 <b>Rarity</b>: {r_emoji} {matching_rarity}\n"
+            f"👤 <b>Added By</b>: {message.from_user.first_name if message.from_user else 'Creator'}</blockquote>"
+        )
+
+        try:
+            if video_url:
+                await message.bot.send_video(chat_id=config.DATABASE_CHANNEL, video=video_url, caption=caption, parse_mode="HTML")
+            else:
+                await message.bot.send_photo(chat_id=config.DATABASE_CHANNEL, photo=image_url, caption=caption, parse_mode="HTML")
+        except Exception as channel_err:
+            print(f"⚠️ Failed to post new pokemon announcement to DATABASE_CHANNEL: {channel_err}")
+
+        # Update dynamic list chart
+        await update_database_channel_chart(message.bot, db)
+
         await message.answer(
-            "⚠️ <b>Usage:</b>\n"
-            "<code>/addpokemon &lt;id&gt; &lt;name&gt; &lt;rarity&gt; &lt;generation&gt; &lt;image_url&gt; [video_url]</code>\n\n"
-            "Format requirements:\n"
-            "• id: Integer ID (e.g. <code>152</code>)\n"
-            "• name: Lowercase Pokémon name (e.g. <code>chikorita</code>)\n"
-            "• rarity: Standard or dynamic custom rarity (e.g. <code>Common</code>, <code>Divine</code>)\n"
-            "• generation: Generation index (1 to 9)\n"
-            "• image_url: Artwork URL or file_id",
+            f"✅ <b>POKÉMON ADDED SUCCESSFULLY</b>\n"
+            f"───────────────\n"
+            f"• 👾 Pokémon: <b>{name.title()}</b> (ID: #{pokemon_id})\n"
+            f"• 💎 Rarity: {r_emoji} <b>{matching_rarity}</b>\n\n"
+            f"Registered and announced to database channel.",
             parse_mode="HTML"
         )
-        return
+    else:
+        # Interactive flow
+        if message.chat.type != "private":
+            await message.answer("⚠️ Interactive Pokémon registration is only supported in private DM with the bot. Please start the flow there!")
+            return
 
-    try:
-        pokemon_id = int(parts[1])
-        name = parts[2].strip().lower()
-        rarity_input = parts[3].strip()
-        generation = int(parts[4])
-        image_url = parts[5].strip()
-        video_url = parts[6].strip() if len(parts) >= 7 else None
-    except ValueError:
-        await message.answer("❌ Validation error: Check that ID and Generation are integers.")
-        return
-
-    # Load custom rarities to validate
-    from utils.settings import global_settings_cache
-    import json
-    custom_rarities_str = global_settings_cache.get("custom_rarities", "{}")
-    custom_rarities = {}
-    try:
-        custom_rarities = json.loads(custom_rarities_str)
-    except Exception:
-        pass
-
-    valid_rarities = {"Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical", "Limited", "Limited Edition"}
-    valid_rarities.update(custom_rarities.keys())
-
-    matching_rarity = None
-    for r in valid_rarities:
-        if r.lower() == rarity_input.lower():
-            matching_rarity = r
-            break
-
-    if not matching_rarity:
-        await message.answer(f"❌ Invalid rarity '{rarity_input}'. Choose from: {', '.join(valid_rarities)}")
-        return
-
-    from database.models import Pokemon
-
-    # Check existence
-    stmt = select(Pokemon).where((Pokemon.id == pokemon_id) | (Pokemon.name == name))
-    res = await db.execute(stmt)
-    if res.scalar_one_or_none():
-        await message.answer(f"❌ A Pokémon with ID {pokemon_id} or Name '{name}' already exists.")
-        return
-
-    pokemon = Pokemon(
-        id=pokemon_id,
-        name=name,
-        rarity=matching_rarity,
-        generation=generation,
-        image_url=image_url,
-        video_url=video_url
-    )
-    db.add(pokemon)
-    await db.commit()
-
-    # Post announcement to DATABASE_CHANNEL
-    r_emoji = get_rarity_emoji(matching_rarity)
-    caption = (
-        f"✨ <b>NEW POKÉMON REGISTERED!</b>\n\n"
-        f"<blockquote>🆔 <b>ID</b>: #{pokemon_id:03d}\n"
-        f"📛 <b>Name</b>: {name.title()}\n"
-        f"📺 <b>Generation</b>: Gen {generation}\n"
-        f"💎 <b>Rarity</b>: {r_emoji} {matching_rarity}\n"
-        f"👤 <b>Added By</b>: {message.from_user.first_name if message.from_user else 'Creator'}</blockquote>"
-    )
-
-    try:
-        if video_url:
-            await message.bot.send_video(chat_id=config.DATABASE_CHANNEL, video=video_url, caption=caption, parse_mode="HTML")
-        else:
-            await message.bot.send_photo(chat_id=config.DATABASE_CHANNEL, photo=image_url, caption=caption, parse_mode="HTML")
-    except Exception as channel_err:
-        print(f"⚠️ Failed to post new pokemon announcement to DATABASE_CHANNEL: {channel_err}")
-
-    await message.answer(
-        f"✅ <b>POKÉMON ADDED SUCCESSFULLY</b>\n"
-        f"───────────────\n"
-        f"• 👾 Pokémon: <b>{name.title()}</b> (ID: #{pokemon_id})\n"
-        f"• 💎 Rarity: {r_emoji} <b>{matching_rarity}</b>\n\n"
-        f"Registered and announced to database channel.",
-        parse_mode="HTML"
-    )
+        active_pokemon_additions[message.from_user.id] = {"step": "id"}
+        await message.answer(
+            "📥 <b>[1/5] Register New Pokémon</b>\n"
+            "Please reply with the <b>Pokémon ID</b> (e.g. <code>152</code>):",
+            parse_mode="HTML"
+        )
 
 
 @router.message(Command("syncdatabase", "syncdb"))

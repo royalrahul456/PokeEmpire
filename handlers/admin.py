@@ -2334,7 +2334,7 @@ async def process_pokemon_addition(message: Message, db: AsyncSession):
         db.add(pokemon)
         await db.commit()
 
-        # Post announcement to DATABASE_CHANNEL
+        # Post announcement to channels
         r_emoji = get_rarity_emoji(rarity)
         caption = (
             f"✨ <b>NEW POKÉMON REGISTERED!</b>\n\n"
@@ -2352,6 +2352,14 @@ async def process_pokemon_addition(message: Message, db: AsyncSession):
                 await message.bot.send_photo(chat_id=config.DATABASE_CHANNEL, photo=image_url, caption=caption, parse_mode="HTML")
         except Exception as channel_err:
             print(f"⚠️ Failed to post new pokemon announcement to DATABASE_CHANNEL: {channel_err}")
+
+        try:
+            if video_url:
+                await message.bot.send_video(chat_id=config.UPDATES_CHANNEL, video=video_url, caption=caption, parse_mode="HTML")
+            else:
+                await message.bot.send_photo(chat_id=config.UPDATES_CHANNEL, photo=image_url, caption=caption, parse_mode="HTML")
+        except Exception as channel_err:
+            print(f"⚠️ Failed to post new pokemon announcement to UPDATES_CHANNEL: {channel_err}")
 
         # Update dynamic list chart
         await update_database_channel_chart(message.bot, db)
@@ -2434,7 +2442,7 @@ async def cmd_add_pokemon(message: Message, db: AsyncSession):
         db.add(pokemon)
         await db.commit()
 
-        # Post announcement to DATABASE_CHANNEL
+        # Post announcement to channels
         r_emoji = get_rarity_emoji(matching_rarity)
         caption = (
             f"✨ <b>NEW POKÉMON REGISTERED!</b>\n\n"
@@ -2452,6 +2460,14 @@ async def cmd_add_pokemon(message: Message, db: AsyncSession):
                 await message.bot.send_photo(chat_id=config.DATABASE_CHANNEL, photo=image_url, caption=caption, parse_mode="HTML")
         except Exception as channel_err:
             print(f"⚠️ Failed to post new pokemon announcement to DATABASE_CHANNEL: {channel_err}")
+
+        try:
+            if video_url:
+                await message.bot.send_video(chat_id=config.UPDATES_CHANNEL, video=video_url, caption=caption, parse_mode="HTML")
+            else:
+                await message.bot.send_photo(chat_id=config.UPDATES_CHANNEL, photo=image_url, caption=caption, parse_mode="HTML")
+        except Exception as channel_err:
+            print(f"⚠️ Failed to post new pokemon announcement to UPDATES_CHANNEL: {channel_err}")
 
         # Update dynamic list chart
         await update_database_channel_chart(message.bot, db)

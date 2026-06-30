@@ -420,10 +420,11 @@ async def cmd_profile(message: Message, db: AsyncSession):
         for r_name, r_emoji in custom_rarities.items():
             if r_name in ["Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical"]:
                 continue
+            if r_name.lower() in ["shiny", "galar"]:
+                continue
             cnt = rarity_counts.get(r_name, 0)
             breakdown_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
             
-        breakdown_lines.append(f"├─➩ ✨ Shiny: {total_shiny}")
         rarity_breakdown_text = "\n".join(breakdown_lines)
 
         # Count form-based (AMV/Art=1, Dmax=2, Gmax=3, Z-Move=4, Terastal=5)
@@ -437,6 +438,22 @@ async def cmd_profile(message: Message, db: AsyncSession):
         gmax_count = form_counts.get(3, 0)
         zmove_count = form_counts.get(4, 0)
         terastal_count = form_counts.get(5, 0)
+
+        # Form-based custom rarity extensions (Shiny and Galar)
+        shiny_emoji = custom_rarities.get("Shiny", "✨")
+        galar_emoji = custom_rarities.get("Galar", "❄️")
+        shiny_cnt = rarity_counts.get("Shiny", 0)
+        galar_cnt = rarity_counts.get("Galar", 0)
+
+        forms_breakdown_text = (
+            f"├─➩ 🎬 AMV / Art: {amv_count}\n"
+            f"├─➩ ⚡ Dmax: {dmax_count}\n"
+            f"├─➩ 💥 Gmax: {gmax_count}\n"
+            f"├─➩ 🌀 Z-Move: {zmove_count}\n"
+            f"├─➩ 🔮 Terastal: {terastal_count}\n"
+            f"├─➩ {shiny_emoji} Shiny: {shiny_cnt}\n"
+            f"├─➩ {galar_emoji} Galar: {galar_cnt}"
+        )
 
         # Formatted coins
         formatted_coins = f"{user.coins:,}"
@@ -501,11 +518,7 @@ async def cmd_profile(message: Message, db: AsyncSession):
             f"{rarity_breakdown_text}\n"
             f"╰───────────────────\n\n"
             f"╭─ Forms Breakdown ─\n"
-            f"├─➩ 🎬 AMV / Art: {amv_count}\n"
-            f"├─➩ ⚡ Dmax: {dmax_count}\n"
-            f"├─➩ 💥 Gmax: {gmax_count}\n"
-            f"├─➩ 🌀 Z-Move: {zmove_count}\n"
-            f"├─➩ 🔮 Terastal: {terastal_count}\n"
+            f"{forms_breakdown_text}\n"
             f"╰───────────────────\n\n"
             f"╭─ Global Rank ─\n"
             f"├─➩ 🏆 Position: #{rank_position}\n"
@@ -1694,10 +1707,11 @@ async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
         for r_name, r_emoji in custom_rarities.items():
             if r_name in ["Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical"]:
                 continue
+            if r_name.lower() in ["shiny", "galar"]:
+                continue
             cnt = rarity_counts.get(r_name, 0)
             breakdown_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
             
-        breakdown_lines.append(f"├─➩ ✨ Shiny: {total_shiny}")
         rarity_breakdown_text = "\n".join(breakdown_lines)
 
         # Count form-based (AMV/Art=1, Dmax=2, Gmax=3, Z-Move=4, Terastal=5)
@@ -1711,6 +1725,22 @@ async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
         gmax_count = form_counts.get(3, 0)
         zmove_count = form_counts.get(4, 0)
         terastal_count = form_counts.get(5, 0)
+
+        # Form-based custom rarity extensions (Shiny and Galar)
+        shiny_emoji = custom_rarities.get("Shiny", "✨")
+        galar_emoji = custom_rarities.get("Galar", "❄️")
+        shiny_cnt = rarity_counts.get("Shiny", 0)
+        galar_cnt = rarity_counts.get("Galar", 0)
+
+        forms_breakdown_text = (
+            f"├─➩ 🎬 AMV / Art: {amv_count}\n"
+            f"├─➩ ⚡ Dmax: {dmax_count}\n"
+            f"├─➩ 💥 Gmax: {gmax_count}\n"
+            f"├─➩ 🌀 Z-Move: {zmove_count}\n"
+            f"├─➩ 🔮 Terastal: {terastal_count}\n"
+            f"├─➩ {shiny_emoji} Shiny: {shiny_cnt}\n"
+            f"├─➩ {galar_emoji} Galar: {galar_cnt}"
+        )
 
         # Fetch User
         u_stmt = select(User).where(User.id == user_id)
@@ -1779,11 +1809,7 @@ async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
             f"{rarity_breakdown_text}\n"
             f"╰───────────────────\n\n"
             f"╭─ Forms Breakdown ─\n"
-            f"├─➩ 🎬 AMV / Art: {amv_count}\n"
-            f"├─➩ ⚡ Dmax: {dmax_count}\n"
-            f"├─➩ 💥 Gmax: {gmax_count}\n"
-            f"├─➩ 🌀 Z-Move: {zmove_count}\n"
-            f"├─➩ 🔮 Terastal: {terastal_count}\n"
+            f"{forms_breakdown_text}\n"
             f"╰───────────────────\n\n"
             f"╭─ Global Rank ─\n"
             f"├─➩ 🏆 Position: #{rank_position}\n"

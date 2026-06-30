@@ -24,7 +24,7 @@ def get_hp_bar(current: int, max_hp: int, length: int = 10) -> str:
         
     return f"`[{bar}]` {color_emoji} **{current}/{max_hp}**"
 
-def get_rarity_emoji(tier: str) -> str:
+def get_rarity_emoji(tier: str, custom_rarities: dict = None) -> str:
     """Returns a representative emoji for a rarity tier."""
     emojis = {
         # Standard rarities
@@ -47,14 +47,17 @@ def get_rarity_emoji(tier: str) -> str:
         "Erotic": "👠",
     }
     
-    # Try dynamic custom rarities from global cache
+    if custom_rarities and tier in custom_rarities:
+        return custom_rarities[tier]
+
+    # Try dynamic custom rarities from global cache as fallback
     try:
         from utils.settings import global_settings_cache
         import json
         custom_rarities_str = global_settings_cache.get("custom_rarities", "{}")
-        custom_rarities = json.loads(custom_rarities_str)
-        if tier in custom_rarities:
-            return custom_rarities[tier]
+        cached_custom = json.loads(custom_rarities_str)
+        if tier in cached_custom:
+            return cached_custom[tier]
     except Exception:
         pass
 

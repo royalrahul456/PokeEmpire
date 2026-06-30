@@ -402,29 +402,16 @@ async def cmd_profile(message: Message, db: AsyncSession):
             ("Mythical", "🌌")
         ]
         
-        # Load custom rarities
-        from utils.settings import global_settings_cache
-        import json
-        custom_rarities_str = global_settings_cache.get("custom_rarities", "{}")
-        custom_rarities = {}
-        try:
-            custom_rarities = json.loads(custom_rarities_str)
-        except Exception:
-            pass
+        # Load custom rarities from DB directly
+        from utils.settings import get_all_custom_rarities
+        custom_rarities = await get_all_custom_rarities(db)
 
         breakdown_lines = []
         for r_name, r_emoji in standard_breakdown:
             cnt = rarity_counts.get(r_name, 0)
             breakdown_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
             
-        for r_name, r_emoji in custom_rarities.items():
-            if r_name in ["Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical"]:
-                continue
-            if r_name.lower() in ["shiny", "galar"]:
-                continue
-            cnt = rarity_counts.get(r_name, 0)
-            breakdown_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
-            
+        # Rarity Breakdown strictly has only the standard 7!
         rarity_breakdown_text = "\n".join(breakdown_lines)
 
         # Count form-based (AMV/Art=1, Dmax=2, Gmax=3, Z-Move=4, Terastal=5)
@@ -439,21 +426,24 @@ async def cmd_profile(message: Message, db: AsyncSession):
         zmove_count = form_counts.get(4, 0)
         terastal_count = form_counts.get(5, 0)
 
-        # Form-based custom rarity extensions (Shiny and Galar)
-        shiny_emoji = custom_rarities.get("Shiny", "✨")
-        galar_emoji = custom_rarities.get("Galar", "❄️")
-        shiny_cnt = rarity_counts.get("Shiny", 0)
-        galar_cnt = rarity_counts.get("Galar", 0)
-
-        forms_breakdown_text = (
-            f"├─➩ 🎬 AMV / Art: {amv_count}\n"
-            f"├─➩ ⚡ Dmax: {dmax_count}\n"
-            f"├─➩ 💥 Gmax: {gmax_count}\n"
-            f"├─➩ 🌀 Z-Move: {zmove_count}\n"
-            f"├─➩ 🔮 Terastal: {terastal_count}\n"
-            f"├─➩ {shiny_emoji} Shiny: {shiny_cnt}\n"
-            f"├─➩ {galar_emoji} Galar: {galar_cnt}"
-        )
+        # Build dynamic forms breakdown list starting with static forms
+        forms_lines = [
+            f"├─➩ 🎬 AMV / Art: {amv_count}",
+            f"├─➩ ⚡ Dmax: {dmax_count}",
+            f"├─➩ 💥 Gmax: {gmax_count}",
+            f"├─➩ 🌀 Z-Move: {zmove_count}",
+            f"├─➩ 🔮 Terastal: {terastal_count}"
+        ]
+        
+        # Add all custom rarities (which are forms) to Forms Breakdown dynamically
+        standard_keys = {"Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical", "Limited", "Limited Edition"}
+        for r_name, r_emoji in custom_rarities.items():
+            if r_name in standard_keys:
+                continue
+            cnt = rarity_counts.get(r_name, 0)
+            forms_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
+            
+        forms_breakdown_text = "\n".join(forms_lines)
 
         # Formatted coins
         formatted_coins = f"{user.coins:,}"
@@ -1689,29 +1679,16 @@ async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
             ("Mythical", "🌌")
         ]
         
-        # Load custom rarities
-        from utils.settings import global_settings_cache
-        import json
-        custom_rarities_str = global_settings_cache.get("custom_rarities", "{}")
-        custom_rarities = {}
-        try:
-            custom_rarities = json.loads(custom_rarities_str)
-        except Exception:
-            pass
+        # Load custom rarities from DB directly
+        from utils.settings import get_all_custom_rarities
+        custom_rarities = await get_all_custom_rarities(db)
 
         breakdown_lines = []
         for r_name, r_emoji in standard_breakdown:
             cnt = rarity_counts.get(r_name, 0)
             breakdown_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
             
-        for r_name, r_emoji in custom_rarities.items():
-            if r_name in ["Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical"]:
-                continue
-            if r_name.lower() in ["shiny", "galar"]:
-                continue
-            cnt = rarity_counts.get(r_name, 0)
-            breakdown_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
-            
+        # Rarity Breakdown strictly has only the standard 7!
         rarity_breakdown_text = "\n".join(breakdown_lines)
 
         # Count form-based (AMV/Art=1, Dmax=2, Gmax=3, Z-Move=4, Terastal=5)
@@ -1726,21 +1703,24 @@ async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
         zmove_count = form_counts.get(4, 0)
         terastal_count = form_counts.get(5, 0)
 
-        # Form-based custom rarity extensions (Shiny and Galar)
-        shiny_emoji = custom_rarities.get("Shiny", "✨")
-        galar_emoji = custom_rarities.get("Galar", "❄️")
-        shiny_cnt = rarity_counts.get("Shiny", 0)
-        galar_cnt = rarity_counts.get("Galar", 0)
-
-        forms_breakdown_text = (
-            f"├─➩ 🎬 AMV / Art: {amv_count}\n"
-            f"├─➩ ⚡ Dmax: {dmax_count}\n"
-            f"├─➩ 💥 Gmax: {gmax_count}\n"
-            f"├─➩ 🌀 Z-Move: {zmove_count}\n"
-            f"├─➩ 🔮 Terastal: {terastal_count}\n"
-            f"├─➩ {shiny_emoji} Shiny: {shiny_cnt}\n"
-            f"├─➩ {galar_emoji} Galar: {galar_cnt}"
-        )
+        # Build dynamic forms breakdown list starting with static forms
+        forms_lines = [
+            f"├─➩ 🎬 AMV / Art: {amv_count}",
+            f"├─➩ ⚡ Dmax: {dmax_count}",
+            f"├─➩ 💥 Gmax: {gmax_count}",
+            f"├─➩ 🌀 Z-Move: {zmove_count}",
+            f"├─➩ 🔮 Terastal: {terastal_count}"
+        ]
+        
+        # Add all custom rarities (which are forms) to Forms Breakdown dynamically
+        standard_keys = {"Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical", "Limited", "Limited Edition"}
+        for r_name, r_emoji in custom_rarities.items():
+            if r_name in standard_keys:
+                continue
+            cnt = rarity_counts.get(r_name, 0)
+            forms_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
+            
+        forms_breakdown_text = "\n".join(forms_lines)
 
         # Fetch User
         u_stmt = select(User).where(User.id == user_id)

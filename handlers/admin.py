@@ -1965,20 +1965,20 @@ async def cb_panel_gen_prompt(callback: CallbackQuery):
 # -------------------------------------------------------------
 
 
-@router.message(Command("addrarity", "newrarity"))
-async def cmd_add_rarity(message: Message, db: AsyncSession):
+@router.message(Command("addform", "newform", "addrarity", "newrarity"))
+async def cmd_add_form(message: Message, db: AsyncSession):
     if not message.from_user or message.from_user.id not in config.ADMIN_IDS:
-        await message.answer("❌ Denied. Only Bot Owner/Administrators can configure new rarities.")
+        await message.answer("❌ Denied. Only Bot Owner/Administrators can configure new forms.")
         return
 
     parts = message.text.split()
     if len(parts) < 3:
         await message.answer(
             "⚠️ <b>Usage:</b>\n"
-            "<code>/addrarity &lt;RarityName&gt; &lt;Emoji&gt;</code>\n\n"
+            "<code>/addform &lt;FormName&gt; &lt;Emoji&gt;</code>\n\n"
             "Format requirements:\n"
-            "• RarityName: <b>TitleCase Alphanumeric only</b> (e.g. <code>Divine</code>, <code>SuperRare</code>, <code>Commoner</code>)\n"
-            "• Emoji: A valid emoji symbol (e.g. 🔱, 🔥, 👑)",
+            "• FormName: <b>TitleCase Alphanumeric only</b> (e.g. <code>Divine</code>, <code>Galar</code>, <code>Shiny</code>)\n"
+            "• Emoji: A valid emoji symbol (e.g. 🔱, ❄️, ✨)",
             parse_mode="HTML"
         )
         return
@@ -1988,7 +1988,7 @@ async def cmd_add_rarity(message: Message, db: AsyncSession):
 
     # Validate alphanumeric
     if not rarity_name.isalnum():
-        await message.answer("❌ Invalid format! The RarityName must be alphanumeric only (letters and numbers, no special symbols or spaces).")
+        await message.answer("❌ Invalid format! The FormName must be alphanumeric only (letters and numbers, no special symbols or spaces).")
         return
 
     # Enforce Title Case format (e.g. SuperRare)
@@ -2030,11 +2030,11 @@ async def cmd_add_rarity(message: Message, db: AsyncSession):
             await message.bot.send_message(
                 chat_id=uploader_id,
                 text=(
-                    f"🔔 <b>New Rarity Created!</b>\n"
-                    f"A new Pokémon rarity is now active:\n"
-                    f"• 💎 <b>Rarity</b>: {rarity_name}\n"
+                    f"🔔 <b>New Pokémon Form Created!</b>\n"
+                    f"A new custom Pokémon form is now active:\n"
+                    f"• 🎭 <b>Form</b>: {rarity_name}\n"
                     f"• 🎭 <b>Emoji</b>: {rarity_emoji}\n\n"
-                    f"You can now upload Pokémon forms of this rarity tier."
+                    f"You can now upload media for this form."
                 ),
                 parse_mode="HTML"
             )
@@ -2042,9 +2042,9 @@ async def cmd_add_rarity(message: Message, db: AsyncSession):
             pass
 
     await message.answer(
-        f"✅ <b>RARITY ADDED SUCCESSFULLY</b>\n"
+        f"✅ <b>FORM ADDED SUCCESSFULLY</b>\n"
         f"───────────────\n"
-        f"• 💎 Rarity: <b>{rarity_name}</b>\n"
+        f"• 🎭 Form: <b>{rarity_name}</b>\n"
         f"• 🎭 Emoji: {rarity_emoji}\n\n"
         f"Uploader list has been notified.",
         parse_mode="HTML"

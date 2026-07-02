@@ -626,15 +626,17 @@ async def cmd_gift_pokemon(message: Message, db: AsyncSession):
     await db.commit()
 
     # Form indicators
+    custom_forms = await get_custom_rarity_forms(db)
     form_names = {
         0: "",
         1: "AMV ",
         2: "Dmax ",
         3: "Gmax ",
         4: "Z-Move ",
-        5: "Terastal ",
-        6: "Shiny "
+        5: "Terastal "
     }
+    for f_idx, (r_name, r_emoji) in custom_forms.items():
+        form_names[f_idx] = f"{r_name} "
     form_badge = form_names.get(form_index, f"Form {form_index} ")
     shiny_badge = "✨ Shiny " if is_shiny else ""
     serial_str = f"\n🎫 **Serial Number**: `{serial_number}`" if serial_number else ""
@@ -1296,7 +1298,7 @@ async def cmd_set_poke_media(message: Message, db: AsyncSession):
         # Post to updates channel if form_index > 0
         by_user = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
         if form_index > 0:
-            await post_media_update_to_channel(message.bot, pokemon, form_index, db_media_value, by_user)
+            await post_media_update_to_channel(message.bot, pokemon, form_index, db_media_value, by_user, db)
 
         await message.answer(
             f"✅ <b>MEDIA UPDATED SUCCESS</b>\n"
@@ -1488,7 +1490,7 @@ async def on_poke_media_received(message: Message, db: AsyncSession):
     # Post to updates channel if form_index > 0
     by_user = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
     if form_index > 0:
-        await post_media_update_to_channel(message.bot, pokemon, form_index, db_media_value, by_user)
+        await post_media_update_to_channel(message.bot, pokemon, form_index, db_media_value, by_user, db)
 
     await message.answer(
         f"✅ <b>MEDIA UPDATED SUCCESS</b>\n"
@@ -1526,14 +1528,16 @@ async def get_media_list_text(db: AsyncSession) -> str:
             poke_media[p] = []
         poke_media[p].append(pfm)
 
+    custom_forms = await get_custom_rarity_forms(db)
     form_names = {
         1: "AMV/Art",
         2: "Dmax",
         3: "Gmax",
         4: "Z-Move",
-        5: "Terastal",
-        6: "Shiny"
+        5: "Terastal"
     }
+    for f_idx, (r_name, r_emoji) in custom_forms.items():
+        form_names[f_idx] = r_name
 
     poke_lines = []
     for p, pfms in poke_media.items():
@@ -1615,19 +1619,22 @@ async def cmd_emoji_id(message: Message):
         await message.answer("❌ No Telegram Premium/Custom emojis detected in that message.")
 
 
-async def post_media_update_to_channel(bot: Bot, pokemon: Pokemon, form_index: int, media_value: str, by_user: str):
+async def post_media_update_to_channel(bot: Bot, pokemon: Pokemon, form_index: int, media_value: str, by_user: str, db: AsyncSession):
     from datetime import datetime, timezone, timedelta
 
     # 1. Resolve form index to name / rarity
+    custom_forms = await get_custom_rarity_forms(db)
     form_names = {
         0: "Standard",
         1: "AMV",
         2: "Dmax",
         3: "Gmax",
         4: "Z-Move",
-        5: "Terastal",
-        6: "Shiny"
+        5: "Terastal"
     }
+    for f_idx, (r_name, r_emoji) in custom_forms.items():
+        form_names[f_idx] = r_name
+        
     form_name = form_names.get(form_index, f"Form {form_index}")
 
     # Map to rarity label
@@ -2424,7 +2431,10 @@ async def cmd_sync_database(message: Message, db: AsyncSession):
         is_img = "✅" if media_type == "photo" else "❌"
         is_vid = "✅" if media_type in ["video", "animation"] else "❌"
 
-        form_names = {1: "AMV/Art", 2: "Dmax", 3: "Gmax", 4: "Z-Move", 5: "Terastal", 6: "Shiny"}
+        custom_forms = await get_custom_rarity_forms(db)
+        form_names = {1: "AMV/Art", 2: "Dmax", 3: "Gmax", 4: "Z-Move", 5: "Terastal"}
+        for f_idx, (r_name, r_emoji) in custom_forms.items():
+            form_names[f_idx] = r_name
         rarity_label = form_names.get(pfm.form_index, f"Form {pfm.form_index}")
         if pfm.form_index == 1 and pfm.media_value.startswith("photo:"):
             rarity_label = "Art"

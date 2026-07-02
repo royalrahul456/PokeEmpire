@@ -10,7 +10,7 @@ from sqlalchemy.orm import joinedload
 from database.models import User, UserPokemon, Pokemon
 from utils.formatters import get_hp_bar, get_progress_bar, get_rarity_emoji, escape_md
 from utils.favorite import get_favorite_id, set_favorite_id
-from utils.settings import send_cover_media, get_custom_cover, get_custom_rarity_forms
+from utils.settings import send_cover_media, get_custom_cover, get_custom_rarity_forms, get_all_custom_rarities
 
 router = Router()
 
@@ -850,7 +850,7 @@ def get_pokedex_keyboard(user_id: int, page: int, max_page: int, rarity_filter: 
     
     return builder.as_markup()
 
-def get_rarity_filter_keyboard(user_id: int, current_page: int, current_filter: str) -> InlineKeyboardMarkup:
+def get_rarity_filter_keyboard(user_id: int, current_page: int, current_filter: str, custom_rarities: dict = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     
     builder.row(
@@ -879,14 +879,15 @@ def get_rarity_filter_keyboard(user_id: int, current_page: int, current_filter: 
     )
     
     # Dynamic custom rarities
-    from utils.settings import global_settings_cache
-    import json
-    custom_rarities_str = global_settings_cache.get("custom_rarities", "{}")
-    custom_rarities = {}
-    try:
-        custom_rarities = json.loads(custom_rarities_str)
-    except Exception:
-        pass
+    if custom_rarities is None:
+        from utils.settings import global_settings_cache
+        import json
+        custom_rarities_str = global_settings_cache.get("custom_rarities", "{}")
+        custom_rarities = {}
+        try:
+            custom_rarities = json.loads(custom_rarities_str)
+        except Exception:
+            pass
         
     custom_buttons = []
     for r_name, r_emoji in custom_rarities.items():
@@ -1001,7 +1002,7 @@ async def cb_pokedex_page(callback: CallbackQuery, db: AsyncSession):
     await callback.answer()
 
 @router.callback_query(F.data.startswith("pd_rarity_"))
-async def cb_pokedex_rarity_menu(callback: CallbackQuery):
+async def cb_pokedex_rarity_menu(callback: CallbackQuery, db: AsyncSession):
     parts = callback.data.split("_")
     user_id = int(parts[2])
     page = int(parts[3])
@@ -1016,7 +1017,8 @@ async def cb_pokedex_rarity_menu(callback: CallbackQuery):
         f"───────────────\n\n"
         f"Choose a rarity tier below to filter your species list:"
     )
-    kb = get_rarity_filter_keyboard(user_id, page, rarity_filter)
+    custom_rarities = await get_all_custom_rarities(db)
+    kb = get_rarity_filter_keyboard(user_id, page, rarity_filter, custom_rarities)
     
     try:
         await callback.message.edit_caption(caption=text, reply_markup=kb, parse_mode="HTML")

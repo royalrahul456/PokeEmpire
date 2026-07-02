@@ -486,7 +486,7 @@ async def cmd_gen(message: Message, db: AsyncSession):
         else:
             gen_val = gen_str
             
-        form_suffix = f" (Form {form_index})" if form_index > 0 else ""
+        form_suffix = f".{form_index}"
         shiny_tag = " ✨" if is_shiny else ""
         
         caption = (

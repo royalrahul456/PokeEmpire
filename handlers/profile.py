@@ -440,7 +440,11 @@ async def cmd_profile(message: Message, db: AsyncSession):
         for r_name, r_emoji in custom_rarities.items():
             if r_name in standard_keys:
                 continue
-            cnt = rarity_counts.get(r_name, 0)
+            cnt = 0
+            for r_c, count in rarity_counts.items():
+                if r_c and r_name and r_c.lower() == r_name.lower():
+                    cnt = count
+                    break
             forms_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
             
         forms_breakdown_text = "\n".join(forms_lines)
@@ -582,13 +586,13 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
         caught_count_res = await db.execute(select(func.count()).select_from(caught_entries_subq))
         caught_count = caught_count_res.scalar() or 0
     else:
-        total_res = await db.execute(select(func.count(Pokemon.id)).where(Pokemon.rarity == rarity_filter))
+        total_res = await db.execute(select(func.count(Pokemon.id)).where(func.lower(Pokemon.rarity) == func.lower(rarity_filter)))
         total_entries = total_res.scalar() or 0
 
         caught_entries_subq = (
             select(UserPokemon.pokemon_id)
             .join(Pokemon, UserPokemon.pokemon_id == Pokemon.id)
-            .where(UserPokemon.user_id == user_id, Pokemon.rarity == rarity_filter)
+            .where(UserPokemon.user_id == user_id, func.lower(Pokemon.rarity) == func.lower(rarity_filter))
             .group_by(UserPokemon.pokemon_id)
             .subquery()
         )
@@ -671,7 +675,7 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
                 func.max(case((UserPokemon.is_shiny == True, 1), else_=0)).label("has_shiny"),
             )
             .join(UserPokemon, UserPokemon.pokemon_id == Pokemon.id)
-            .where(UserPokemon.user_id == user_id, Pokemon.rarity == rarity_filter)
+            .where(UserPokemon.user_id == user_id, func.lower(Pokemon.rarity) == func.lower(rarity_filter))
             .group_by(Pokemon.id)
             .order_by(Pokemon.id)
             .offset(offset)
@@ -733,14 +737,14 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
         gen_stats_res = await db.execute(
             select(Pokemon.generation, func.count(distinct(UserPokemon.pokemon_id)))
             .join(UserPokemon, UserPokemon.pokemon_id == Pokemon.id)
-            .where(UserPokemon.user_id == user_id, Pokemon.rarity == rarity_filter)
+            .where(UserPokemon.user_id == user_id, func.lower(Pokemon.rarity) == func.lower(rarity_filter))
             .group_by(Pokemon.generation)
         )
         gen_stats = {gen: count for gen, count in gen_stats_res.all()}
 
         gen_totals_res = await db.execute(
             select(Pokemon.generation, func.count(Pokemon.id))
-            .where(Pokemon.rarity == rarity_filter)
+            .where(func.lower(Pokemon.rarity) == func.lower(rarity_filter))
             .group_by(Pokemon.generation)
         )
         gen_totals = {gen: count for gen, count in gen_totals_res.all()}
@@ -762,6 +766,9 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
     filter_str = f" ({html.escape(filter_label)})" if rarity_filter and rarity_filter != "All" else ""
     text = f"🌟 <b>{html.escape(nickname)}'s Pokédex</b> 🌟{filter_str} — Page {page}/{max_page}\n"
 
+    from utils.settings import get_all_custom_rarities
+    custom_rarities = await get_all_custom_rarities(db)
+
     rarity_badges = {
         "Common": "⚪️",
         "Uncommon": "🟢",
@@ -771,6 +778,7 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
         "Legendary": "🌟",
         "Mythical": "🌌",
     }
+    rarity_badges.update(custom_rarities)
 
     current_gen = None
     first_group = True
@@ -788,7 +796,13 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
         pokemon_name = html.escape(pokemon.name.title())
 
         if view_mode == "rarity":
-            base_badge = rarity_badges.get(pokemon.rarity, "⚪️")
+            badge_key = pokemon.rarity or "Common"
+            base_badge = "⚪️"
+            for k, val in rarity_badges.items():
+                if k.lower() == badge_key.lower():
+                    base_badge = val
+                    break
+
             forms_owned = sorted(owned_species_forms.get(pokemon.id, set()))
             form_suffix = ""
             if forms_owned:
@@ -803,7 +817,13 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
 
         form_index = entry["form_index"]
         if form_index == 0:
-            entry_badge = rarity_badges.get(pokemon.rarity, "⚪️")
+            badge_key = pokemon.rarity or "Common"
+            entry_badge = "⚪️"
+            for k, val in rarity_badges.items():
+                if k.lower() == badge_key.lower():
+                    entry_badge = val
+                    break
+
             entry_id = str(pokemon.id)
             entry_name = pokemon_name
         else:
@@ -1719,7 +1739,11 @@ async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
         for r_name, r_emoji in custom_rarities.items():
             if r_name in standard_keys:
                 continue
-            cnt = rarity_counts.get(r_name, 0)
+            cnt = 0
+            for r_c, count in rarity_counts.items():
+                if r_c and r_name and r_c.lower() == r_name.lower():
+                    cnt = count
+                    break
             forms_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
             
         forms_breakdown_text = "\n".join(forms_lines)

@@ -141,15 +141,15 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
         await message.answer("❌ The Auction system is currently disabled globally by the Bot Owner.")
         return
 
-    # Enforce one active auction per user limit
+    # Enforce one active/pending auction per user limit
     active_stmt = select(func.count(Auction.id)).where(
         Auction.seller_id == message.from_user.id,
-        Auction.status == "ACTIVE"
+        Auction.status.in_({"ACTIVE", "PENDING"})
     )
     active_res = await db.execute(active_stmt)
     active_count = active_res.scalar() or 0
     if active_count > 0:
-        await message.answer("❌ You can only have one active auction at a time. Please wait for your current auction to end.")
+        await message.answer("❌ You can only have one active or queued auction at a time. Please wait for your current auction to end.")
         return
 
     # Command: /auction <pokedex_id_or_name> <starting_price>
@@ -227,6 +227,54 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
 
     await db.delete(user_poke)
     await db.commit()
+
+    # Check if there is an active auction globally
+    global_active_stmt = select(func.count(Auction.id)).where(Auction.status == "ACTIVE")
+    global_active_res = await db.execute(global_active_stmt)
+    global_active_count = global_active_res.scalar() or 0
+
+    if global_active_count > 0:
+        # Create PENDING auction
+        expires_at = datetime.utcnow() + timedelta(days=365) # dummy
+        auction = Auction(
+            seller_id=message.from_user.id,
+            pokemon_id=pokemon_id,
+            nickname=nickname,
+            is_shiny=is_shiny,
+            is_amv=is_amv,
+            form_index=form_index,
+            serial_number=serial,
+            level=level,
+            xp=xp,
+            iv_hp=iv_hp,
+            iv_atk=iv_atk,
+            iv_def=iv_def,
+            iv_spd=iv_spd,
+            starting_price=starting_price,
+            current_bid=starting_price,
+            expires_at=expires_at,
+            status="PENDING",
+            channel_chat_id=message.chat.id
+        )
+        db.add(auction)
+        await db.commit()
+        await db.refresh(auction)
+
+        # Get queue position
+        pending_stmt = select(func.count(Auction.id)).where(Auction.status == "PENDING")
+        pending_res = await db.execute(pending_stmt)
+        queue_pos = pending_res.scalar() or 0
+
+        await message.answer(
+            f"🕒 <b>Added to Auction Queue!</b>\n"
+            f"───────────────\n"
+            f"<blockquote>📛 Pokémon: <b>{pokemon.name.title()}</b>\n"
+            f"💰 Starting Price: <b>{starting_price:,} coins</b>\n"
+            f"🔢 Queue Position: <b>#{queue_pos}</b></blockquote>\n\n"
+            f"It will start automatically once active auctions ahead of it finish.",
+            parse_mode="HTML"
+        )
+        return
 
     # Create active auction entry (expires in 5 minutes)
     expires_at = datetime.utcnow() + timedelta(minutes=5)
@@ -649,21 +697,23 @@ async def cmd_cancel_auction(message: Message, db: AsyncSession):
         await message.answer("❌ Invalid Auction ID.")
         return
 
-    stmt = select(Auction).where(Auction.id == auction_id, Auction.status == "ACTIVE")
+    stmt = select(Auction).where(Auction.id == auction_id, Auction.status.in_({"ACTIVE", "PENDING"}))
     res = await db.execute(stmt)
     auction = res.scalar_one_or_none()
     if not auction:
-        await message.answer("❌ Auction not found or not active.")
+        await message.answer("❌ Auction not found, or it has already ended.")
         return
 
     if auction.seller_id != message.from_user.id:
         await message.answer("❌ You can only cancel your own auctions.")
         return
 
-    # Check if bids exist
-    stmt_bids = select(func.count(AuctionBid.id)).where(AuctionBid.auction_id == auction.id)
-    res_bids = await db.execute(stmt_bids)
-    bid_count = res_bids.scalar() or 0
+    # Check if bids exist (only relevant if ACTIVE)
+    bid_count = 0
+    if auction.status == "ACTIVE":
+        stmt_bids = select(func.count(AuctionBid.id)).where(AuctionBid.auction_id == auction.id)
+        res_bids = await db.execute(stmt_bids)
+        bid_count = res_bids.scalar() or 0
 
     if bid_count > 0:
         await message.answer("❌ You cannot cancel this auction since active bids have already been placed.")
@@ -686,11 +736,13 @@ async def cmd_cancel_auction(message: Message, db: AsyncSession):
         iv_spd=auction.iv_spd
     )
     db.add(restored)
+    
+    was_active = (auction.status == "ACTIVE")
     auction.status = "CANCELLED"
     await db.commit()
 
-    # Unpin active message
-    if auction.channel_chat_id and auction.channel_message_id:
+    # Unpin active message (if it was active)
+    if was_active and auction.channel_chat_id and auction.channel_message_id:
         try:
             await message.bot.unpin_chat_message(chat_id=auction.channel_chat_id, message_id=auction.channel_message_id)
         except Exception:
@@ -710,6 +762,61 @@ async def cmd_cancel_auction(message: Message, db: AsyncSession):
             pass
 
     await message.answer("✅ Auction cancelled successfully! Your Pokémon has been returned to your inventory.")
+
+    # If the cancelled auction was active, start the next one in queue immediately
+    if was_active:
+        try:
+            next_stmt = select(Auction).where(Auction.status == "PENDING").order_by(Auction.created_at.asc()).limit(1)
+            next_res = await db.execute(next_stmt)
+            next_auction = next_res.scalar_one_or_none()
+            
+            if next_auction:
+                next_auction.status = "ACTIVE"
+                next_auction.expires_at = datetime.utcnow() + timedelta(minutes=5)
+                await db.commit()
+                
+                # Post new auction card
+                caption, media_type, media_value = await get_auction_card(db, next_auction)
+                kb = get_auction_keyboard(next_auction.id, next_auction.seller_id)
+                
+                try:
+                    if media_type == "video":
+                        auc_msg = await message.bot.send_video(
+                            chat_id=next_auction.channel_chat_id,
+                            video=media_value,
+                            caption=caption,
+                            reply_markup=kb.as_markup(),
+                            parse_mode="HTML"
+                        )
+                    elif media_type == "animation":
+                        auc_msg = await message.bot.send_animation(
+                            chat_id=next_auction.channel_chat_id,
+                            animation=media_value,
+                            caption=caption,
+                            reply_markup=kb.as_markup(),
+                            parse_mode="HTML"
+                        )
+                    else:
+                        auc_msg = await message.bot.send_photo(
+                            chat_id=next_auction.channel_chat_id,
+                            photo=media_value,
+                            caption=caption,
+                            reply_markup=kb.as_markup(),
+                            parse_mode="HTML"
+                        )
+                    
+                    next_auction.channel_message_id = auc_msg.message_id
+                    await db.commit()
+                    
+                    # Pin the new active auction message in group chats
+                    try:
+                        await message.bot.pin_chat_message(chat_id=next_auction.channel_chat_id, message_id=auc_msg.message_id)
+                    except Exception:
+                        pass
+                except Exception as post_err:
+                    print(f"⚠️ Failed to post activated queued auction {next_auction.id}: {post_err}")
+        except Exception as queue_err:
+            print(f"⚠️ Failed to process next queued auction after manual cancel: {queue_err}")
 
 
 @router.message(Command("au"))
@@ -932,6 +1039,60 @@ async def auction_settlement_worker(bot: Bot):
                                 
                     except Exception as single_auc_err:
                         print(f"⚠️ Error settling auction {auction.id}: {single_auc_err}")
+                    
+                    # Right after settling the active auction, activate the next queued one
+                    try:
+                        next_stmt = select(Auction).where(Auction.status == "PENDING").order_by(Auction.created_at.asc()).limit(1)
+                        next_res = await db.execute(next_stmt)
+                        next_auction = next_res.scalar_one_or_none()
+                        
+                        if next_auction:
+                            next_auction.status = "ACTIVE"
+                            next_auction.expires_at = datetime.utcnow() + timedelta(minutes=5)
+                            await db.commit()
+                            
+                            # Post new auction card
+                            caption, media_type, media_value = await get_auction_card(db, next_auction)
+                            kb = get_auction_keyboard(next_auction.id, next_auction.seller_id)
+                            
+                            try:
+                                if media_type == "video":
+                                    auc_msg = await bot.send_video(
+                                        chat_id=next_auction.channel_chat_id,
+                                        video=media_value,
+                                        caption=caption,
+                                        reply_markup=kb.as_markup(),
+                                        parse_mode="HTML"
+                                    )
+                                elif media_type == "animation":
+                                    auc_msg = await bot.send_animation(
+                                        chat_id=next_auction.channel_chat_id,
+                                        animation=media_value,
+                                        caption=caption,
+                                        reply_markup=kb.as_markup(),
+                                        parse_mode="HTML"
+                                    )
+                                else:
+                                    auc_msg = await bot.send_photo(
+                                        chat_id=next_auction.channel_chat_id,
+                                        photo=media_value,
+                                        caption=caption,
+                                        reply_markup=kb.as_markup(),
+                                        parse_mode="HTML"
+                                    )
+                                
+                                next_auction.channel_message_id = auc_msg.message_id
+                                await db.commit()
+                                
+                                # Pin the new active auction message in group chats
+                                try:
+                                    await bot.pin_chat_message(chat_id=next_auction.channel_chat_id, message_id=auc_msg.message_id)
+                                except Exception:
+                                    pass
+                            except Exception as post_err:
+                                print(f"⚠️ Failed to post activated queued auction {next_auction.id}: {post_err}")
+                    except Exception as queue_err:
+                        print(f"⚠️ Failed to process next queued auction: {queue_err}")
                         
         except Exception as loop_err:
             print(f"⚠️ Auction settlement loop error: {loop_err}")

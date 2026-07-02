@@ -170,10 +170,13 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
         await message.answer(f"❌ Pokémon '{poke_input}' not found in database.")
         return
 
-    # Check Pokémon ownership (get highest level one owned by user)
     stmt = (
         select(UserPokemon)
-        .where(UserPokemon.user_id == message.from_user.id, UserPokemon.pokemon_id == pokemon.id)
+        .where(
+            UserPokemon.user_id == message.from_user.id,
+            UserPokemon.pokemon_id == pokemon.id,
+            UserPokemon.form_index == 0
+        )
         .order_by(UserPokemon.level.desc(), UserPokemon.id.asc())
         .limit(1)
     )

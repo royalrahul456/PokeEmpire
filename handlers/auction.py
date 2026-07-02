@@ -115,8 +115,7 @@ async def get_auction_card(db: AsyncSession, auction: Auction) -> tuple[str, str
             media_type, media_value = parse_stored_media_value(form_media)
     else:
         if pokemon.video_url:
-            media_type = "video"
-            media_value = pokemon.video_url
+            media_type, media_value = parse_stored_media_value(pokemon.video_url)
 
     return caption, media_type, media_value
 
@@ -157,6 +156,14 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
         return
 
     poke_input = parts[1].strip()
+    form_index = 0
+    target_poke = poke_input
+    if "." in poke_input:
+        pq, fq = poke_input.split(".", 1)
+        if fq.isdigit():
+            form_index = int(fq)
+        target_poke = pq
+
     try:
         starting_price = int(parts[2].replace(",", ""))
     except ValueError:
@@ -168,15 +175,15 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
         return
 
     # Resolve Pokemon ID
-    if poke_input.isdigit():
-        stmt_poke = select(Pokemon).where(Pokemon.id == int(poke_input))
+    if target_poke.isdigit():
+        stmt_poke = select(Pokemon).where(Pokemon.id == int(target_poke))
     else:
-        stmt_poke = select(Pokemon).where(Pokemon.name.ilike(poke_input))
+        stmt_poke = select(Pokemon).where(Pokemon.name.ilike(target_poke))
     
     res_poke = await db.execute(stmt_poke)
     pokemon = res_poke.scalar_one_or_none()
     if not pokemon:
-        await message.answer(f"❌ Pokémon '{poke_input}' not found in database.")
+        await message.answer(f"❌ Pokémon '{target_poke}' not found in database.")
         return
 
     stmt = (
@@ -184,7 +191,7 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
         .where(
             UserPokemon.user_id == message.from_user.id,
             UserPokemon.pokemon_id == pokemon.id,
-            UserPokemon.form_index == 0
+            UserPokemon.form_index == form_index
         )
         .order_by(UserPokemon.level.desc(), UserPokemon.id.asc())
         .limit(1)
@@ -192,7 +199,8 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
     res = await db.execute(stmt)
     user_poke = res.scalar_one_or_none()
     if not user_poke:
-        await message.answer(f"❌ You don't own any <b>{pokemon.name.title()}</b> in your inventory.", parse_mode="HTML")
+        form_label = f"Form {form_index}" if form_index > 0 else "standard"
+        await message.answer(f"❌ You don't own any <b>{pokemon.name.title()}</b> ({form_label}) in your inventory.", parse_mode="HTML")
         return
 
     # Delete Pokémon from inventory

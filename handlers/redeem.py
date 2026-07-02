@@ -500,8 +500,10 @@ async def cmd_gen(message: Message, db: AsyncSession):
         
         # Resolve media
         from handlers.profile import get_single_form_media_value, parse_stored_media_value
-        media_value = pokemon.image_url
         media_type = "photo"
+        media_value = pokemon.image_url
+        if pokemon.image_url:
+            media_type, media_value = parse_stored_media_value(pokemon.image_url)
         
         if form_index > 0:
             form_media = await get_single_form_media_value(db, pokemon.id, form_index)
@@ -509,8 +511,7 @@ async def cmd_gen(message: Message, db: AsyncSession):
                 media_type, media_value = parse_stored_media_value(form_media)
         else:
             if pokemon.video_url:
-                media_type = "video"
-                media_value = pokemon.video_url
+                media_type, media_value = parse_stored_media_value(pokemon.video_url)
                 
         # Send media
         from aiogram.types import FSInputFile

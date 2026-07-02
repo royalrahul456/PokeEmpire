@@ -98,6 +98,16 @@ This document summarizes the changes, additions, and layout refinements complete
 - **Manual Spawn Restrictions (`/spawn`)**: Restricted manual spawn rarity selection (e.g. `/spawn Legendary`) strictly to Bot Owners/Admins (`config.ADMIN_IDS`). General group chat administrators can trigger standard random spawns but are blocked from choosing specific rarities to prevent exploit abuse.
 - **Panel UI Fix**: Imported the missing `InlineKeyboardButton` class inside `handlers/admin.py` to resolve the `NameError` causing the `/panel` button callbacks and commands to fail silently.
 
+### 12. Pokémon Auction House (AUC)
+- **Active Auction System (`/auction`)**: Added `/auction <serial_number> <starting_price> <duration_hours>` allowing trainers to put their caught Pokémon up for auction. The Pokémon is temporarily removed from their inventory during the auction.
+- **Auto-Pin & Unpin**: When an auction starts in a group chat, the bot automatically pins the auction message. Once the auction ends (completed, cancelled, or expired), the bot automatically unpins it.
+- **Interactive Bidding Buttons**: Added inline buttons directly on the active auction message card: `[ +1,000 ]`, `[ +5,000 ]`, `[ +10,000 ]`, and `[ 💬 Custom Bid ]`. Bidding refunds the previous highest bidder and locks the new leader's coins instantly.
+- **Real-Time Card Updates**: Bidding edits the active auction message in-place to update the current bid, the leader's name, and lists a dynamic `Recent Bids:` history block with timestamps.
+- **Background Settlement Task**: Started an asynchronous worker task that checks for expired auctions every 30 seconds:
+  - **With Bids (Sold)**: Delivers the Pokémon to the winner, pays the seller (minus a 5% tax), removes bidding buttons, edits the caption to `🔮 AUCTION ENDED!`, and posts a beautifully styled **Auction Won!** announcement card.
+  - **No Bids (Unsold)**: Returns the Pokémon to the seller, removes buttons, edits the caption to `🪙 Auction Ended — No Bids`, and posts an **Auction Ended — No Bids** announcement card.
+- **Listing & Cancellation**: Added `/auctions` to list active auctions and `/cancelauction <id>` to let sellers cancel auctions with no active bids.
+
 ---
 
 ## Verification & Testing

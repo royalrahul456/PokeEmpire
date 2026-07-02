@@ -138,3 +138,48 @@ class PvpBattle(Base):
     created_at = Column(DateTime, default=func.now(), nullable=False)
 
 
+class Auction(Base):
+    __tablename__ = "auctions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    seller_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    pokemon_id = Column(Integer, ForeignKey("pokemon.id", ondelete="CASCADE"), nullable=False)
+    nickname = Column(String(100), nullable=True)
+    is_shiny = Column(Boolean, default=False, nullable=False)
+    is_amv = Column(Boolean, default=False, nullable=False)
+    form_index = Column(Integer, default=0, nullable=False)
+    serial_number = Column(String(20), nullable=True)
+    level = Column(Integer, default=1, nullable=False)
+    xp = Column(Integer, default=0, nullable=False)
+    iv_hp = Column(Integer, default=0, nullable=False)
+    iv_atk = Column(Integer, default=0, nullable=False)
+    iv_def = Column(Integer, default=0, nullable=False)
+    iv_spd = Column(Integer, default=0, nullable=False)
+
+    starting_price = Column(Integer, nullable=False)
+    current_bid = Column(Integer, default=0, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    status = Column(String(20), default="ACTIVE", nullable=False)  # "ACTIVE", "COMPLETED", "CANCELLED"
+    channel_message_id = Column(BigInteger, nullable=True)
+    channel_chat_id = Column(BigInteger, nullable=True)
+
+    # Relationships
+    pokemon = relationship("Pokemon")
+    seller = relationship("User", foreign_keys=[seller_id])
+
+
+class AuctionBid(Base):
+    __tablename__ = "auction_bids"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    auction_id = Column(Integer, ForeignKey("auctions.id", ondelete="CASCADE"), nullable=False)
+    bidder_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    amount = Column(Integer, nullable=False)
+    bid_at = Column(DateTime, default=func.now(), nullable=False)
+
+    # Relationships
+    bidder = relationship("User", foreign_keys=[bidder_id])
+
+
+

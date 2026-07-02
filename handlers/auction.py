@@ -102,8 +102,10 @@ async def get_auction_card(db: AsyncSession, auction: Auction) -> tuple[str, str
     )
 
     # Resolve media
-    media_value = pokemon.image_url
     media_type = "photo"
+    media_value = pokemon.image_url
+    if pokemon.image_url:
+        media_type, media_value = parse_stored_media_value(pokemon.image_url)
     
     resolved_form = auction.form_index
     if auction.is_shiny and auction.form_index == 0:
@@ -133,6 +135,12 @@ def get_auction_keyboard(auction_id: int, owner_id: int) -> InlineKeyboardBuilde
 
 @router.message(Command("auction"))
 async def cmd_create_auction(message: Message, db: AsyncSession):
+    # Check if auctions are globally enabled
+    from utils.settings import global_settings_cache
+    if global_settings_cache.get("auctions_enabled", "on") == "off":
+        await message.answer("❌ The Auction system is currently disabled globally by the Bot Owner.")
+        return
+
     # Enforce one active auction per user limit
     active_stmt = select(func.count(Auction.id)).where(
         Auction.seller_id == message.from_user.id,
@@ -254,6 +262,14 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
             auc_msg = await message.bot.send_video(
                 chat_id=message.chat.id,
                 video=media_value,
+                caption=caption,
+                reply_markup=kb.as_markup(),
+                parse_mode="HTML"
+            )
+        elif media_type == "animation":
+            auc_msg = await message.bot.send_animation(
+                chat_id=message.chat.id,
+                animation=media_value,
                 caption=caption,
                 reply_markup=kb.as_markup(),
                 parse_mode="HTML"
@@ -694,6 +710,37 @@ async def cmd_cancel_auction(message: Message, db: AsyncSession):
             pass
 
     await message.answer("✅ Auction cancelled successfully! Your Pokémon has been returned to your inventory.")
+
+
+@router.message(Command("au"))
+async def cmd_toggle_auctions(message: Message, db: AsyncSession):
+    if message.from_user.id not in config.ADMIN_IDS:
+        await message.answer("❌ Denied. Only Bot Owners can run this command.")
+        return
+        
+    parts = message.text.split()
+    if len(parts) < 2 or parts[1].lower() not in {"on", "off"}:
+        await message.answer("⚠️ Usage: `/au <on/off>`")
+        return
+        
+    val = parts[1].lower()
+    
+    # Save/Update in DB
+    from database.models import GlobalSetting
+    stmt = select(GlobalSetting).where(GlobalSetting.key == "auctions_enabled")
+    res = await db.execute(stmt)
+    setting = res.scalar_one_or_none()
+    if setting:
+        setting.value = val
+    else:
+        db.add(GlobalSetting(key="auctions_enabled", value=val))
+    await db.commit()
+    
+    # Update memory cache
+    from utils.settings import global_settings_cache
+    global_settings_cache["auctions_enabled"] = val
+    
+    await message.answer(f"✅ Globally toggled auctions: <b>{val.upper()}</b>", parse_mode="HTML")
 
 
 async def auction_settlement_worker(bot: Bot):

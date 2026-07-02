@@ -142,6 +142,7 @@ async def register_bot_commands(bot: Bot):
         BotCommand(command="addrarity", description="Create custom Pokémon rarity tier (Bot Owner only)"),
         BotCommand(command="addpokemon", description="Register a new Pokémon in database (Bot Owner only)"),
         BotCommand(command="syncdatabase", description="Synchronize database records to channel (Bot Owner only)"),
+        BotCommand(command="au", description="Toggle global auction system (Bot Owner only)"),
         BotCommand(command="auction", description="List a Pokémon for auction"),
         BotCommand(command="auctions", description="Browse and bid on active auctions"),
         BotCommand(command="cancelauction", description="Cancel an active auction (No bids only)"),

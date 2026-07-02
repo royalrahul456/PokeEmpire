@@ -780,6 +780,33 @@ async def auction_settlement_worker(bot: Bot):
                                         await bot.unpin_chat_message(chat_id=auction.channel_chat_id, message_id=auction.channel_message_id)
                                     except Exception:
                                         pass
+                                        
+                            # DM the seller (Won)
+                            seller_dm = (
+                                f"🔔 <b>Auction Sold!</b> 🔔\n"
+                                f"───────────────\n"
+                                f"<blockquote>👑 Your <b>{pokemon.name.title()}</b> has been sold to <b>{html.escape(winner_name)}</b>!\n"
+                                f"💰 Payout: <b>{payout:,} coins</b> (5% tax deducted)\n"
+                                f"🎫 Serial: <code>{auction.serial_number}</code></blockquote>"
+                            )
+                            try:
+                                await bot.send_message(chat_id=auction.seller_id, text=seller_dm, parse_mode="HTML")
+                            except Exception as dm_err:
+                                print(f"⚠️ Failed to DM seller {auction.seller_id} on auction sale: {dm_err}")
+
+                            # DM the buyer (Won)
+                            buyer_dm = (
+                                f"🔔 <b>Auction Won!</b> 🔔\n"
+                                f"───────────────\n"
+                                f"<blockquote>👑 You won the auction for <b>{pokemon.name.title()}</b>!\n"
+                                f"💰 Amount Paid: <b>{highest_bid_rec.amount:,} coins</b>\n"
+                                f"🎫 Serial: <code>{auction.serial_number}</code>\n"
+                                f"🙇 Added to your collection bag.</blockquote>"
+                            )
+                            try:
+                                await bot.send_message(chat_id=bidder_user.id, text=buyer_dm, parse_mode="HTML")
+                            except Exception as dm_err:
+                                print(f"⚠️ Failed to DM buyer {bidder_user.id} on auction win: {dm_err}")
                         else:
                             # Return Pokémon to seller
                             restored = UserPokemon(
@@ -820,6 +847,19 @@ async def auction_settlement_worker(bot: Bot):
                                         await bot.unpin_chat_message(chat_id=auction.channel_chat_id, message_id=auction.channel_message_id)
                                     except Exception:
                                         pass
+                                        
+                            # DM the seller (Unsold)
+                            seller_dm = (
+                                f"🔔 <b>Auction Ended — No Bids</b> 🔔\n"
+                                f"───────────────\n"
+                                f"<blockquote>📛 Your auction for <b>{pokemon.name.title()}</b> has ended with no bids.\n"
+                                f"🔄 The Pokémon has been returned to your inventory.\n"
+                                f"🎫 Serial: <code>{auction.serial_number}</code></blockquote>"
+                            )
+                            try:
+                                await bot.send_message(chat_id=auction.seller_id, text=seller_dm, parse_mode="HTML")
+                            except Exception as dm_err:
+                                print(f"⚠️ Failed to DM seller {auction.seller_id} on unsold auction: {dm_err}")
                                         
                         # Update original active message (remove buttons, update text to ended)
                         if auction.channel_chat_id and auction.channel_message_id:

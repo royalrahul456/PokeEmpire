@@ -136,42 +136,51 @@ def get_auction_keyboard(auction_id: int, owner_id: int) -> InlineKeyboardBuilde
 
 @router.message(Command("auction"))
 async def cmd_create_auction(message: Message, db: AsyncSession):
-    # Command: /auction <serial_number> <starting_price> <duration_hours>
+    # Command: /auction <pokedex_id_or_name> <starting_price>
     parts = message.text.split()
-    if len(parts) < 4:
+    if len(parts) < 3:
         await message.answer(
             "⚠️ <b>Usage:</b>\n"
-            "<code>/auction &lt;Serial_Number&gt; &lt;Starting_Price&gt; &lt;Duration_Hours&gt;</code>\n\n"
-            "Example: <code>/auction #025-4812 1000 24</code>",
+            "<code>/auction &lt;Pokedex_ID_or_Name&gt; &lt;Starting_Price&gt;</code>\n\n"
+            "Example: <code>/auction 6 10000</code> or <code>/auction charizard 10000</code>",
             parse_mode="HTML"
         )
         return
 
-    serial = parts[1].strip()
+    poke_input = parts[1].strip()
     try:
-        starting_price = int(parts[2])
-        duration_hours = int(parts[3])
+        starting_price = int(parts[2].replace(",", ""))
     except ValueError:
-        await message.answer("❌ Price and duration must be valid integers.")
+        await message.answer("❌ Starting price must be a valid integer.")
         return
 
     if starting_price <= 0:
         await message.answer("❌ Starting price must be greater than 0.")
         return
 
-    if duration_hours < 1 or duration_hours > 168:
-        await message.answer("❌ Duration must be between 1 and 168 hours (7 days).")
+    # Resolve Pokemon ID
+    if poke_input.isdigit():
+        stmt_poke = select(Pokemon).where(Pokemon.id == int(poke_input))
+    else:
+        stmt_poke = select(Pokemon).where(Pokemon.name.ilike(poke_input))
+    
+    res_poke = await db.execute(stmt_poke)
+    pokemon = res_poke.scalar_one_or_none()
+    if not pokemon:
+        await message.answer(f"❌ Pokémon '{poke_input}' not found in database.")
         return
 
-    # Check Pokémon ownership
-    stmt = select(UserPokemon).where(
-        UserPokemon.user_id == message.from_user.id,
-        UserPokemon.serial_number == serial
+    # Check Pokémon ownership (get highest level one owned by user)
+    stmt = (
+        select(UserPokemon)
+        .where(UserPokemon.user_id == message.from_user.id, UserPokemon.pokemon_id == pokemon.id)
+        .order_by(UserPokemon.level.desc(), UserPokemon.id.asc())
+        .limit(1)
     )
     res = await db.execute(stmt)
     user_poke = res.scalar_one_or_none()
     if not user_poke:
-        await message.answer("❌ You don't own any Pokémon with that serial number in your inventory.")
+        await message.answer(f"❌ You don't own any <b>{pokemon.name.title()}</b> in your inventory.", parse_mode="HTML")
         return
 
     # Delete Pokémon from inventory
@@ -180,6 +189,7 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
     is_shiny = user_poke.is_shiny
     is_amv = user_poke.is_amv
     nickname = user_poke.nickname
+    serial = user_poke.serial_number
     level = user_poke.level
     xp = user_poke.xp
     iv_hp = user_poke.iv_hp
@@ -190,8 +200,8 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
     await db.delete(user_poke)
     await db.commit()
 
-    # Create active auction entry
-    expires_at = datetime.utcnow() + timedelta(hours=duration_hours)
+    # Create active auction entry (expires in 5 minutes)
+    expires_at = datetime.utcnow() + timedelta(minutes=5)
     auction = Auction(
         seller_id=message.from_user.id,
         pokemon_id=pokemon_id,
@@ -776,7 +786,7 @@ async def auction_settlement_worker(bot: Bot):
                                 iv_spd=auction.iv_spd
                             )
                             db.add(restored)
-                            auction.status = "COMPLETED"
+                            auction.status = "CANCELLED"
                             await db.commit()
 
                             # Announcement of Unsold

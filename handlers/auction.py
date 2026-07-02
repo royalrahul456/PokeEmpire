@@ -92,8 +92,6 @@ async def get_auction_card(db: AsyncSession, auction: Auction) -> tuple[str, str
         f"───────────────\n"
         f"<blockquote>📛 <b>Name</b>: {pokemon.name.title()} ({form_label})\n"
         f"💎 <b>Rarity</b>: {r_emoji} {pokemon.rarity}\n"
-        f"🔢 <b>Level</b>: {auction.level}\n"
-        f"📊 <b>IVs</b>: {auction.iv_hp}/{auction.iv_atk}/{auction.iv_def}/{auction.iv_spd} (Total: {auction.iv_hp+auction.iv_atk+auction.iv_def+auction.iv_spd}/124)\n"
         f"🎫 <b>Serial Number</b>: <code>{auction.serial_number}</code>\n\n"
         f"💰 <b>Starting</b>: {auction.starting_price:,}\n"
         f"💣 <b>Current Bid</b>: {auction.current_bid:,}\n"
@@ -136,6 +134,17 @@ def get_auction_keyboard(auction_id: int, owner_id: int) -> InlineKeyboardBuilde
 
 @router.message(Command("auction"))
 async def cmd_create_auction(message: Message, db: AsyncSession):
+    # Enforce one active auction per user limit
+    active_stmt = select(func.count(Auction.id)).where(
+        Auction.seller_id == message.from_user.id,
+        Auction.status == "ACTIVE"
+    )
+    active_res = await db.execute(active_stmt)
+    active_count = active_res.scalar() or 0
+    if active_count > 0:
+        await message.answer("❌ You can only have one active auction at a time. Please wait for your current auction to end.")
+        return
+
     # Command: /auction <pokedex_id_or_name> <starting_price>
     parts = message.text.split()
     if len(parts) < 3:
@@ -310,7 +319,7 @@ async def cmd_list_auctions(message: Message, db: AsyncSession):
             time_left_str = f"{hours}h {minutes}m"
 
         text += (
-            f"• <b>#{a.id:03d}</b> | <b>{p_name.title()}</b> (Lvl {a.level})\n"
+            f"• <b>#{a.id:03d}</b> | <b>{p_name.title()}</b>\n"
             f"  └ 🎫 Serial: <code>{a.serial_number}</code> | 💰 Current Bid: <b>{a.current_bid:,} coins</b>\n"
             f"  └ ⏳ Time remaining: <code>{time_left_str}</code>\n\n"
         )

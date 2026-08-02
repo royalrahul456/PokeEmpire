@@ -49,25 +49,16 @@ def check_and_copy_sqlite_db():
 
     # 1. Database file migration
     force_restore = os.getenv("FORCE_DB_RESTORE", "0") == "1"
-    print(f"[DB-RESTORE] force_restore={force_restore}, dest_dir_exists={os.path.exists(dest_dir)}, dest_path_exists={os.path.exists(dest_path)}, src_exists={os.path.exists(src_path)}")
     if os.path.exists(dest_dir) and (not os.path.exists(dest_path) or force_restore):
         if os.path.exists(src_path):
-            print("[DB-RESTORE] Copying database to persistent disk...")
             logger.info("Migrating existing pokeempire.db to Render Persistent Disk...")
             try:
                 shutil.copy2(src_path, dest_path)
                 logger.info("Database migrated to persistent storage successfully!")
-                print("[DB-RESTORE] Done! Migration successful.")
-                if force_restore:
-                    logger.info("FORCE_DB_RESTORE was set — please remove it from env vars now.")
             except Exception as e:
                 logger.error(f"Failed to migrate database to persistent storage: {e}")
-                print(f"[DB-RESTORE] ERROR: {e}")
         else:
-            print(f"[DB-RESTORE] Source not found at {src_path} — will init fresh DB.")
             logger.info("No source database found in code directory. A new database will be initialized.")
-    else:
-        print(f"[DB-RESTORE] Skipped — dest_dir missing or dest already exists (force={force_restore}).")
 
     # 2. Data directory copy (seed files)
     if os.path.exists(dest_dir):

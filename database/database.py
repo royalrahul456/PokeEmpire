@@ -3,8 +3,8 @@ from sqlalchemy.orm import declarative_base
 from sqlalchemy import select, text
 from config import DATABASE_URL
 
-# Configure the Async Engine with pooling options for PostgreSQL
-if "postgresql" in DATABASE_URL:
+# Configure the Async Engine with pooling options for PostgreSQL / CockroachDB
+if "postgresql" in DATABASE_URL or "cockroachdb" in DATABASE_URL:
     engine = create_async_engine(
         DATABASE_URL,
         pool_size=20,

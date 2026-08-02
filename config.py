@@ -11,19 +11,29 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 PERSISTENT_VOLUME = "/app/data_volume"
 _raw_db_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///pokeempire.db")
 
+def _format_db_url(url: str) -> str:
+    if url.startswith("sqlite+aiosqlite:///"):
+        return url
+    db_url = url
+    if "cockroachlabs" in db_url:
+        db_url = db_url.replace("postgresql://", "cockroachdb+asyncpg://", 1)
+        db_url = db_url.replace("postgresql+asyncpg://", "cockroachdb+asyncpg://", 1)
+    elif db_url.startswith("postgresql://"):
+        db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+    if "sslmode=" in db_url:
+        db_url = db_url.replace("sslmode=require", "ssl=require")
+        db_url = db_url.replace("sslmode=prefer", "ssl=prefer")
+        db_url = db_url.replace("sslmode=verify-full", "ssl=require")
+        db_url = db_url.replace("sslmode=verify-ca", "ssl=require")
+    return db_url
+
 if os.path.exists(PERSISTENT_VOLUME) and os.path.isdir(PERSISTENT_VOLUME):
-    # SQLite resolves to persistent storage
     if _raw_db_url.startswith("sqlite+aiosqlite:///"):
         DATABASE_URL = "sqlite+aiosqlite:////app/data_volume/pokeempire.db"
     else:
-        db_url = _raw_db_url
-        if db_url.startswith("postgresql://"):
-            db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-        if "sslmode=require" in db_url:
-            db_url = db_url.replace("sslmode=require", "ssl=require")
-        DATABASE_URL = db_url
+        DATABASE_URL = _format_db_url(_raw_db_url)
 else:
-    # Local fallback
     if _raw_db_url.startswith("sqlite+aiosqlite:///"):
         _db_rel_path = _raw_db_url.replace("sqlite+aiosqlite:///", "")
         _base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -32,12 +42,7 @@ else:
         else:
             DATABASE_URL = _raw_db_url
     else:
-        db_url = _raw_db_url
-        if db_url.startswith("postgresql://"):
-            db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-        if "sslmode=require" in db_url:
-            db_url = db_url.replace("sslmode=require", "ssl=require")
-        DATABASE_URL = db_url
+        DATABASE_URL = _format_db_url(_raw_db_url)
 
 
 # Admin List

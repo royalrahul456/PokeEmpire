@@ -3,6 +3,7 @@ migrate_to_postgres.py
 ────────────────────────────────────────────────────────────────
 Migrates ALL 12 tables from local SQLite database (pokeempire.db)
 to PostgreSQL / CockroachDB dynamically preserving all fields.
+Recreates target tables first for a 100% clean copy.
 ────────────────────────────────────────────────────────────────
 """
 
@@ -62,8 +63,9 @@ async def migrate_data(postgres_url: str):
     pg_engine = create_async_engine(postgres_url, echo=False)
     PGSession = sessionmaker(bind=pg_engine, class_=AsyncSession, expire_on_commit=False)
 
-    print("🛠️  Ensuring tables exist in target database...")
+    print("🧹 Dropping and recreating tables in target database for 100% clean sync...")
     async with pg_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
     print("\n📚 Reading data from local SQLite...\n")
@@ -79,25 +81,14 @@ async def migrate_data(postgres_url: str):
         for name, cls, pk_col in MODELS:
             items = sqlite_data[cls]
             print(f"   - Copying {name} ({len(items)} items)...")
-            
-            if pk_col is not None:
-                existing_pks = set((await db.execute(select(pk_col))).scalars().all())
-            else:
-                existing_pks = set()
-
             for item in items:
                 d = model_to_dict(item)
-                if pk_col is not None:
-                    pk_val = getattr(item, pk_col.name)
-                    if pk_val in existing_pks:
-                        continue
-                
                 db.add(cls(**d))
             await db.flush()
 
         await db.commit()
 
-    print("\n🎉 Database migration complete! All 12 tables have been copied to PostgreSQL / CockroachDB.")
+    print("\n🎉 Clean database migration complete! All 12 tables and fields (including art ownerships) copied.")
 
 if __name__ == "__main__":
     url = input("Enter target database URL: ").strip()

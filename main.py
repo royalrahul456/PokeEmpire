@@ -48,12 +48,15 @@ def check_and_copy_sqlite_db():
     src_path = "/app/pokeempire.db"
 
     # 1. Database file migration
-    if os.path.exists(dest_dir) and not os.path.exists(dest_path):
+    force_restore = os.getenv("FORCE_DB_RESTORE", "0") == "1"
+    if os.path.exists(dest_dir) and (not os.path.exists(dest_path) or force_restore):
         if os.path.exists(src_path):
             logger.info("Migrating existing pokeempire.db to Render Persistent Disk...")
             try:
                 shutil.copy2(src_path, dest_path)
                 logger.info("Database migrated to persistent storage successfully!")
+                if force_restore:
+                    logger.info("FORCE_DB_RESTORE was set — please remove it from env vars now.")
             except Exception as e:
                 logger.error(f"Failed to migrate database to persistent storage: {e}")
         else:

@@ -226,7 +226,7 @@ from aiogram.exceptions import TelegramBadRequest
 logger = logging.getLogger(__name__)
 
 # Premium emoji state (can be toggled at runtime or configured via ENABLE_PREMIUM_EMOJIS)
-_PREMIUM_EMOJIS_ENABLED = getattr(config, "ENABLE_PREMIUM_EMOJIS", False)
+_PREMIUM_EMOJIS_ENABLED = getattr(config, "ENABLE_PREMIUM_EMOJIS", True)
 
 def set_premium_emojis_status(enabled: bool):
     global _PREMIUM_EMOJIS_ENABLED

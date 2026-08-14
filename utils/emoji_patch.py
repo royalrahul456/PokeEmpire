@@ -219,9 +219,31 @@ def replace_emojis(text: str) -> str:
             
     return text
 
+import logging
+import config
+from aiogram.exceptions import TelegramBadRequest
+
+logger = logging.getLogger(__name__)
+
+# Premium emoji state (can be toggled at runtime or configured via ENABLE_PREMIUM_EMOJIS)
+_PREMIUM_EMOJIS_ENABLED = getattr(config, "ENABLE_PREMIUM_EMOJIS", False)
+
+def set_premium_emojis_status(enabled: bool):
+    global _PREMIUM_EMOJIS_ENABLED
+    _PREMIUM_EMOJIS_ENABLED = enabled
+
+def is_premium_emojis_enabled() -> bool:
+    return _PREMIUM_EMOJIS_ENABLED
+
+def strip_tg_emojis(text: str) -> str:
+    """Strips <tg-emoji ...> tags and retains internal emoji/content."""
+    if not isinstance(text, str) or not text:
+        return text
+    return re.sub(r'<tg-emoji[^>]*>(.*?)</tg-emoji>', r'\1', text)
+
 def process_text_or_caption(text: str, parse_mode, bot_instance) -> tuple[str, str]:
     """Helper to process text/caption, convert markdown to HTML if needed, and insert custom emojis."""
-    if not text:
+    if not text or not is_premium_emojis_enabled():
         return text, parse_mode
         
     has_target = any(em in text for em in ALL_EMOJIS_SET)
@@ -258,15 +280,31 @@ def patch_bot_emojis(bot: Bot):
     async def new_make_request(bot_instance, method, timeout=None):
         parse_mode = getattr(method, "parse_mode", None)
         
-        if isinstance(method, (SendMessage, EditMessageText)):
-            if method.text and isinstance(method.text, str):
-                method.text, new_mode = process_text_or_caption(method.text, parse_mode, bot_instance)
-                method.parse_mode = new_mode
-        elif isinstance(method, (SendPhoto, SendVideo, SendAnimation, SendAudio, SendDocument, EditMessageCaption)):
-            if method.caption and isinstance(method.caption, str):
-                method.caption, new_mode = process_text_or_caption(method.caption, parse_mode, bot_instance)
-                method.parse_mode = new_mode
+        if is_premium_emojis_enabled():
+            if isinstance(method, (SendMessage, EditMessageText)):
+                if method.text and isinstance(method.text, str):
+                    method.text, new_mode = process_text_or_caption(method.text, parse_mode, bot_instance)
+                    method.parse_mode = new_mode
+            elif isinstance(method, (SendPhoto, SendVideo, SendAnimation, SendAudio, SendDocument, EditMessageCaption)):
+                if method.caption and isinstance(method.caption, str):
+                    method.caption, new_mode = process_text_or_caption(method.caption, parse_mode, bot_instance)
+                    method.parse_mode = new_mode
         
-        return await original_make_request(bot_instance, method, timeout=timeout)
+        try:
+            return await original_make_request(bot_instance, method, timeout=timeout)
+        except TelegramBadRequest as e:
+            err_str = str(e).lower()
+            if "custom_emoji" in err_str or "entity_bounds_invalid" in err_str or "cannot_use_custom_emoji" in err_str or "can't use custom emoji" in err_str:
+                logger.warning(f"Telegram API rejected custom emojis (Premium expired/not allowed). Auto-disabling premium emojis & retrying: {e}")
+                set_premium_emojis_status(False)
+                # Strip tg-emoji tags and retry
+                if isinstance(method, (SendMessage, EditMessageText)):
+                    if method.text:
+                        method.text = strip_tg_emojis(method.text)
+                elif isinstance(method, (SendPhoto, SendVideo, SendAnimation, SendAudio, SendDocument, EditMessageCaption)):
+                    if method.caption:
+                        method.caption = strip_tg_emojis(method.caption)
+                return await original_make_request(bot_instance, method, timeout=timeout)
+            raise e
         
     bot.session.make_request = new_make_request

@@ -2684,3 +2684,24 @@ async def handle_spam_wizard_text(message: Message):
             f"Failed: <b>{failed}</b></blockquote>",
             parse_mode="HTML"
         )
+
+
+@router.message(Command("toggleemojis"))
+@router.message(Command("togglepremiumemojis"))
+async def cmd_toggle_emojis(message: Message):
+    from handlers.admin import is_user_admin
+    if not await is_user_admin(message):
+        await message.answer("❌ Denied. Only bot owners or admins can toggle premium emojis.")
+        return
+
+    from utils.emoji_patch import is_premium_emojis_enabled, set_premium_emojis_status
+    current = is_premium_emojis_enabled()
+    new_status = not current
+    set_premium_emojis_status(new_status)
+
+    status_str = "Enabled 🟢 (Custom Telegram Premium Emojis)" if new_status else "Disabled 🔴 (Standard Clean Unicode Emojis)"
+    await message.answer(
+        f"✨ <b>Premium Emoji Mode</b> is now <b>{status_str}</b>.\n\n"
+        f"<i>Note: If your account's Telegram Premium is active, enable this. If Telegram Premium is expired, keep disabled so messages send cleanly!</i>",
+        parse_mode="HTML"
+    )

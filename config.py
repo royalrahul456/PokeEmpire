@@ -59,6 +59,7 @@ HUNT_COOLDOWN = int(os.getenv("HUNT_COOLDOWN", "30"))
 WORK_COOLDOWN = int(os.getenv("WORK_COOLDOWN", "3600"))
 DAILY_REWARD_COINS = int(os.getenv("DAILY_REWARD_COINS", "250"))
 DAILY_REWARD_GEMS = int(os.getenv("DAILY_REWARD_GEMS", "5"))
+ENABLE_PREMIUM_EMOJIS = os.getenv("ENABLE_PREMIUM_EMOJIS", "false").lower() == "true"
 
 # Optional Telegram proxy (e.g. http://proxy.server:3128)
 _raw_proxy = os.getenv("TELEGRAM_PROXY", None)

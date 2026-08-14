@@ -141,16 +141,19 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
         await message.answer("❌ The Auction system is currently disabled globally by the Bot Owner.")
         return
 
-    # Enforce one active/pending auction per user limit
-    active_stmt = select(func.count(Auction.id)).where(
-        Auction.seller_id == message.from_user.id,
-        Auction.status.in_({"ACTIVE", "PENDING"})
-    )
-    active_res = await db.execute(active_stmt)
-    active_count = active_res.scalar() or 0
-    if active_count > 0:
-        await message.answer("❌ You can only have one active or queued auction at a time. Please wait for your current auction to end.")
-        return
+    is_owner = (message.from_user.id in config.ADMIN_IDS)
+
+    # Enforce one active/pending auction per user limit (owners bypass)
+    if not is_owner:
+        active_stmt = select(func.count(Auction.id)).where(
+            Auction.seller_id == message.from_user.id,
+            Auction.status.in_({"ACTIVE", "PENDING"})
+        )
+        active_res = await db.execute(active_stmt)
+        active_count = active_res.scalar() or 0
+        if active_count > 0:
+            await message.answer("❌ You can only have one active or queued auction at a time. Please wait for your current auction to end.")
+            return
 
     # Command: /auction <pokedex_id_or_name> <starting_price>
     parts = message.text.split()
@@ -206,27 +209,40 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
     )
     res = await db.execute(stmt)
     user_poke = res.scalar_one_or_none()
+
     if not user_poke:
-        form_label = f"Form {form_index}" if form_index > 0 else "standard"
-        await message.answer(f"❌ You don't own any <b>{pokemon.name.title()}</b> ({form_label}) in your inventory.", parse_mode="HTML")
-        return
+        if is_owner:
+            # Owner bypass: Create a virtual admin auction item for any Pokemon ID
+            pokemon_id = pokemon.id
+            form_index = form_index
+            is_shiny = False
+            is_amv = (form_index == 1)
+            nickname = None
+            serial = "#ADMIN"
+            level = 100
+            xp = 0
+            iv_hp, iv_atk, iv_def, iv_spd = 31, 31, 31, 31
+        else:
+            form_label = f"Form {form_index}" if form_index > 0 else "standard"
+            await message.answer(f"❌ You don't own any <b>{pokemon.name.title()}</b> ({form_label}) in your inventory.", parse_mode="HTML")
+            return
+    else:
+        # Delete real Pokémon from inventory if owned
+        pokemon_id = user_poke.pokemon_id
+        form_index = user_poke.form_index
+        is_shiny = user_poke.is_shiny
+        is_amv = user_poke.is_amv
+        nickname = user_poke.nickname
+        serial = user_poke.serial_number
+        level = user_poke.level
+        xp = user_poke.xp
+        iv_hp = user_poke.iv_hp
+        iv_atk = user_poke.iv_atk
+        iv_def = user_poke.iv_def
+        iv_spd = user_poke.iv_spd
 
-    # Delete Pokémon from inventory
-    pokemon_id = user_poke.pokemon_id
-    form_index = user_poke.form_index
-    is_shiny = user_poke.is_shiny
-    is_amv = user_poke.is_amv
-    nickname = user_poke.nickname
-    serial = user_poke.serial_number
-    level = user_poke.level
-    xp = user_poke.xp
-    iv_hp = user_poke.iv_hp
-    iv_atk = user_poke.iv_atk
-    iv_def = user_poke.iv_def
-    iv_spd = user_poke.iv_spd
-
-    await db.delete(user_poke)
-    await db.commit()
+        await db.delete(user_poke)
+        await db.commit()
 
     # Check if there is an active auction globally
     global_active_stmt = select(func.count(Auction.id)).where(Auction.status == "ACTIVE")

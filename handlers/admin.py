@@ -232,6 +232,9 @@ async def cmd_admin_list(message: Message, db: AsyncSession):
     text += "───────────────"
     await message.answer(text, parse_mode="Markdown")
 
+import time
+spawnsettings_cooldown_cache = {}  # chat_id -> timestamp
+
 @router.message(Command("spawnsetting", "spawnsettings"))
 async def cmd_spawn_setting(message: Message, db: AsyncSession):
     if message.chat.type not in ["group", "supergroup"]:
@@ -239,6 +242,26 @@ async def cmd_spawn_setting(message: Message, db: AsyncSession):
         return
 
     chat_id = message.chat.id
+    user_id = message.from_user.id
+    is_owner_or_admin = (user_id in config.ADMIN_IDS) or await is_user_admin(message)
+
+    # 1-Hour Cooldown for non-admins to prevent command spamming
+    if not is_owner_or_admin:
+        now = time.time()
+        last_used = spawnsettings_cooldown_cache.get(chat_id, 0)
+        cooldown_sec = 3600  # 1 hour
+        if now - last_used < cooldown_sec:
+            rem = int(cooldown_sec - (now - last_used))
+            mins = rem // 60
+            secs = rem % 60
+            await message.answer(
+                f"⏳ <b>Cooldown Active!</b>\n"
+                f"<code>/spawnsettings</code> can only be checked once per hour in this group to prevent spam.\n\n"
+                f"⏱️ Please try again in <b>{mins}m {secs}s</b>.",
+                parse_mode="HTML"
+            )
+            return
+        spawnsettings_cooldown_cache[chat_id] = now
 
     # Query database for GroupSetting
     stmt = select(GroupSetting).where(GroupSetting.chat_id == chat_id)

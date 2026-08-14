@@ -177,8 +177,10 @@ async def cmd_redeem(message: Message, db: AsyncSession):
             await message.answer("❌ Invalid redeem code. Please check spelling and try again.")
             return
             
-        # Check limit
-        if code.usage_count >= code.usage_limit:
+        is_owner = (user_id in config.ADMIN_IDS)
+
+        # Check limit (owners bypass usage limit)
+        if not is_owner and code.usage_count >= code.usage_limit:
             await message.answer("❌ This redeem code has expired (limit reached).")
             return
             
@@ -196,12 +198,13 @@ async def cmd_redeem(message: Message, db: AsyncSession):
             db.add(user)
             await db.flush()
             
-        # Check if already claimed by this user
-        claim_stmt = select(RedeemClaim).where(RedeemClaim.code_id == code.id, RedeemClaim.user_id == user_id)
-        claim_res = await db.execute(claim_stmt)
-        if claim_res.scalar_one_or_none():
-            await message.answer("❌ You have already claimed this redeem code!")
-            return
+        # Check if already claimed by this user (owners bypass single-claim limit)
+        if not is_owner:
+            claim_stmt = select(RedeemClaim).where(RedeemClaim.code_id == code.id, RedeemClaim.user_id == user_id)
+            claim_res = await db.execute(claim_stmt)
+            if claim_res.scalar_one_or_none():
+                await message.answer("❌ You have already claimed this redeem code!")
+                return
             
         # Process reward
         try:
@@ -209,8 +212,9 @@ async def cmd_redeem(message: Message, db: AsyncSession):
             claim = RedeemClaim(user_id=user_id, code_id=code.id)
             db.add(claim)
             
-            # Increment code count
-            code.usage_count += 1
+            # Increment code count only for regular users
+            if not is_owner:
+                code.usage_count += 1
             
             if code.reward_type == "coins":
                 user.coins += code.reward_value

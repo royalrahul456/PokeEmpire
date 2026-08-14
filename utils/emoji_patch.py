@@ -166,15 +166,17 @@ EMOJI_MAPPING = {
 }
 
 ALL_EMOJIS_SET = set(EMOJI_MAPPING.keys()) | {"🟢", "🔮"}
+HTML_TAG_PATTERN = re.compile(r'</?(?:b|i|u|s|code|pre|a|blockquote|tg-emoji|span)\b[^>]*>', re.IGNORECASE)
 
 def markdown_to_html(text: str) -> str:
     """Converts basic Markdown formatting (bold, italic, code, links) to Telegram HTML format."""
     if not isinstance(text, str) or not text:
         return text
     
-    # Escape HTML tags first as we're translating from plain text markdown
-    text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-    
+    # If text already contains valid HTML tags, preserve them without escaping
+    if HTML_TAG_PATTERN.search(text):
+        return text
+        
     # Bold **text** or __text__
     text = re.sub(r'\*\*(.*?)\*\*|__(.*?)__', lambda m: f"<b>{m.group(1) or m.group(2)}</b>", text)
     
@@ -249,6 +251,11 @@ def process_text_or_caption(text: str, parse_mode, bot_instance) -> tuple[str, s
     has_target = any(em in text for em in ALL_EMOJIS_SET)
     if not has_target:
         return text, parse_mode
+
+    # If text already contains valid HTML tags, process emojis and set HTML mode directly
+    if HTML_TAG_PATTERN.search(text):
+        text = replace_emojis(text)
+        return text, "HTML"
         
     current_mode = parse_mode
     is_markdown = False

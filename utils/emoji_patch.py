@@ -295,9 +295,8 @@ def patch_bot_emojis(bot: Bot):
         except TelegramBadRequest as e:
             err_str = str(e).lower()
             if "custom_emoji" in err_str or "entity_bounds_invalid" in err_str or "cannot_use_custom_emoji" in err_str or "can't use custom emoji" in err_str:
-                logger.warning(f"Telegram API rejected custom emojis (Premium expired/not allowed). Auto-disabling premium emojis & retrying: {e}")
-                set_premium_emojis_status(False)
-                # Strip tg-emoji tags and retry
+                logger.warning(f"Telegram API rejected custom emojis for this message. Retrying with fallback: {e}")
+                # Strip tg-emoji tags for this message retry only
                 if isinstance(method, (SendMessage, EditMessageText)):
                     if method.text:
                         method.text = strip_tg_emojis(method.text)

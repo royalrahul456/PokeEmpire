@@ -82,3 +82,5 @@ else:
     DATABASE_PATH = os.path.join(BASE_DIR, "pokeempire.db")
 UPDATES_CHANNEL = os.getenv("UPDATES_CHANNEL", "@pokeempireupdates")
 DATABASE_CHANNEL = os.getenv("DATABASE_CHANNEL", "@pokeempiredatabase")
+AUCTION_CHANNEL = os.getenv("AUCTION_CHANNEL", "@PokeEmpireAuctions")
+

@@ -14,7 +14,37 @@ from utils.settings import get_custom_rarity_forms, get_all_custom_rarities
 from handlers.admin import get_single_form_media_value, parse_stored_media_value
 
 router = Router()
-active_custom_bids = {}  # user_id -> (auction_id, prompt_message_id)
+active_custom_bids = {}  # user_id -> auction_id
+
+
+def parse_duration(duration_str: str) -> int:
+    """Parses duration string like '5m', '1h', '30s', '10' into seconds.
+    Defaults to 300 seconds (5m) and caps at 300 seconds max (5 minutes)."""
+    if not duration_str:
+        return 300
+    
+    s = duration_str.strip().lower()
+    total_sec = 300
+    try:
+        if s.endswith("h"):
+            total_sec = int(s[:-1]) * 3600
+        elif s.endswith("m"):
+            total_sec = int(s[:-1]) * 60
+        elif s.endswith("s"):
+            total_sec = int(s[:-1])
+        elif s.isdigit():
+            total_sec = int(s) * 60
+    except ValueError:
+        total_sec = 300
+
+    # Minimum 1 min (60s), Maximum 5 mins (300s) as configured
+    if total_sec < 60:
+        total_sec = 60
+    if total_sec > 300:
+        total_sec = 300
+        
+    return total_sec
+
 
 async def get_auction_card(db: AsyncSession, auction: Auction) -> tuple[str, str, str | None]:
     """Generates the text caption, media type and media value for an auction card."""
@@ -46,10 +76,10 @@ async def get_auction_card(db: AsyncSession, auction: Auction) -> tuple[str, str
     # Fetch seller
     stmt_seller = select(User).where(User.id == auction.seller_id)
     res_seller = await db.execute(stmt_seller)
-    seller = res_seller.scalar_one()
-    seller_name = seller.nickname or seller.username or f"Trainer {seller.id}"
+    seller = res_seller.scalar_one_or_none()
+    seller_name = seller.nickname or seller.username or f"Trainer {seller.id}" if seller else f"Trainer {auction.seller_id}"
 
-    # Fetch highest bidder
+    # Fetch highest bidder & recent bids
     leader_name = "No bids yet"
     stmt_bids = (
         select(AuctionBid, User)
@@ -65,7 +95,6 @@ async def get_auction_card(db: AsyncSession, auction: Auction) -> tuple[str, str
         leader_name = bidder_user.nickname or bidder_user.username or f"Trainer {bidder_user.id}"
 
     # Build bid history list (top 5 bids)
-    recent_bids_text = ""
     if all_bids:
         bid_lines = []
         for bid_rec, bidder_user in all_bids[:5]:
@@ -76,29 +105,41 @@ async def get_auction_card(db: AsyncSession, auction: Auction) -> tuple[str, str
     else:
         recent_bids_text = "\n╰─ No bids placed yet"
 
+    # Calculate IV stats
+    total_iv = auction.iv_hp + auction.iv_atk + auction.iv_def + auction.iv_spd
+    iv_pct = (total_iv / 124.0) * 100
+
     # Time remaining calculation
     time_left = auction.expires_at - datetime.utcnow()
     if time_left.total_seconds() <= 0:
         time_left_str = "Ended"
     else:
-        hours, remainder = divmod(int(time_left.total_seconds()), 3600)
-        minutes, _ = divmod(remainder, 60)
-        time_left_str = f"{hours}h {minutes}m"
+        seconds = int(time_left.total_seconds())
+        hours, remainder = divmod(seconds, 3600)
+        minutes, secs = divmod(remainder, 60)
+        if hours > 0:
+            time_left_str = f"{hours}h {minutes:02d}m"
+        else:
+            time_left_str = f"{minutes}m {secs:02d}s"
 
-    title_status = "🔮 ACTIVE AUCTION!" if auction.status == "ACTIVE" else "🔮 AUCTION ENDED!"
+    title_status = f"🔮 ACTIVE AUCTION (#{auction.id:03d})" if auction.status == "ACTIVE" else f"🔮 AUCTION ENDED (#{auction.id:03d})"
 
     caption = (
-        f"{title_status}\n"
+        f"<b>{title_status}</b>\n"
         f"───────────────\n"
-        f"<blockquote>📛 <b>Name</b>: {pokemon.name.title()} ({form_label})\n"
+        f"<blockquote>🆔 <b>Pokédex ID</b>: <code>#{pokemon.id}</code>\n"
+        f"📛 <b>Name</b>: <b>{pokemon.name.title()}</b> ({form_label})\n"
         f"💎 <b>Rarity</b>: {r_emoji} {pokemon.rarity}\n"
-        f"🎫 <b>Serial Number</b>: <code>{auction.serial_number}</code>\n\n"
-        f"💰 <b>Starting</b>: {auction.starting_price:,}\n"
-        f"💣 <b>Current Bid</b>: {auction.current_bid:,}\n"
+        f"🎫 <b>Serial Number</b>: <code>{auction.serial_number}</code>\n"
+        f"⭐ <b>Level</b>: {auction.level} | ⚡ <b>XP</b>: {auction.xp:,}\n"
+        f"📊 <b>IV Stats</b>: HP: {auction.iv_hp} | Atk: {auction.iv_atk} | Def: {auction.iv_def} | Spd: {auction.iv_spd} (<b>{iv_pct:.1f}%</b>)\n\n"
+        f"💰 <b>Starting Price</b>: {auction.starting_price:,} coins\n"
+        f"💣 <b>Current Bid</b>: <b>{auction.current_bid:,} coins</b>\n"
         f"👑 <b>Leader</b>: {html.escape(leader_name)}\n"
         f"👥 <b>Seller</b>: {html.escape(seller_name)}\n"
-        f"⏳ <b>Time Left</b>: {time_left_str}</blockquote>\n\n"
-        f"📝 <b>Recent Bids:</b>{recent_bids_text}"
+        f"⏳ <b>Time Remaining</b>: <code>{time_left_str}</code></blockquote>\n\n"
+        f"📝 <b>Recent Bids:</b>{recent_bids_text}\n\n"
+        f"📢 Settlement Channel: @PokeEmpireAuctions"
     )
 
     # Resolve media
@@ -121,6 +162,7 @@ async def get_auction_card(db: AsyncSession, auction: Auction) -> tuple[str, str
 
     return caption, media_type, media_value
 
+
 def get_auction_keyboard(auction_id: int, owner_id: int) -> InlineKeyboardBuilder:
     builder = InlineKeyboardBuilder()
     builder.row(
@@ -133,9 +175,273 @@ def get_auction_keyboard(auction_id: int, owner_id: int) -> InlineKeyboardBuilde
     )
     return builder
 
+
+async def process_auction_bid(db: AsyncSession, bot: Bot, auction: Auction, bidder_user: User, bid_amount: int) -> tuple[bool, str]:
+    """Centralized helper to process a bid. Performs balance check, outbid DM notification, refund, anti-snipe time extension, and updates DB & card."""
+    if auction.seller_id == bidder_user.id:
+        return False, "❌ You cannot bid on your own auction!"
+
+    if auction.status != "ACTIVE":
+        return False, "❌ Auction is no longer active."
+
+    min_next_bid = auction.current_bid + 1
+    if bid_amount < min_next_bid:
+        return False, f"❌ Your bid must be at least {min_next_bid:,} coins."
+
+    if bidder_user.coins < bid_amount:
+        return False, f"❌ Insufficient coins! Your balance: {bidder_user.coins:,} coins."
+
+    # Fetch previous highest bid
+    stmt_prev_bids = (
+        select(AuctionBid)
+        .where(AuctionBid.auction_id == auction.id)
+        .order_by(AuctionBid.amount.desc())
+        .limit(1)
+    )
+    prev_bids_res = await db.execute(stmt_prev_bids)
+    prev_highest_bid = prev_bids_res.scalar_one_or_none()
+
+    # Refund previous bidder & send outbid DM if a different user
+    if prev_highest_bid:
+        stmt_prev_user = select(User).where(User.id == prev_highest_bid.bidder_id)
+        res_prev_user = await db.execute(stmt_prev_user)
+        prev_user = res_prev_user.scalar_one_or_none()
+        
+        if prev_user:
+            prev_user.coins += prev_highest_bid.amount
+            db.add(prev_user)
+
+            # Send Outbid DM to previous leader
+            if prev_highest_bid.bidder_id != bidder_user.id:
+                try:
+                    stmt_p = select(Pokemon.name).where(Pokemon.id == auction.pokemon_id)
+                    res_p = await db.execute(stmt_p)
+                    poke_name = res_p.scalar() or "Pokémon"
+
+                    time_left = auction.expires_at - datetime.utcnow()
+                    secs = max(0, int(time_left.total_seconds()))
+                    mins, s = divmod(secs, 60)
+                    time_str = f"{mins}m {s:02d}s" if secs > 0 else "Ending soon"
+
+                    outbid_text = (
+                        f"⚠️ <b>YOU HAVE BEEN OUTBID!</b> ⚠️\n"
+                        f"───────────────\n"
+                        f"<blockquote>Someone placed a higher bid of <b>{bid_amount:,} coins</b> on Auction <b>#{auction.id:03d}</b> ({poke_name.title()})!\n\n"
+                        f"💰 Your bid of <b>{prev_highest_bid.amount:,} coins</b> was refunded to your balance.\n"
+                        f"🆔 Pokédex ID: <code>#{auction.pokemon_id}</code> | 🎫 Serial: <code>{auction.serial_number}</code>\n"
+                        f"⏳ Time Remaining: <code>{time_str}</code></blockquote>\n\n"
+                        f"👉 Use <code>/bid {bid_amount + 1000}</code> or click buttons on the auction card to counter-bid!"
+                    )
+                    await bot.send_message(chat_id=prev_highest_bid.bidder_id, text=outbid_text, parse_mode="HTML")
+                except Exception as outbid_err:
+                    print(f"⚠️ Failed to send outbid notification to {prev_highest_bid.bidder_id}: {outbid_err}")
+
+    # Deduct coins from bidder
+    bidder_user.coins -= bid_amount
+    db.add(bidder_user)
+
+    # Record bid
+    new_bid = AuctionBid(
+        auction_id=auction.id,
+        bidder_id=bidder_user.id,
+        amount=bid_amount
+    )
+    db.add(new_bid)
+
+    # Anti-Snipe Protection: Extend by 60 seconds if bid within final 30 seconds
+    time_left_sec = (auction.expires_at - datetime.utcnow()).total_seconds()
+    anti_snipe_msg = ""
+    if time_left_sec < 30:
+        auction.expires_at = datetime.utcnow() + timedelta(seconds=60)
+        anti_snipe_msg = "\n⏰ <b>Anti-Snipe Protection Triggered!</b> Auction extended by 60 seconds."
+
+    auction.current_bid = bid_amount
+    await db.commit()
+
+    # Update dynamic auction card in group/channel
+    if auction.channel_chat_id and auction.channel_message_id:
+        caption, media_type, media_value = await get_auction_card(db, auction)
+        kb = get_auction_keyboard(auction.id, auction.seller_id)
+        try:
+            await bot.edit_message_caption(
+                chat_id=auction.channel_chat_id,
+                message_id=auction.channel_message_id,
+                caption=caption,
+                reply_markup=kb.as_markup(),
+                parse_mode="HTML"
+            )
+        except Exception as edit_err:
+            print(f"⚠️ Failed to edit auction card: {edit_err}")
+
+    return True, f"✅ Bid of <b>{bid_amount:,} coins</b> placed successfully on Auction <b>#{auction.id:03d}</b>!{anti_snipe_msg}"
+
+
+async def send_auction_settlement_channel_report(bot: Bot, db: AsyncSession, auction: Auction, status_type: str):
+    """Sends a full settlement report to @PokeEmpireAuctions channel with media, stats, seller, winner, payout, and complete bid history."""
+    try:
+        channel_id = config.AUCTION_CHANNEL
+        if not channel_id:
+            return
+
+        # Fetch Pokemon
+        stmt_p = select(Pokemon).where(Pokemon.id == auction.pokemon_id)
+        res_p = await db.execute(stmt_p)
+        pokemon = res_p.scalar_one_or_none()
+        if not pokemon:
+            return
+
+        # Load dynamic forms & rarities
+        custom_rarities = await get_all_custom_rarities(db)
+        custom_forms = await get_custom_rarity_forms(db)
+        r_emoji = get_rarity_emoji(pokemon.rarity, custom_rarities)
+
+        form_names = {
+            0: "Standard", 1: "AMV/Art", 2: "Dmax", 3: "Gmax", 4: "Z-Move", 5: "Terastal"
+        }
+        for f_idx, (r_name, r_emoji_f) in custom_forms.items():
+            form_names[f_idx] = r_name
+        form_label = form_names.get(auction.form_index, f"Form {auction.form_index}")
+
+        # Fetch seller
+        stmt_seller = select(User).where(User.id == auction.seller_id)
+        res_seller = await db.execute(stmt_seller)
+        seller = res_seller.scalar_one_or_none()
+        seller_name = seller.nickname or seller.username or f"Trainer {seller.id}" if seller else f"Trainer {auction.seller_id}"
+        seller_user_handle = f"@{seller.username}" if seller and seller.username else html.escape(seller_name)
+
+        # Fetch all bids
+        stmt_bids = (
+            select(AuctionBid, User)
+            .join(User, AuctionBid.bidder_id == User.id)
+            .where(AuctionBid.auction_id == auction.id)
+            .order_by(AuctionBid.amount.desc())
+        )
+        bids_res = await db.execute(stmt_bids)
+        all_bids = bids_res.all()
+
+        total_iv = auction.iv_hp + auction.iv_atk + auction.iv_def + auction.iv_spd
+        iv_pct = (total_iv / 124.0) * 100
+
+        # Build status header & details
+        if status_type == "COMPLETED" and all_bids:
+            highest_bid_rec, winner_user = all_bids[0]
+            winner_name = winner_user.nickname or winner_user.username or f"Trainer {winner_user.id}"
+            winner_handle = f"@{winner_user.username}" if winner_user.username else html.escape(winner_name)
+            
+            tax = int(highest_bid_rec.amount * 0.05)
+            payout = highest_bid_rec.amount - tax
+
+            title_header = "🎉 <b>AUCTION COMPLETED & SETTLED!</b> 🎉"
+            winning_str = f"<b>{highest_bid_rec.amount:,} coins</b>"
+            payout_str = f"<b>{payout:,} coins</b> (5% tax deducted: {tax:,})"
+            winner_str = f"{winner_handle} (ID: <code>{winner_user.id}</code>)"
+        elif status_type == "UNSOLD":
+            title_header = "🪙 <b>AUCTION ENDED — UNSOLD</b>"
+            winning_str = "<i>No bids placed</i>"
+            payout_str = "<i>N/A (Returned to Seller)</i>"
+            winner_str = "<i>None (No bids)</i>"
+        else:
+            title_header = "🚫 <b>AUCTION CANCELLED</b>"
+            winning_str = "<i>Cancelled</i>"
+            payout_str = "<i>N/A (Returned to Seller)</i>"
+            winner_str = "<i>None</i>"
+
+        # Format Full Bid History
+        if all_bids:
+            history_lines = []
+            for rank, (bid_rec, bidder_u) in enumerate(all_bids, start=1):
+                b_name = bidder_u.nickname or bidder_u.username or f"Trainer {bidder_u.id}"
+                b_handle = f"@{bidder_u.username}" if bidder_u.username else html.escape(b_name)
+                b_time = bid_rec.bid_at.strftime("%H:%M:%S UTC")
+                
+                if rank == 1:
+                    rank_icon = "🥇"
+                elif rank == 2:
+                    rank_icon = "🥈"
+                elif rank == 3:
+                    rank_icon = "🥉"
+                else:
+                    rank_icon = "🔹"
+
+                history_lines.append(f"{rank_icon} <b>#{rank}</b> {b_handle} — <b>{bid_rec.amount:,} coins</b> ({b_time})")
+            bid_history_text = "\n".join(history_lines)
+        else:
+            bid_history_text = "<i>No bids were placed on this auction.</i>"
+
+        caption_text = (
+            f"{title_header}\n"
+            f"───────────────\n"
+            f"📌 <b>Auction ID</b>: <code>#{auction.id:03d}</code>\n"
+            f"🆔 <b>Pokédex ID</b>: <code>#{pokemon.id}</code> | 🎫 <b>Serial Number</b>: <code>{auction.serial_number}</code>\n"
+            f"📛 <b>Pokémon</b>: <b>{pokemon.name.title()}</b> ({form_label})\n"
+            f"💎 <b>Rarity</b>: {r_emoji} {pokemon.rarity}\n"
+            f"⭐ <b>Level</b>: {auction.level} | ⚡ <b>XP</b>: {auction.xp:,}\n"
+            f"📊 <b>IV Stats</b>: HP: {auction.iv_hp} | Atk: {auction.iv_atk} | Def: {auction.iv_def} | Spd: {auction.iv_spd} (<b>{iv_pct:.1f}%</b>)\n"
+            f"───────────────\n"
+            f"👥 <b>Seller</b>: {seller_user_handle} (ID: <code>{auction.seller_id}</code>)\n"
+            f"👑 <b>Buyer / Winner</b>: {winner_str}\n"
+            f"💰 <b>Starting Price</b>: {auction.starting_price:,} coins\n"
+            f"🔨 <b>Winning Bid</b>: {winning_str}\n"
+            f"💸 <b>Seller Net Payout</b>: {payout_str}\n"
+            f"───────────────\n"
+            f"📜 <b>COMPLETE BID HISTORY ({len(all_bids)} bids):</b>\n"
+            f"{bid_history_text}\n"
+            f"───────────────\n"
+            f"📢 Official Channel: @PokeEmpireAuctions"
+        )
+
+        # Resolve media
+        media_type = "photo"
+        media_value = pokemon.image_url
+        if pokemon.image_url:
+            media_type, media_value = parse_stored_media_value(pokemon.image_url)
+
+        resolved_form = auction.form_index
+        if auction.is_shiny and auction.form_index == 0:
+            resolved_form = 6
+
+        if resolved_form > 0:
+            form_media = await get_single_form_media_value(db, pokemon.id, resolved_form)
+            if form_media:
+                media_type, media_value = parse_stored_media_value(form_media)
+        else:
+            if pokemon.video_url:
+                media_type, media_value = parse_stored_media_value(pokemon.video_url)
+
+        if len(caption_text) <= 1024:
+            if media_type == "video":
+                await bot.send_video(chat_id=channel_id, video=media_value, caption=caption_text, parse_mode="HTML")
+            elif media_type == "animation":
+                await bot.send_animation(chat_id=channel_id, animation=media_value, caption=caption_text, parse_mode="HTML")
+            else:
+                await bot.send_photo(chat_id=channel_id, photo=media_value, caption=caption_text, parse_mode="HTML")
+        else:
+            short_caption = (
+                f"{title_header}\n"
+                f"───────────────\n"
+                f"📌 <b>Auction ID</b>: <code>#{auction.id:03d}</code>\n"
+                f"🆔 <b>Pokédex ID</b>: <code>#{pokemon.id}</code> | 🎫 <b>Serial</b>: <code>{auction.serial_number}</code>\n"
+                f"📛 <b>Pokémon</b>: <b>{pokemon.name.title()}</b> ({form_label})\n"
+                f"💎 <b>Rarity</b>: {r_emoji} {pokemon.rarity}\n"
+                f"🔨 <b>Final Bid</b>: {winning_str}\n"
+                f"👑 <b>Winner</b>: {winner_str}\n\n"
+                f"👇 <b>See full bid history in text message below!</b>"
+            )
+            if media_type == "video":
+                await bot.send_video(chat_id=channel_id, video=media_value, caption=short_caption, parse_mode="HTML")
+            elif media_type == "animation":
+                await bot.send_animation(chat_id=channel_id, animation=media_value, caption=short_caption, parse_mode="HTML")
+            else:
+                await bot.send_photo(chat_id=channel_id, photo=media_value, caption=short_caption, parse_mode="HTML")
+
+            await bot.send_message(chat_id=channel_id, text=caption_text, parse_mode="HTML")
+
+    except Exception as report_err:
+        print(f"⚠️ Failed to post settlement report to {config.AUCTION_CHANNEL}: {report_err}")
+
+
 @router.message(Command("auction"))
 async def cmd_create_auction(message: Message, db: AsyncSession):
-    # Check if auctions are globally enabled
     from utils.settings import global_settings_cache
     if global_settings_cache.get("auctions_enabled", "on") == "off":
         await message.answer("❌ The Auction system is currently disabled globally by the Bot Owner.")
@@ -155,13 +461,13 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
             await message.answer("❌ You can only have one active or queued auction at a time. Please wait for your current auction to end.")
             return
 
-    # Command: /auction <pokedex_id_or_name> <starting_price>
+    # Command: /auction <pokedex_id_or_name> <starting_price> [duration]
     parts = message.text.split()
     if len(parts) < 3:
         await message.answer(
             "⚠️ <b>Usage:</b>\n"
-            "<code>/auction &lt;Pokedex_ID_or_Name&gt; &lt;Starting_Price&gt;</code>\n\n"
-            "Example: <code>/auction 6 10000</code> or <code>/auction charizard 10000</code>",
+            "<code>/auction &lt;Pokedex_ID_or_Name&gt; &lt;Starting_Price&gt; [duration]</code>\n\n"
+            "Example: <code>/auction 6 10000</code> or <code>/auction charizard 10000 5m</code>",
             parse_mode="HTML"
         )
         return
@@ -184,6 +490,9 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
     if starting_price <= 0:
         await message.answer("❌ Starting price must be greater than 0.")
         return
+
+    duration_str = parts[3] if len(parts) >= 4 else "5m"
+    duration_sec = parse_duration(duration_str)
 
     # Resolve Pokemon ID
     if target_poke.isdigit():
@@ -212,7 +521,6 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
 
     if not user_poke:
         if is_owner:
-            # Owner bypass: Create a virtual admin auction item for any Pokemon ID
             pokemon_id = pokemon.id
             form_index = form_index
             is_shiny = False
@@ -227,7 +535,6 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
             await message.answer(f"❌ You don't own any <b>{pokemon.name.title()}</b> ({form_label}) in your inventory.", parse_mode="HTML")
             return
     else:
-        # Delete real Pokémon from inventory if owned
         pokemon_id = user_poke.pokemon_id
         form_index = user_poke.form_index
         is_shiny = user_poke.is_shiny
@@ -250,8 +557,8 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
     global_active_count = global_active_res.scalar() or 0
 
     if global_active_count > 0:
-        # Create PENDING auction
-        expires_at = datetime.utcnow() + timedelta(days=365) # dummy
+        # Queue as PENDING auction
+        expires_at = datetime.utcnow() + timedelta(days=365)
         auction = Auction(
             seller_id=message.from_user.id,
             pokemon_id=pokemon_id,
@@ -276,7 +583,6 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
         await db.commit()
         await db.refresh(auction)
 
-        # Get queue position
         pending_stmt = select(func.count(Auction.id)).where(Auction.status == "PENDING")
         pending_res = await db.execute(pending_stmt)
         queue_pos = pending_res.scalar() or 0
@@ -284,7 +590,8 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
         await message.answer(
             f"🕒 <b>Added to Auction Queue!</b>\n"
             f"───────────────\n"
-            f"<blockquote>📛 Pokémon: <b>{pokemon.name.title()}</b>\n"
+            f"<blockquote>🆔 Pokédex ID: <code>#{pokemon.id}</code>\n"
+            f"📛 Pokémon: <b>{pokemon.name.title()}</b>\n"
             f"💰 Starting Price: <b>{starting_price:,} coins</b>\n"
             f"🔢 Queue Position: <b>#{queue_pos}</b></blockquote>\n\n"
             f"It will start automatically once active auctions ahead of it finish.",
@@ -292,8 +599,8 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
         )
         return
 
-    # Create active auction entry (expires in 5 minutes)
-    expires_at = datetime.utcnow() + timedelta(minutes=5)
+    # Create ACTIVE auction entry
+    expires_at = datetime.utcnow() + timedelta(seconds=duration_sec)
     auction = Auction(
         seller_id=message.from_user.id,
         pokemon_id=pokemon_id,
@@ -347,12 +654,10 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
                 parse_mode="HTML"
             )
 
-        # Save message references for editing later
         auction.channel_message_id = auc_msg.message_id
         auction.channel_chat_id = message.chat.id
         await db.commit()
 
-        # Auto pin auction message in group chats
         if message.chat.type != "private":
             try:
                 await message.bot.pin_chat_message(chat_id=message.chat.id, message_id=auc_msg.message_id)
@@ -360,7 +665,6 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
                 print(f"⚠️ Failed to pin auction message: {pin_err}")
                 
     except Exception as e:
-        # If sending fails, restore Pokémon back to the seller
         restored = UserPokemon(
             user_id=message.from_user.id,
             pokemon_id=pokemon_id,
@@ -381,9 +685,9 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
         await db.commit()
         await message.answer(f"❌ Failed to list auction: {e}. Your Pokémon has been returned.")
 
+
 @router.message(Command("auctions", "auc"))
 async def cmd_list_auctions(message: Message, db: AsyncSession):
-    # Retrieve all active auctions
     stmt = select(Auction).where(Auction.status == "ACTIVE").order_by(Auction.expires_at.asc())
     res = await db.execute(stmt)
     auctions = res.scalars().all()
@@ -394,123 +698,101 @@ async def cmd_list_auctions(message: Message, db: AsyncSession):
 
     text = "🛒 <b>ACTIVE AUCTION LISTINGS</b> 🛒\n───────────────\n\n"
     for a in auctions:
-        stmt_p = select(Pokemon.name).where(Pokemon.id == a.pokemon_id)
+        stmt_p = select(Pokemon).where(Pokemon.id == a.pokemon_id)
         res_p = await db.execute(stmt_p)
-        p_name = res_p.scalar() or "Unknown"
+        poke = res_p.scalar_one_or_none()
+        p_name = poke.name.title() if poke else "Unknown"
+        p_id = poke.id if poke else 0
         
         time_left = a.expires_at - datetime.utcnow()
         if time_left.total_seconds() <= 0:
             time_left_str = "Ended"
         else:
-            hours, remainder = divmod(int(time_left.total_seconds()), 3600)
-            minutes, _ = divmod(remainder, 60)
-            time_left_str = f"{hours}h {minutes}m"
+            seconds = int(time_left.total_seconds())
+            hours, remainder = divmod(seconds, 3600)
+            minutes, secs = divmod(remainder, 60)
+            if hours > 0:
+                time_left_str = f"{hours}h {minutes:02d}m"
+            else:
+                time_left_str = f"{minutes}m {secs:02d}s"
 
         text += (
-            f"• <b>#{a.id:03d}</b> | <b>{p_name.title()}</b>\n"
+            f"• <b>#{a.id:03d}</b> | 🆔 Pokédex: <code>#{p_id}</code> — <b>{p_name}</b>\n"
             f"  └ 🎫 Serial: <code>{a.serial_number}</code> | 💰 Current Bid: <b>{a.current_bid:,} coins</b>\n"
             f"  └ ⏳ Time remaining: <code>{time_left_str}</code>\n\n"
         )
 
-    text += "👉 Bid on any auction by clicking buttons on the auction card or using: `/bid <auction_id> <amount>`"
+    text += "👉 Bid on active auction using: <code>/bid &lt;amount&gt;</code> or click buttons on the card!"
     await message.answer(text, parse_mode="HTML")
+
 
 @router.message(Command("bid"))
 async def cmd_bid_manual(message: Message, db: AsyncSession):
-    # Command: /bid <auction_id> <amount>
     parts = message.text.split()
-    if len(parts) < 3:
-        await message.answer("⚠️ Usage: `/bid <auction_id> <amount>`")
+    if len(parts) < 2:
+        await message.answer(
+            "⚠️ <b>Usage:</b>\n"
+            "• <code>/bid &lt;amount&gt;</code> (Bids on current active auction)\n"
+            "• <code>/bid &lt;auction_id&gt; &lt;amount&gt;</code> (Bids on specific auction)\n\n"
+            "Example: <code>/bid 25000</code> or <code>/bid 1 25000</code>",
+            parse_mode="HTML"
+        )
         return
 
-    try:
-        auction_id = int(parts[1])
-        bid_amount = int(parts[2])
-    except ValueError:
-        await message.answer("❌ Auction ID and bid amount must be valid integers.")
-        return
+    auction_id = None
+    bid_amount = None
 
-    # Fetch auction
+    if len(parts) == 2:
+        # `/bid 25000`
+        try:
+            bid_amount = int(parts[1].replace(",", ""))
+        except ValueError:
+            await message.answer("❌ Bid amount must be a valid integer.")
+            return
+
+        stmt_active = select(Auction).where(Auction.status == "ACTIVE").order_by(Auction.id.desc()).limit(2)
+        res_active = await db.execute(stmt_active)
+        active_auctions = res_active.scalars().all()
+
+        if not active_auctions:
+            await message.answer("❌ There are no active auctions at the moment.")
+            return
+        elif len(active_auctions) > 1:
+            await message.answer(
+                f"⚠️ Multiple active auctions exist. Please specify the Auction ID:\n"
+                f"<code>/bid &lt;auction_id&gt; {bid_amount}</code>",
+                parse_mode="HTML"
+            )
+            return
+        else:
+            auction_id = active_auctions[0].id
+    else:
+        # `/bid <auction_id> <amount>`
+        try:
+            auction_id = int(parts[1])
+            bid_amount = int(parts[2].replace(",", ""))
+        except ValueError:
+            await message.answer("❌ Auction ID and bid amount must be valid integers.")
+            return
+
     stmt = select(Auction).where(Auction.id == auction_id, Auction.status == "ACTIVE")
     res = await db.execute(stmt)
     auction = res.scalar_one_or_none()
     if not auction:
-        await message.answer("❌ Auction not found or already closed.")
+        await message.answer("❌ Auction not found or is no longer active.")
         return
 
-    # Check seller
-    if auction.seller_id == message.from_user.id:
-        await message.answer("❌ You cannot bid on your own auction!")
-        return
-
-    # Bid validation
-    min_next_bid = auction.current_bid + 1
-    if bid_amount < min_next_bid:
-        await message.answer(f"❌ Your bid must be at least {min_next_bid:,} coins.")
-        return
-
-    # Check bidder balance
     stmt_bidder = select(User).where(User.id == message.from_user.id)
     res_bidder = await db.execute(stmt_bidder)
     bidder = res_bidder.scalar_one()
-    if bidder.coins < bid_amount:
-        await message.answer(f"❌ You do not have enough coins. Your balance: {bidder.coins:,} coins.")
-        return
 
-    # Refund previous highest bidder
-    stmt_prev_bids = (
-        select(AuctionBid)
-        .where(AuctionBid.auction_id == auction.id)
-        .order_by(AuctionBid.amount.desc())
-        .limit(1)
-    )
-    prev_bids_res = await db.execute(stmt_prev_bids)
-    prev_highest_bid = prev_bids_res.scalar_one_or_none()
+    success, reply_msg = await process_auction_bid(db, message.bot, auction, bidder, bid_amount)
+    await message.answer(reply_msg, parse_mode="HTML")
 
-    if prev_highest_bid:
-        stmt_prev_user = select(User).where(User.id == prev_highest_bid.bidder_id)
-        res_prev_user = await db.execute(stmt_prev_user)
-        prev_user = res_prev_user.scalar_one()
-        prev_user.coins += prev_highest_bid.amount
-        db.add(prev_user)
-
-    # Deduct new bid from bidder
-    bidder.coins -= bid_amount
-    db.add(bidder)
-
-    # Add bid record
-    new_bid = AuctionBid(
-        auction_id=auction.id,
-        bidder_id=message.from_user.id,
-        amount=bid_amount
-    )
-    db.add(new_bid)
-
-    # Update auction price
-    auction.current_bid = bid_amount
-    await db.commit()
-
-    await message.answer(f"✅ Your bid of <b>{bid_amount:,} coins</b> has been successfully placed on auction #{auction.id:03d}!", parse_mode="HTML")
-
-    # Update dynamic auction card in channel
-    if auction.channel_chat_id and auction.channel_message_id:
-        caption, media_type, media_value = await get_auction_card(db, auction)
-        kb = get_auction_keyboard(auction.id, auction.seller_id)
-        try:
-            await message.bot.edit_message_caption(
-                chat_id=auction.channel_chat_id,
-                message_id=auction.channel_message_id,
-                caption=caption,
-                reply_markup=kb.as_markup(),
-                parse_mode="HTML"
-            )
-        except Exception as edit_err:
-            print(f"⚠️ Failed to edit auction card: {edit_err}")
 
 @router.callback_query(F.data.startswith("auc_bid_"))
 async def cb_auc_increment_bid(callback: CallbackQuery, db: AsyncSession):
     parts = callback.data.split("_")
-    # auc_bid_<auction_id>_<increment>
     auction_id = int(parts[2])
     increment = int(parts[3])
     user_id = callback.from_user.id
@@ -522,66 +804,18 @@ async def cb_auc_increment_bid(callback: CallbackQuery, db: AsyncSession):
         await callback.answer("❌ Auction is no longer active.", show_alert=True)
         return
 
-    if auction.seller_id == user_id:
-        await callback.answer("❌ You cannot bid on your own auction!", show_alert=True)
-        return
-
     bid_amount = auction.current_bid + increment
 
-    # Check bidder balance
     stmt_bidder = select(User).where(User.id == user_id)
     res_bidder = await db.execute(stmt_bidder)
     bidder = res_bidder.scalar_one()
-    if bidder.coins < bid_amount:
-        await callback.answer(f"❌ Insufficient coins! Balance: {bidder.coins:,}", show_alert=True)
-        return
 
-    # Refund previous highest bidder
-    stmt_prev_bids = (
-        select(AuctionBid)
-        .where(AuctionBid.auction_id == auction.id)
-        .order_by(AuctionBid.amount.desc())
-        .limit(1)
-    )
-    prev_bids_res = await db.execute(stmt_prev_bids)
-    prev_highest_bid = prev_bids_res.scalar_one_or_none()
+    success, msg_text = await process_auction_bid(db, callback.bot, auction, bidder, bid_amount)
+    if success:
+        await callback.answer(f"✅ Bid of {bid_amount:,} coins placed successfully!")
+    else:
+        await callback.answer(msg_text, show_alert=True)
 
-    if prev_highest_bid:
-        stmt_prev_user = select(User).where(User.id == prev_highest_bid.bidder_id)
-        res_prev_user = await db.execute(stmt_prev_user)
-        prev_user = res_prev_user.scalar_one()
-        prev_user.coins += prev_highest_bid.amount
-        db.add(prev_user)
-
-    # Deduct new bid from bidder
-    bidder.coins -= bid_amount
-    db.add(bidder)
-
-    # Add bid record
-    new_bid = AuctionBid(
-        auction_id=auction.id,
-        bidder_id=user_id,
-        amount=bid_amount
-    )
-    db.add(new_bid)
-
-    # Update auction price
-    auction.current_bid = bid_amount
-    await db.commit()
-
-    await callback.answer(f"✅ Bid of {bid_amount:,} coins placed successfully!")
-
-    # Update dynamic auction card in channel
-    caption, media_type, media_value = await get_auction_card(db, auction)
-    kb = get_auction_keyboard(auction.id, auction.seller_id)
-    try:
-        await callback.message.edit_caption(
-            caption=caption,
-            reply_markup=kb.as_markup(),
-            parse_mode="HTML"
-        )
-    except Exception as edit_err:
-        print(f"⚠️ Failed to edit auction card: {edit_err}")
 
 @router.callback_query(F.data.startswith("auc_custom_"))
 async def cb_auc_custom_bid(callback: CallbackQuery, db: AsyncSession):
@@ -600,34 +834,30 @@ async def cb_auc_custom_bid(callback: CallbackQuery, db: AsyncSession):
         await callback.answer("❌ You cannot bid on your own auction!", show_alert=True)
         return
 
-    # Send DM or instructions
-    msg = await callback.message.answer(
+    active_custom_bids[user_id] = auction.id
+
+    await callback.message.answer(
         f"💬 <b>Custom Bid for Auction #{auction.id:03d}</b>\n"
-        f"Reply to this message with your bid amount (must be greater than {auction.current_bid:,}):",
+        f"───────────────\n"
+        f"Current highest bid: <b>{auction.current_bid:,} coins</b>\n\n"
+        f"👉 Type your bid amount in chat (e.g. <code>{auction.current_bid + 5000:,}</code> or <code>/bid {auction.current_bid + 5000:,}</code>):",
         parse_mode="HTML"
     )
-    active_custom_bids[user_id] = (auction_id, msg.message_id)
     await callback.answer()
 
-@router.message(F.reply_to_message)
-async def process_custom_bid_reply(message: Message, db: AsyncSession):
+
+@router.message(F.text & ~F.text.startswith("/"))
+async def process_custom_bid_text(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     if user_id not in active_custom_bids:
         return
 
-    auction_id, prompt_msg_id = active_custom_bids[user_id]
-    
-    # Check if this reply is to the custom bid prompt
-    if not message.reply_to_message or message.reply_to_message.message_id != prompt_msg_id:
+    text = message.text.strip().replace(",", "")
+    if not text.isdigit():
         return
 
-    active_custom_bids.pop(user_id, None)
-
-    try:
-        bid_amount = int(message.text.strip().replace(",", ""))
-    except ValueError:
-        await message.answer("❌ Invalid amount. Custom bid must be a valid integer.")
-        return
+    auction_id = active_custom_bids.pop(user_id, None)
+    bid_amount = int(text)
 
     stmt = select(Auction).where(Auction.id == auction_id, Auction.status == "ACTIVE")
     res = await db.execute(stmt)
@@ -636,75 +866,81 @@ async def process_custom_bid_reply(message: Message, db: AsyncSession):
         await message.answer("❌ Auction is no longer active.")
         return
 
-    min_next_bid = auction.current_bid + 1
-    if bid_amount < min_next_bid:
-        await message.answer(f"❌ Your custom bid must be at least {min_next_bid:,} coins.")
-        return
-
-    # Check bidder balance
     stmt_bidder = select(User).where(User.id == user_id)
     res_bidder = await db.execute(stmt_bidder)
-    bidder = res_bidder.scalar_one()
-    if bidder.coins < bid_amount:
-        await message.answer(f"❌ Insufficient coins! Balance: {bidder.coins:,} coins.")
+    bidder = res_bidder.scalar_one_or_none()
+
+    if not bidder:
         return
 
-    # Refund previous highest bidder
-    stmt_prev_bids = (
-        select(AuctionBid)
+    success, reply_msg = await process_auction_bid(db, message.bot, auction, bidder, bid_amount)
+    await message.answer(reply_msg, parse_mode="HTML")
+
+
+@router.message(Command("bidhistory", "auchistory"))
+async def cmd_bid_history(message: Message, db: AsyncSession):
+    parts = message.text.split()
+    auction_id = None
+
+    if len(parts) >= 2 and parts[1].isdigit():
+        auction_id = int(parts[1])
+    else:
+        stmt_latest = select(Auction).order_by(Auction.id.desc()).limit(1)
+        res_latest = await db.execute(stmt_latest)
+        latest = res_latest.scalar_one_or_none()
+        if latest:
+            auction_id = latest.id
+
+    if not auction_id:
+        await message.answer("❌ No auction found.")
+        return
+
+    stmt = select(Auction).where(Auction.id == auction_id)
+    res = await db.execute(stmt)
+    auction = res.scalar_one_or_none()
+    if not auction:
+        await message.answer(f"❌ Auction #{auction_id:03d} not found.")
+        return
+
+    stmt_p = select(Pokemon).where(Pokemon.id == auction.pokemon_id)
+    res_p = await db.execute(stmt_p)
+    pokemon = res_p.scalar_one()
+
+    stmt_bids = (
+        select(AuctionBid, User)
+        .join(User, AuctionBid.bidder_id == User.id)
         .where(AuctionBid.auction_id == auction.id)
         .order_by(AuctionBid.amount.desc())
-        .limit(1)
     )
-    prev_bids_res = await db.execute(stmt_prev_bids)
-    prev_highest_bid = prev_bids_res.scalar_one_or_none()
+    res_bids = await db.execute(stmt_bids)
+    all_bids = res_bids.all()
 
-    if prev_highest_bid:
-        stmt_prev_user = select(User).where(User.id == prev_highest_bid.bidder_id)
-        res_prev_user = await db.execute(stmt_prev_user)
-        prev_user = res_prev_user.scalar_one()
-        prev_user.coins += prev_highest_bid.amount
-        db.add(prev_user)
-
-    # Deduct new bid from bidder
-    bidder.coins -= bid_amount
-    db.add(bidder)
-
-    # Add bid record
-    new_bid = AuctionBid(
-        auction_id=auction.id,
-        bidder_id=user_id,
-        amount=bid_amount
+    text = (
+        f"📜 <b>BID HISTORY FOR AUCTION #{auction.id:03d}</b> 📜\n"
+        f"───────────────\n"
+        f"🆔 <b>Pokédex ID</b>: <code>#{pokemon.id}</code> | 📛 <b>Pokémon</b>: <b>{pokemon.name.title()}</b>\n"
+        f"🎫 <b>Serial</b>: <code>{auction.serial_number}</code> | 💰 <b>Starting</b>: {auction.starting_price:,} coins\n"
+        f"Status: <b>{auction.status}</b> | Total Bids: <b>{len(all_bids)}</b>\n"
+        f"───────────────\n"
     )
-    db.add(new_bid)
 
-    # Update auction price
-    auction.current_bid = bid_amount
-    await db.commit()
+    if all_bids:
+        for rank, (bid_rec, bidder_u) in enumerate(all_bids, start=1):
+            b_name = bidder_u.nickname or bidder_u.username or f"Trainer {bidder_u.id}"
+            b_time = bid_rec.bid_at.strftime("%Y-%m-%d %H:%M:%S UTC")
+            rank_icon = "🥇" if rank == 1 else ("🥈" if rank == 2 else ("🥉" if rank == 3 else "🔹"))
+            text += f"{rank_icon} <b>#{rank}</b> {html.escape(b_name)}: <b>{bid_rec.amount:,} coins</b> (<code>{b_time}</code>)\n"
+    else:
+        text += "<i>No bids have been placed on this auction.</i>"
 
-    await message.answer(f"✅ Custom bid of <b>{bid_amount:,} coins</b> placed successfully!", parse_mode="HTML")
+    await message.answer(text, parse_mode="HTML")
 
-    # Update dynamic auction card in channel
-    if auction.channel_chat_id and auction.channel_message_id:
-        caption, media_type, media_value = await get_auction_card(db, auction)
-        kb = get_auction_keyboard(auction.id, auction.seller_id)
-        try:
-            await message.bot.edit_message_caption(
-                chat_id=auction.channel_chat_id,
-                message_id=auction.channel_message_id,
-                caption=caption,
-                reply_markup=kb.as_markup(),
-                parse_mode="HTML"
-            )
-        except Exception as edit_err:
-            print(f"⚠️ Failed to edit auction card: {edit_err}")
 
 @router.message(Command("cancelauction"))
 async def cmd_cancel_auction(message: Message, db: AsyncSession):
-    # Command: /cancelauction <auction_id>
     parts = message.text.split()
     if len(parts) < 2:
-        await message.answer("⚠️ Usage: `/cancelauction <auction_id>`")
+        await message.answer("⚠️ Usage: <code>/cancelauction &lt;auction_id&gt;</code>", parse_mode="HTML")
         return
 
     try:
@@ -724,7 +960,6 @@ async def cmd_cancel_auction(message: Message, db: AsyncSession):
         await message.answer("❌ You can only cancel your own auctions.")
         return
 
-    # Check if bids exist (only relevant if ACTIVE)
     bid_count = 0
     if auction.status == "ACTIVE":
         stmt_bids = select(func.count(AuctionBid.id)).where(AuctionBid.auction_id == auction.id)
@@ -757,29 +992,29 @@ async def cmd_cancel_auction(message: Message, db: AsyncSession):
     auction.status = "CANCELLED"
     await db.commit()
 
-    # Unpin active message (if it was active)
-    if was_active and auction.channel_chat_id and auction.channel_message_id:
-        try:
-            await message.bot.unpin_chat_message(chat_id=auction.channel_chat_id, message_id=auction.channel_message_id)
-        except Exception:
-            pass
-            
-        # Edit card to show Cancelled
-        caption, media_type, media_value = await get_auction_card(db, auction)
-        try:
-            await message.bot.edit_message_caption(
-                chat_id=auction.channel_chat_id,
-                message_id=auction.channel_message_id,
-                caption=caption,
-                reply_markup=None,
-                parse_mode="HTML"
-            )
-        except Exception:
-            pass
+    if was_active:
+        await send_auction_settlement_channel_report(message.bot, db, auction, "CANCELLED")
+
+        if auction.channel_chat_id and auction.channel_message_id:
+            try:
+                await message.bot.unpin_chat_message(chat_id=auction.channel_chat_id, message_id=auction.channel_message_id)
+            except Exception:
+                pass
+                
+            caption, media_type, media_value = await get_auction_card(db, auction)
+            try:
+                await message.bot.edit_message_caption(
+                    chat_id=auction.channel_chat_id,
+                    message_id=auction.channel_message_id,
+                    caption=caption,
+                    reply_markup=None,
+                    parse_mode="HTML"
+                )
+            except Exception:
+                pass
 
     await message.answer("✅ Auction cancelled successfully! Your Pokémon has been returned to your inventory.")
 
-    # If the cancelled auction was active, start the next one in queue immediately
     if was_active:
         try:
             next_stmt = select(Auction).where(Auction.status == "PENDING").order_by(Auction.created_at.asc()).limit(1)
@@ -791,7 +1026,6 @@ async def cmd_cancel_auction(message: Message, db: AsyncSession):
                 next_auction.expires_at = datetime.utcnow() + timedelta(minutes=5)
                 await db.commit()
                 
-                # Post new auction card
                 caption, media_type, media_value = await get_auction_card(db, next_auction)
                 kb = get_auction_keyboard(next_auction.id, next_auction.seller_id)
                 
@@ -824,9 +1058,23 @@ async def cmd_cancel_auction(message: Message, db: AsyncSession):
                     next_auction.channel_message_id = auc_msg.message_id
                     await db.commit()
                     
-                    # Pin the new active auction message in group chats
                     try:
                         await message.bot.pin_chat_message(chat_id=next_auction.channel_chat_id, message_id=auc_msg.message_id)
+                    except Exception:
+                        pass
+
+                    # DM seller that their queued auction is live
+                    try:
+                        stmt_p = select(Pokemon.name).where(Pokemon.id == next_auction.pokemon_id)
+                        res_p = await db.execute(stmt_p)
+                        p_name = res_p.scalar() or "Pokémon"
+                        await message.bot.send_message(
+                            chat_id=next_auction.seller_id,
+                            text=f"🔔 <b>Your Queued Auction is LIVE!</b> 🔔\n"
+                                 f"───────────────\n"
+                                 f"Auction <b>#{next_auction.id:03d}</b> for <b>{p_name.title()}</b> (Pokédex #{next_auction.pokemon_id}) is now active!",
+                            parse_mode="HTML"
+                        )
                     except Exception:
                         pass
                 except Exception as post_err:
@@ -843,12 +1091,11 @@ async def cmd_toggle_auctions(message: Message, db: AsyncSession):
         
     parts = message.text.split()
     if len(parts) < 2 or parts[1].lower() not in {"on", "off"}:
-        await message.answer("⚠️ Usage: `/au <on/off>`")
+        await message.answer("⚠️ Usage: <code>/au &lt;on/off&gt;</code>", parse_mode="HTML")
         return
         
     val = parts[1].lower()
     
-    # Save/Update in DB
     from database.models import GlobalSetting
     stmt = select(GlobalSetting).where(GlobalSetting.key == "auctions_enabled")
     res = await db.execute(stmt)
@@ -859,7 +1106,6 @@ async def cmd_toggle_auctions(message: Message, db: AsyncSession):
         db.add(GlobalSetting(key="auctions_enabled", value=val))
     await db.commit()
     
-    # Update memory cache
     from utils.settings import global_settings_cache
     global_settings_cache["auctions_enabled"] = val
     
@@ -867,15 +1113,15 @@ async def cmd_toggle_auctions(message: Message, db: AsyncSession):
 
 
 async def auction_settlement_worker(bot: Bot):
+    """Ultra-fast background settlement loop running every 2 seconds to settle expired auctions instantly."""
     from database.database import SessionLocal
     from database.models import Auction, AuctionBid, User, UserPokemon, Pokemon
     
-    print("⏳ Auction Settlement Worker Loop Started...")
+    print("⏳ Fast Auction Settlement Worker Loop Started (2s polling)...")
     while True:
         try:
-            await asyncio.sleep(30)
+            await asyncio.sleep(2)
             async with SessionLocal() as db:
-                # Find active auctions that have expired
                 now = datetime.utcnow()
                 stmt = select(Auction).where(Auction.status == "ACTIVE", Auction.expires_at <= now)
                 res = await db.execute(stmt)
@@ -883,7 +1129,6 @@ async def auction_settlement_worker(bot: Bot):
                 
                 for auction in expired_auctions:
                     try:
-                        # Fetch highest bid
                         stmt_bids = (
                             select(AuctionBid, User)
                             .join(User, AuctionBid.bidder_id == User.id)
@@ -907,7 +1152,7 @@ async def auction_settlement_worker(bot: Bot):
                             highest_bid_rec, bidder_user = highest_bid_data[0]
                             winner_name = bidder_user.nickname or bidder_user.username or f"Trainer {bidder_user.id}"
                             
-                            # 1. Award Pokémon to bidder
+                            # Award Pokémon to bidder
                             new_poke = UserPokemon(
                                 user_id=bidder_user.id,
                                 pokemon_id=auction.pokemon_id,
@@ -925,7 +1170,7 @@ async def auction_settlement_worker(bot: Bot):
                             )
                             db.add(new_poke)
 
-                            # 2. Pay seller (minus 5% system fee)
+                            # Pay seller (minus 5% tax)
                             tax = int(highest_bid_rec.amount * 0.05)
                             payout = highest_bid_rec.amount - tax
                             seller.coins += payout
@@ -934,36 +1179,38 @@ async def auction_settlement_worker(bot: Bot):
                             auction.status = "COMPLETED"
                             await db.commit()
 
-                            # 3. Announcement of Auction Won
+                            # Group win message
                             won_caption = (
                                 f"🎉 <b>Auction Won!</b> 🎉\n"
                                 f"───────────────\n"
-                                f"<blockquote>👑 <b>{html.escape(winner_name)}</b> won!\n"
-                                f"🙇 <b>{pokemon.name.title()}</b> added to collection\n"
-                                f"💰 Paid: <b>{highest_bid_rec.amount:,}</b>\n"
+                                f"<blockquote>👑 <b>{html.escape(winner_name)}</b> won Auction #{auction.id:03d}!\n"
+                                f"🙇 <b>{pokemon.name.title()}</b> (Pokédex #{pokemon.id}) added to collection\n"
+                                f"💰 Winning Bid: <b>{highest_bid_rec.amount:,} coins</b>\n"
                                 f"💰 Seller <b>{html.escape(seller_name)}</b> received <b>{payout:,} coins</b> (5% tax deducted)\n"
                                 f"🎉 Congratulations!</blockquote>"
                             )
                             
-                            # Send won card to the chat
                             if auction.channel_chat_id:
                                 try:
                                     await bot.send_message(chat_id=auction.channel_chat_id, text=won_caption, parse_mode="HTML")
                                 except Exception as err:
                                     print(f"⚠️ Failed to send auction win announcement: {err}")
-                                    
-                                # Unpin original message
+
+                                     
                                 if auction.channel_message_id:
                                     try:
                                         await bot.unpin_chat_message(chat_id=auction.channel_chat_id, message_id=auction.channel_message_id)
                                     except Exception:
                                         pass
+
+                            # Send complete report to @PokeEmpireAuctions
+                            await send_auction_settlement_channel_report(bot, db, auction, "COMPLETED")
                                         
-                            # DM the seller (Won)
+                            # DM seller
                             seller_dm = (
                                 f"🔔 <b>Auction Sold!</b> 🔔\n"
                                 f"───────────────\n"
-                                f"<blockquote>👑 Your <b>{pokemon.name.title()}</b> has been sold to <b>{html.escape(winner_name)}</b>!\n"
+                                f"<blockquote>👑 Your <b>{pokemon.name.title()}</b> (Pokédex #{pokemon.id}) has been sold to <b>{html.escape(winner_name)}</b>!\n"
                                 f"💰 Payout: <b>{payout:,} coins</b> (5% tax deducted)\n"
                                 f"🎫 Serial: <code>{auction.serial_number}</code></blockquote>"
                             )
@@ -972,11 +1219,11 @@ async def auction_settlement_worker(bot: Bot):
                             except Exception as dm_err:
                                 print(f"⚠️ Failed to DM seller {auction.seller_id} on auction sale: {dm_err}")
 
-                            # DM the buyer (Won)
+                            # DM buyer
                             buyer_dm = (
                                 f"🔔 <b>Auction Won!</b> 🔔\n"
                                 f"───────────────\n"
-                                f"<blockquote>👑 You won the auction for <b>{pokemon.name.title()}</b>!\n"
+                                f"<blockquote>👑 You won the auction for <b>{pokemon.name.title()}</b> (Pokédex #{pokemon.id})!\n"
                                 f"💰 Amount Paid: <b>{highest_bid_rec.amount:,} coins</b>\n"
                                 f"🎫 Serial: <code>{auction.serial_number}</code>\n"
                                 f"🙇 Added to your collection bag.</blockquote>"
@@ -985,6 +1232,7 @@ async def auction_settlement_worker(bot: Bot):
                                 await bot.send_message(chat_id=bidder_user.id, text=buyer_dm, parse_mode="HTML")
                             except Exception as dm_err:
                                 print(f"⚠️ Failed to DM buyer {bidder_user.id} on auction win: {dm_err}")
+
                         else:
                             # Return Pokémon to seller
                             restored = UserPokemon(
@@ -1010,7 +1258,7 @@ async def auction_settlement_worker(bot: Bot):
                             unsold_caption = (
                                 f"🪙 <b>Auction Ended — No Bids</b>\n"
                                 f"───────────────\n"
-                                f"<blockquote>📛 <b>{pokemon.name.title()}</b> went unsold.\n"
+                                f"<blockquote>📛 <b>{pokemon.name.title()}</b> (Pokédex #{pokemon.id}) went unsold.\n"
                                 f"🔄 Pokémon returned to <b>{html.escape(seller_name)}</b></blockquote>"
                             )
                             if auction.channel_chat_id:
@@ -1018,19 +1266,21 @@ async def auction_settlement_worker(bot: Bot):
                                     await bot.send_message(chat_id=auction.channel_chat_id, text=unsold_caption, parse_mode="HTML")
                                 except Exception as err:
                                     print(f"⚠️ Failed to send unsold announcement: {err}")
-                                    
-                                # Unpin original message
+                                     
                                 if auction.channel_message_id:
                                     try:
                                         await bot.unpin_chat_message(chat_id=auction.channel_chat_id, message_id=auction.channel_message_id)
                                     except Exception:
                                         pass
+
+                            # Send complete report to @PokeEmpireAuctions
+                            await send_auction_settlement_channel_report(bot, db, auction, "UNSOLD")
                                         
-                            # DM the seller (Unsold)
+                            # DM seller
                             seller_dm = (
                                 f"🔔 <b>Auction Ended — No Bids</b> 🔔\n"
                                 f"───────────────\n"
-                                f"<blockquote>📛 Your auction for <b>{pokemon.name.title()}</b> has ended with no bids.\n"
+                                f"<blockquote>📛 Your auction for <b>{pokemon.name.title()}</b> (Pokédex #{pokemon.id}) has ended with no bids.\n"
                                 f"🔄 The Pokémon has been returned to your inventory.\n"
                                 f"🎫 Serial: <code>{auction.serial_number}</code></blockquote>"
                             )
@@ -1039,7 +1289,7 @@ async def auction_settlement_worker(bot: Bot):
                             except Exception as dm_err:
                                 print(f"⚠️ Failed to DM seller {auction.seller_id} on unsold auction: {dm_err}")
                                         
-                        # Update original active message (remove buttons, update text to ended)
+                        # Update original active message card
                         if auction.channel_chat_id and auction.channel_message_id:
                             caption, media_type, media_value = await get_auction_card(db, auction)
                             try:
@@ -1056,7 +1306,7 @@ async def auction_settlement_worker(bot: Bot):
                     except Exception as single_auc_err:
                         print(f"⚠️ Error settling auction {auction.id}: {single_auc_err}")
                     
-                    # Right after settling the active auction, activate the next queued one
+                    # Activate next queued auction
                     try:
                         next_stmt = select(Auction).where(Auction.status == "PENDING").order_by(Auction.created_at.asc()).limit(1)
                         next_res = await db.execute(next_stmt)
@@ -1067,7 +1317,6 @@ async def auction_settlement_worker(bot: Bot):
                             next_auction.expires_at = datetime.utcnow() + timedelta(minutes=5)
                             await db.commit()
                             
-                            # Post new auction card
                             caption, media_type, media_value = await get_auction_card(db, next_auction)
                             kb = get_auction_keyboard(next_auction.id, next_auction.seller_id)
                             
@@ -1100,11 +1349,26 @@ async def auction_settlement_worker(bot: Bot):
                                 next_auction.channel_message_id = auc_msg.message_id
                                 await db.commit()
                                 
-                                # Pin the new active auction message in group chats
                                 try:
                                     await bot.pin_chat_message(chat_id=next_auction.channel_chat_id, message_id=auc_msg.message_id)
                                 except Exception:
                                     pass
+
+                                # DM seller
+                                try:
+                                    stmt_p = select(Pokemon.name).where(Pokemon.id == next_auction.pokemon_id)
+                                    res_p = await db.execute(stmt_p)
+                                    p_name = res_p.scalar() or "Pokémon"
+                                    await bot.send_message(
+                                        chat_id=next_auction.seller_id,
+                                        text=f"🔔 <b>Your Queued Auction is LIVE!</b> 🔔\n"
+                                             f"───────────────\n"
+                                             f"Auction <b>#{next_auction.id:03d}</b> for <b>{p_name.title()}</b> (Pokédex #{next_auction.pokemon_id}) is now active!",
+                                        parse_mode="HTML"
+                                    )
+                                except Exception:
+                                    pass
+
                             except Exception as post_err:
                                 print(f"⚠️ Failed to post activated queued auction {next_auction.id}: {post_err}")
                     except Exception as queue_err:

@@ -132,12 +132,9 @@ async def get_auction_card(db: AsyncSession, auction: Auction) -> tuple[str, str
             b_name = bidder_user.nickname or bidder_user.username or f"Trainer {bidder_user.id}"
             bid_time = bid_rec.bid_at.strftime("%H:%M:%S")
             bid_lines.append(f"├─ {html.escape(b_name)}: {bid_rec.amount:,} ({bid_time})")
-        recent_bids_text = "\n" + "\n".join(bid_lines)
+        recent_bids_text = "\n".join(bid_lines)
     else:
-        recent_bids_text = "\n╰─ No bids placed yet"
-
-    total_iv = auction.iv_hp + auction.iv_atk + auction.iv_def + auction.iv_spd
-    iv_pct = (total_iv / 124.0) * 100
+        recent_bids_text = "╰─ No bids placed yet"
 
     time_left = auction.expires_at - datetime.utcnow()
     if time_left.total_seconds() <= 0:
@@ -165,7 +162,8 @@ async def get_auction_card(db: AsyncSession, auction: Auction) -> tuple[str, str
         f"👑 <b>Leader</b>: {html.escape(leader_name)}\n"
         f"👥 <b>Seller</b>: {html.escape(seller_name)}\n"
         f"⏳ <b>Time Remaining</b>: <code>{time_left_str}</code></blockquote>\n\n"
-        f"📝 <b>Recent Bids:</b>{recent_bids_text}\n\n"
+        f"📝 <b>Recent Bids:</b>\n"
+        f"<blockquote>{recent_bids_text}</blockquote>\n\n"
         f"📢 Settlement Channel: @PokeEmpireAuctions"
     )
 
@@ -384,20 +382,17 @@ async def send_auction_settlement_channel_report(bot: Bot, db: AsyncSession, auc
         caption_text = (
             f"{title_header}\n"
             f"───────────────\n"
-            f"📌 <b>Auction ID</b>: <code>#{auction.id:03d}</code>\n"
+            f"<blockquote>📌 <b>Auction ID</b>: <code>#{auction.id:03d}</code>\n"
             f"🆔 <b>Pokédex ID</b>: <code>#{pokemon.id}</code> | 🎫 <b>Serial Number</b>: <code>{auction.serial_number}</code>\n"
             f"📛 <b>Pokémon</b>: <b>{pokemon.name.title()}</b> ({form_label})\n"
-            f"💎 <b>Rarity</b>: {r_emoji} {pokemon.rarity}\n"
-            f"───────────────\n"
-            f"👥 <b>Seller</b>: {seller_user_handle} (ID: <code>{auction.seller_id}</code>)\n"
+            f"💎 <b>Rarity</b>: {r_emoji} {pokemon.rarity}</blockquote>\n\n"
+            f"<blockquote>👥 <b>Seller</b>: {seller_user_handle} (ID: <code>{auction.seller_id}</code>)\n"
             f"👑 <b>Buyer / Winner</b>: {winner_str}\n"
             f"💰 <b>Starting Price</b>: {auction.starting_price:,} coins\n"
             f"🔨 <b>Winning Bid</b>: {winning_str}\n"
-            f"💸 <b>Seller Net Payout</b>: {payout_str}\n"
-            f"───────────────\n"
+            f"💸 <b>Seller Net Payout</b>: {payout_str}</blockquote>\n\n"
             f"📜 <b>COMPLETE BID HISTORY ({len(all_bids)} bids):</b>\n"
-            f"{bid_history_text}\n"
-            f"───────────────\n"
+            f"<blockquote>{bid_history_text}</blockquote>\n\n"
             f"📢 Official Channel: @PokeEmpireAuctions"
         )
 

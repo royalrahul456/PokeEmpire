@@ -1505,17 +1505,17 @@ async def build_rankings_payload(chat_id: int, user_id: int, period: str, db: As
 
     if period_lower == "daily":
         order_col = ChatMessageStat.daily_count
-        label = "📅 Daily Leaderboard"
+        period_title = "Daily"
     elif period_lower == "weekly":
         order_col = ChatMessageStat.weekly_count
-        label = "🗓️ Weekly Leaderboard"
+        period_title = "Weekly"
     elif period_lower == "monthly":
         order_col = ChatMessageStat.monthly_count
-        label = "📆 Monthly Leaderboard"
+        period_title = "Monthly"
     else:
         period_lower = "overall"
         order_col = ChatMessageStat.overall_count
-        label = "🏆 Overall Leaderboard"
+        period_title = "Overall"
 
     # Query top 10 chatters for this chat_id
     stmt = (
@@ -1528,40 +1528,31 @@ async def build_rankings_payload(chat_id: int, user_id: int, period: str, db: As
     res = await db.execute(stmt)
     records = res.all()
 
-    # Query current user's rank
-    user_stat_stmt = (
-        select(ChatMessageStat)
-        .where(ChatMessageStat.chat_id == chat_id, ChatMessageStat.user_id == user_id)
-    )
-    u_res = await db.execute(user_stat_stmt)
-    user_stat = u_res.scalar_one_or_none()
-    user_msgs = getattr(user_stat, f"{period_lower}_count", 0) if user_stat else 0
-
-    user_rank_stmt = (
-        select(func.count())
-        .select_from(ChatMessageStat)
-        .where(ChatMessageStat.chat_id == chat_id, order_col > user_msgs)
-    )
-    ur_res = await db.execute(user_rank_stmt)
-    user_rank = (ur_res.scalar() or 0) + 1 if user_msgs > 0 else "Unranked"
+    # Query total group messages for this chat_id
+    tot_stmt = select(func.sum(order_col)).where(ChatMessageStat.chat_id == chat_id)
+    tot_res = await db.execute(tot_stmt)
+    total_chat_messages = tot_res.scalar() or 0
+    formatted_total = f"{total_chat_messages:,}".replace(",", ".")
 
     rows = []
-    badges = {1: "🥇", 2: "🥈", 3: "🥉"}
     for idx, (stat, u) in enumerate(records, start=1):
-        b = badges.get(idx, f"{idx}.")
         count = getattr(stat, f"{period_lower}_count", 0)
-        u_name = html.escape(u.nickname or u.username or f"Trainer {u.id}")
-        rows.append(f"<b>{b} {u_name}</b> — <code>{count:,} msgs</code>")
+        formatted_count = f"{count:,}".replace(",", ".")
+        
+        display_name = html.escape(u.nickname or u.username or f"Trainer {u.id}")
+        if u.username:
+            user_str = f'<a href="https://t.me/{u.username}">{display_name}</a>'
+        else:
+            user_str = display_name
+            
+        rows.append(f"{idx}. 👤 {user_str} • {formatted_count}")
 
     ranks_body = "\n".join(rows) if rows else "<i>No chat activity recorded yet for this period.</i>"
 
     text = (
-        f"🏆 <b>CHAT RANKINGS: {label.upper()}</b> 🏆\n"
-        f"───────────────\n"
+        f"📈 <b>LEADERBOARD ({period_title.upper()})</b>\n\n"
         f"<blockquote>{ranks_body}</blockquote>\n\n"
-        f"👤 <b>Your Rank</b>: <code>#{user_rank}</code> (<b>{user_msgs:,} msgs</b>)\n"
-        f"───────────────\n"
-        f"🎁 <i>Top 1 chatter on Weekly & Monthly reset wins an Exclusive Art/AMV Pokémon!</i>"
+        f"✉️ <b>Total messages:</b> {formatted_total}"
     )
 
     builder = InlineKeyboardBuilder()
@@ -1584,7 +1575,15 @@ async def cmd_rankings(message: Message, db: AsyncSession):
         return
 
     text, kb = await build_rankings_payload(message.chat.id, message.from_user.id, "weekly", db)
-    await message.answer(text, reply_markup=kb, parse_mode="HTML")
+    await send_player_cover(
+        chat_id=message.chat.id,
+        user_id=message.from_user.id,
+        caption=text,
+        reply_markup=kb,
+        bot=message.bot,
+        db=db,
+        message_to_reply=message
+    )
 
 
 @router.callback_query(F.data.startswith("rank_"))
@@ -1599,10 +1598,7 @@ async def cb_rankings_filter(callback: CallbackQuery, db: AsyncSession):
         return
 
     text, kb = await build_rankings_payload(chat_id, user_id, period, db)
-    try:
-        await callback.message.edit_text(text=text, reply_markup=kb, parse_mode="HTML")
-    except Exception:
-        pass
+    await edit_player_cover_message(callback, user_id, text, kb, db, parse_mode="HTML")
     await callback.answer()
 
 @router.message(Command("search"))

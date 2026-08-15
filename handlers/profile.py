@@ -72,10 +72,15 @@ def get_media_type_from_value(media_value: str | None) -> str | None:
     return "video"
 
 
-def get_form_label(form_index: int, media_value: str | None = None) -> str:
+def get_form_label(form_index: int, media_value: str | None = None, custom_forms: dict = None) -> str:
     if form_index == 1:
         return "Art" if get_media_type_from_value(media_value) == "photo" else "AMV"
-    return FORM_LABELS.get(form_index, f"Form {form_index}")
+    if form_index in FORM_LABELS:
+        return FORM_LABELS[form_index]
+    if custom_forms and form_index in custom_forms:
+        r_name, _ = custom_forms[form_index]
+        return f"{r_name} Form"
+    return f"Form {form_index}"
 
 
 def parse_stored_media_value(media_value: str | None) -> tuple[str, str | None]:
@@ -436,15 +441,11 @@ async def cmd_profile(message: Message, db: AsyncSession):
         ]
         
         # Add all custom rarities (which are forms) to Forms Breakdown dynamically
-        standard_keys = {"Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical", "Limited", "Limited Edition"}
-        for r_name, r_emoji in custom_rarities.items():
-            if r_name in standard_keys:
+        custom_forms = await get_custom_rarity_forms(db)
+        for f_idx, (r_name, r_emoji) in custom_forms.items():
+            if f_idx in {1, 2, 3, 4, 5}:
                 continue
-            cnt = 0
-            for r_c, count in rarity_counts.items():
-                if r_c and r_name and r_c.lower() == r_name.lower():
-                    cnt = count
-                    break
+            cnt = form_counts.get(f_idx, 0)
             forms_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
             
         forms_breakdown_text = "\n".join(forms_lines)
@@ -546,7 +547,19 @@ async def cmd_pokemon_list(message: Message):
 async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter: str, db: AsyncSession):
     from database.models import PokemonFormMedia
 
+    custom_forms = await get_custom_rarity_forms(db)
+
     form_idx = FORM_INDEX_MAP.get(rarity_filter)
+    if form_idx is None and rarity_filter and rarity_filter != "All":
+        rf_lower = rarity_filter.strip().lower()
+        if rf_lower.isdigit():
+            form_idx = int(rf_lower)
+        else:
+            for f_i, (r_n, r_e) in custom_forms.items():
+                if r_n.lower() == rf_lower:
+                    form_idx = f_i
+                    break
+
     filter_label = get_filter_display_label(rarity_filter)
 
     if form_idx is not None:
@@ -753,7 +766,7 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
     form_media_lookup = await get_form_media_lookup(db, page_pokemon_ids)
 
     owned_species_forms = {}
-    if view_mode == "rarity" and page_pokemon_ids:
+    if page_pokemon_ids:
         owned_forms_stmt = select(UserPokemon.pokemon_id, UserPokemon.form_index).where(
             UserPokemon.user_id == user_id,
             UserPokemon.pokemon_id.in_(page_pokemon_ids),
@@ -809,10 +822,10 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
                 form_icons = []
                 for owned_form_index in forms_owned:
                     media_value = form_media_lookup.get((pokemon.id, owned_form_index))
-                    form_label = get_form_label(owned_form_index, media_value)
-                    form_icons.append(get_rarity_emoji(form_label))
+                    form_label = get_form_label(owned_form_index, media_value, custom_forms)
+                    form_icons.append(get_rarity_emoji(form_label, custom_rarities))
                 form_suffix = f" [{' '.join(form_icons)}]"
-            text += f"◆ [ {base_badge} ] {pokemon.id} {pokemon_name}{shiny_tag}{form_suffix} ×{total_caught}\n"
+            text += f"◆ [ {base_badge} ] #{pokemon.id:03d} {pokemon_name}{shiny_tag}{form_suffix} ×{total_caught}\n"
             continue
 
         form_index = entry["form_index"]
@@ -824,16 +837,26 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
                     entry_badge = val
                     break
 
-            entry_id = str(pokemon.id)
+            entry_id = f"#{pokemon.id:03d}"
             entry_name = pokemon_name
+
+            forms_owned = sorted(owned_species_forms.get(pokemon.id, set()))
+            form_suffix = ""
+            if forms_owned:
+                form_icons = []
+                for owned_form_index in forms_owned:
+                    media_value = form_media_lookup.get((pokemon.id, owned_form_index))
+                    form_label = get_form_label(owned_form_index, media_value, custom_forms)
+                    form_icons.append(get_rarity_emoji(form_label, custom_rarities))
+                form_suffix = f" [{' '.join(form_icons)}]"
+            text += f"◆ [ {entry_badge} ] {entry_id} {entry_name}{shiny_tag}{form_suffix} ×{total_caught}\n"
         else:
             media_value = form_media_lookup.get((pokemon.id, form_index))
-            form_label = get_form_label(form_index, media_value)
-            entry_badge = get_rarity_emoji(form_label)
-            entry_id = f"{pokemon.id}.{form_index}"
+            form_label = get_form_label(form_index, media_value, custom_forms)
+            entry_badge = get_rarity_emoji(form_label, custom_rarities)
+            entry_id = f"#{pokemon.id:03d}.{form_index}"
             entry_name = f"{html.escape(form_label)} {pokemon_name}"
-
-        text += f"◆ [ {entry_badge} ] {entry_id} {entry_name}{shiny_tag} ×{total_caught}\n"
+            text += f"◆ [ {entry_badge} ] {entry_id} {entry_name}{shiny_tag} ×{total_caught}\n"
 
     return text, page, max_page
 def get_pokedex_keyboard(user_id: int, page: int, max_page: int, rarity_filter: str) -> InlineKeyboardMarkup:

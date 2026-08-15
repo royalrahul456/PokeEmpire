@@ -125,6 +125,7 @@ async def register_bot_commands(bot: Bot):
     commands = [
         BotCommand(command="start", description="🚀 Open primary Hub Dashboard"),
         BotCommand(command="profile", description="👤 Check Trainer coins & metrics"),
+        BotCommand(command="achievements", description="🏅 View Trainer achievement milestones"),
         BotCommand(command="balance", description="💰 Check current coin wallet balance"),
         BotCommand(command="pokemon", description="🎒 Browse caught collection bag"),
         BotCommand(command="pokedex", description="📖 Review Pokédex checklist"),

@@ -496,10 +496,12 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
     poke_input = parts[1].strip()
     form_index = 0
     target_poke = poke_input
+    explicit_form = False
     if "." in poke_input:
         pq, fq = poke_input.split(".", 1)
         if fq.isdigit():
             form_index = int(fq)
+            explicit_form = True
         target_poke = pq
 
     try:
@@ -535,23 +537,36 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
         await message.answer(f"❌ Pokémon '{target_poke}' not found in database.")
         return
 
-    stmt = (
-        select(UserPokemon)
-        .where(
-            UserPokemon.user_id == message.from_user.id,
-            UserPokemon.pokemon_id == pokemon.id,
-            UserPokemon.form_index == form_index
+    # Retrieve matching Pokémon from user's inventory
+    if explicit_form:
+        stmt = (
+            select(UserPokemon)
+            .where(
+                UserPokemon.user_id == message.from_user.id,
+                UserPokemon.pokemon_id == pokemon.id,
+                UserPokemon.form_index == form_index
+            )
+            .order_by(UserPokemon.id.asc())
+            .limit(1)
         )
-        .order_by(UserPokemon.level.desc(), UserPokemon.id.asc())
-        .limit(1)
-    )
+    else:
+        stmt = (
+            select(UserPokemon)
+            .where(
+                UserPokemon.user_id == message.from_user.id,
+                UserPokemon.pokemon_id == pokemon.id
+            )
+            .order_by(UserPokemon.form_index.asc(), UserPokemon.id.asc())
+            .limit(1)
+        )
+
     res = await db.execute(stmt)
     user_poke = res.scalar_one_or_none()
 
     if not user_poke:
         if is_owner:
             pokemon_id = pokemon.id
-            form_index = form_index
+            # Preserve requested form_index explicitly for admin virtual auction
             is_shiny = False
             is_amv = (form_index == 1)
             nickname = None
@@ -560,7 +575,8 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
             xp = 0
             iv_hp, iv_atk, iv_def, iv_spd = 31, 31, 31, 31
         else:
-            form_label = f"Form {form_index}" if form_index > 0 else "standard"
+            form_names_map = {0: "Standard", 1: "AMV/Art", 2: "Dmax", 3: "Gmax", 4: "Z-Move", 5: "Terastal"}
+            form_label = form_names_map.get(form_index, f"Form {form_index}") if explicit_form else "inventory"
             await message.answer(f"❌ You don't own any <b>{pokemon.name.title()}</b> ({form_label}) in your inventory.", parse_mode="HTML")
             return
     else:

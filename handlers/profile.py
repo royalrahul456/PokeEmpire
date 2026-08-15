@@ -202,14 +202,7 @@ async def get_player_cover_media(user_id: int, db: AsyncSession) -> tuple[str, s
                 media_val_db = media_res.scalar()
                 
                 if media_val_db:
-                    if ":" in media_val_db:
-                        mtype, mval = media_val_db.split(":", 1)
-                        if mtype in ["photo", "video", "animation"]:
-                            media_type = mtype
-                            media_value = mval
-                    else:
-                        media_type = "video"
-                        media_value = media_val_db
+                    media_type, media_value = parse_stored_media_value(media_val_db)
             
             if not media_value:
                 media_type = "photo"
@@ -1535,24 +1528,23 @@ async def build_rankings_payload(chat_id: int, user_id: int, period: str, db: As
     stmt = (
         select(ChatMessageStat, User)
         .join(User, ChatMessageStat.user_id == User.id)
-        .where(ChatMessageStat.chat_id == chat_id, order_col > 0)
-        .order_by(order_col.desc())
+        .where(ChatMessageStat.chat_id == chat_id)
+        .order_by(order_col.desc(), ChatMessageStat.overall_count.desc())
         .limit(10)
     )
     res = await db.execute(stmt)
     records = res.all()
 
     if not records:
-        from database.models import UserPokemon, User
-        active_uids_stmt = select(distinct(UserPokemon.user_id)).limit(10)
-        active_uids_res = await db.execute(active_uids_stmt)
-        active_uids = [r[0] for r in active_uids_res.all()]
-        if active_uids:
+        all_u_stmt = select(User.id).limit(10)
+        all_u_res = await db.execute(all_u_stmt)
+        all_uids = [r[0] for r in all_u_res.all()]
+        if all_uids:
             now_dt = datetime.utcnow()
             today_str = now_dt.strftime("%Y-%m-%d")
             week_str = now_dt.strftime("%Y-%W")
             month_str = now_dt.strftime("%Y-%m")
-            for uid in active_uids:
+            for uid in all_uids:
                 c_stmt = select(ChatMessageStat).where(ChatMessageStat.user_id == uid, ChatMessageStat.chat_id == chat_id)
                 c_res = await db.execute(c_stmt)
                 if not c_res.scalar_one_or_none():

@@ -208,8 +208,13 @@ async def process_auction_bid(db: AsyncSession, bot: Bot, auction: Auction, bidd
         return False, "❌ Auction is no longer active."
 
     min_next_bid = auction.current_bid + 1
+    max_next_bid = auction.current_bid + 10000
+
     if bid_amount < min_next_bid:
         return False, f"❌ Your bid must be at least {min_next_bid:,} coins."
+
+    if bid_amount > max_next_bid:
+        return False, f"❌ Maximum allowed bid increase is 10,000 coins above current bid! (Max allowed bid: <b>{max_next_bid:,} coins</b>)."
 
     if bidder_user.coins < bid_amount:
         return False, f"❌ Insufficient coins! Your balance: {bidder_user.coins:,} coins."
@@ -896,12 +901,14 @@ async def cb_auc_custom_bid(callback: CallbackQuery, db: AsyncSession):
         return
 
     active_custom_bids[user_id] = auction.id
+    max_allowed = auction.current_bid + 10000
 
     await callback.message.answer(
         f"💬 <b>Custom Bid for Auction #{auction.id:03d}</b>\n"
         f"───────────────\n"
-        f"Current highest bid: <b>{auction.current_bid:,} coins</b>\n\n"
-        f"👉 Type your bid amount in chat (e.g. <code>{auction.current_bid + 5000:,}</code> or <code>/bid {auction.current_bid + 5000:,}</code>):",
+        f"Current highest bid: <b>{auction.current_bid:,} coins</b>\n"
+        f"Maximum allowed bid: <b>{max_allowed:,} coins</b> (max +10k increase)\n\n"
+        f"👉 Type your bid amount in chat (e.g. <code>{auction.current_bid + 1000:,}</code> or <code>{max_allowed:,}</code>):",
         parse_mode="HTML"
     )
     await callback.answer()

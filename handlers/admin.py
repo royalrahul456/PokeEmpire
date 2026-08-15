@@ -1166,10 +1166,8 @@ async def cmd_spawn(message: Message, db: AsyncSession):
 
 @router.message(Command("spawnchance"))
 async def cmd_spawn_chance(message: Message):
-    # Only owner can configure
-    if message.from_user.id not in config.ADMIN_IDS:
-        await message.answer("❌ Denied. Only the bot owner can configure global spawn chances.")
-        return
+    user_id = message.from_user.id if message.from_user else 0
+    is_owner = user_id in config.ADMIN_IDS
 
     parts = message.text.split()
     from utils.settings import load_spawn_settings, save_spawn_settings
@@ -1179,20 +1177,24 @@ async def cmd_spawn_chance(message: Message):
         # Show current settings
         probs = settings.get("group_rarity_probabilities", {})
         text = (
-            "⚙️ **GROUP SPAWN CHANCES (OWNER ONLY)** ⚙️\n"
+            "⚙️ <b>GROUP SPAWN CHANCES</b> ⚙️\n"
             "───────────────\n"
-            "📈 **Custom Group Rarity Probabilities**:\n"
-            f"• Common: `{probs.get('Common', 70)}%`\n"
-            f"• Rare: `{probs.get('Rare', 20)}%`\n"
-            f"• Epic: `{probs.get('Epic', 7)}%`\n"
-            f"• Legendary: `{probs.get('Legendary', 2)}%`\n"
-            f"• Mythical: `{probs.get('Mythical', 1)}%`\n"
+            "📈 <b>Current Rarity Probabilities</b>:\n"
+            f"• ⚪️ Common: <b>{probs.get('Common', 70)}%</b>\n"
+            f"• 🔵 Rare: <b>{probs.get('Rare', 20)}%</b>\n"
+            f"• 🟣 Epic: <b>{probs.get('Epic', 7)}%</b>\n"
+            f"• 🟡 Legendary: <b>{probs.get('Legendary', 2)}%</b>\n"
+            f"• 🔮 Mythical: <b>{probs.get('Mythical', 1)}%</b>\n"
             "───────────────\n"
-            "💡 **Commands to Configure**:\n"
-            "👉 `/spawnchance default` - Reset to standard rates\n"
-            "👉 `/spawnchance <common> <rare> <epic> <legendary> <mythical>` - Set custom weights"
+            "💡 <b>Commands to Configure (Bot Owner)</b>:\n"
+            "👉 <code>/spawnchance default</code> — Reset to standard rates\n"
+            "👉 <code>/spawnchance &lt;common&gt; &lt;rare&gt; &lt;epic&gt; &lt;legendary&gt; &lt;mythical&gt;</code> — Set custom weights (e.g. <code>/spawnchance 50 30 15 4 1</code>)"
         )
-        await message.answer(text, parse_mode="Markdown")
+        await message.answer(text, parse_mode="HTML")
+        return
+
+    if not is_owner:
+        await message.answer("❌ Denied. Only the bot owner can modify global spawn chances.")
         return
 
     arg = parts[1].lower()
@@ -1205,11 +1207,11 @@ async def cmd_spawn_chance(message: Message):
             "Mythical": 1
         }
         await save_spawn_settings(settings)
-        await message.answer("✅ **Reset group spawn chances to default rates (70% C, 20% R, 7% E, 2% L, 1% M).**")
+        await message.answer("✅ <b>Reset group spawn chances to default rates (70% Common, 20% Rare, 7% Epic, 2% Legendary, 1% Mythical).</b>", parse_mode="HTML")
     else:
         # Check for 5 integer weights
         if len(parts) < 6:
-            await message.answer("⚠️ Format: `/spawnchance <common> <rare> <epic> <legendary> <mythical>` (e.g. `/spawnchance 50 30 15 4 1`)")
+            await message.answer("⚠️ Format: <code>/spawnchance &lt;common&gt; &lt;rare&gt; &lt;epic&gt; &lt;legendary&gt; &lt;mythical&gt;</code> (e.g. <code>/spawnchance 50 30 15 4 1</code>)", parse_mode="HTML")
             return
 
         try:
@@ -1217,7 +1219,7 @@ async def cmd_spawn_chance(message: Message):
             if any(w < 0 for w in weights) or sum(weights) == 0:
                 raise ValueError()
         except ValueError:
-            await message.answer("❌ Error: All weights must be non-negative integers, and the sum must be greater than zero.")
+            await message.answer("❌ Error: All weights must be non-negative integers, and the total sum must be greater than zero.")
             return
 
         settings["group_rarity_probabilities"] = {
@@ -1228,15 +1230,13 @@ async def cmd_spawn_chance(message: Message):
             "Mythical": weights[4]
         }
         await save_spawn_settings(settings)
-
         await message.answer(
-            "✅ **Group spawn chances configured!**\n"
-            "**New custom weights**:\n"
-            f"• Common: `{weights[0]}`\n"
-            f"• Rare: `{weights[1]}`\n"
-            f"• Epic: `{weights[2]}`\n"
-            f"• Legendary: `{weights[3]}`\n"
-            f"• Mythical: `{weights[4]}`"
+            f"✅ <b>Updated Group Spawn Chances!</b>\n\n"
+            f"• Common: <b>{weights[0]}%</b>\n"
+            f"• Rare: <b>{weights[1]}%</b>\n"
+            f"• Epic: <b>{weights[2]}%</b>\n"
+            f"• Legendary: <b>{weights[3]}%</b>\n"
+            f"• Mythical: <b>{weights[4]}%</b>",
         )
 
 

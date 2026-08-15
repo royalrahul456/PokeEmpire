@@ -2646,9 +2646,12 @@ async def cb_spam_cancel(callback: CallbackQuery):
     await callback.answer()
 
 
-@router.message(F.chat.type == "private", F.text & ~F.text.startswith("/"))
+def is_in_spam_state(msg: Message) -> bool:
+    return bool(msg.from_user and msg.from_user.id in config.ADMIN_IDS and msg.from_user.id in _spam_state)
+
+@router.message(F.chat.type == "private", F.text & ~F.text.startswith("/"), is_in_spam_state)
 async def handle_spam_wizard_text(message: Message):
-    user_id = message.from_user.id if message.from_user else None
+    user_id = message.from_user.id
     if not user_id or user_id not in config.ADMIN_IDS:
         return
     state = _spam_state.get(user_id)

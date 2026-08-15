@@ -907,7 +907,10 @@ async def cb_auc_custom_bid(callback: CallbackQuery, db: AsyncSession):
     await callback.answer()
 
 
-@router.message(F.text & ~F.text.startswith("/"))
+def is_in_custom_bids(msg: Message) -> bool:
+    return bool(msg.from_user and msg.from_user.id in active_custom_bids)
+
+@router.message(F.text & ~F.text.startswith("/"), is_in_custom_bids)
 async def process_custom_bid_text(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     if user_id not in active_custom_bids:

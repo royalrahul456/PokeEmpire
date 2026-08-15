@@ -1495,6 +1495,113 @@ async def cmd_unfav(message: Message, db: AsyncSession):
     await db.commit()
     await message.answer("❌ Cleared your favorite cover. A random Pokémon from your bag will be shown instead.")
 
+
+async def build_rankings_payload(chat_id: int, user_id: int, period: str, db: AsyncSession):
+    period_lower = period.lower()
+    from database.models import ChatMessageStat, User
+
+    if period_lower == "daily":
+        order_col = ChatMessageStat.daily_count
+        label = "📅 Daily Leaderboard"
+    elif period_lower == "weekly":
+        order_col = ChatMessageStat.weekly_count
+        label = "🗓️ Weekly Leaderboard"
+    elif period_lower == "monthly":
+        order_col = ChatMessageStat.monthly_count
+        label = "📆 Monthly Leaderboard"
+    else:
+        period_lower = "overall"
+        order_col = ChatMessageStat.overall_count
+        label = "🏆 Overall Leaderboard"
+
+    # Query top 10 chatters for this chat_id
+    stmt = (
+        select(ChatMessageStat, User)
+        .join(User, ChatMessageStat.user_id == User.id)
+        .where(ChatMessageStat.chat_id == chat_id, order_col > 0)
+        .order_by(order_col.desc())
+        .limit(10)
+    )
+    res = await db.execute(stmt)
+    records = res.all()
+
+    # Query current user's rank
+    user_stat_stmt = (
+        select(ChatMessageStat)
+        .where(ChatMessageStat.chat_id == chat_id, ChatMessageStat.user_id == user_id)
+    )
+    u_res = await db.execute(user_stat_stmt)
+    user_stat = u_res.scalar_one_or_none()
+    user_msgs = getattr(user_stat, f"{period_lower}_count", 0) if user_stat else 0
+
+    user_rank_stmt = (
+        select(func.count())
+        .select_from(ChatMessageStat)
+        .where(ChatMessageStat.chat_id == chat_id, order_col > user_msgs)
+    )
+    ur_res = await db.execute(user_rank_stmt)
+    user_rank = (ur_res.scalar() or 0) + 1 if user_msgs > 0 else "Unranked"
+
+    rows = []
+    badges = {1: "🥇", 2: "🥈", 3: "🥉"}
+    for idx, (stat, u) in enumerate(records, start=1):
+        b = badges.get(idx, f"{idx}.")
+        count = getattr(stat, f"{period_lower}_count", 0)
+        u_name = html.escape(u.nickname or u.username or f"Trainer {u.id}")
+        rows.append(f"<b>{b} {u_name}</b> — <code>{count:,} msgs</code>")
+
+    ranks_body = "\n".join(rows) if rows else "<i>No chat activity recorded yet for this period.</i>"
+
+    text = (
+        f"🏆 <b>CHAT RANKINGS: {label.upper()}</b> 🏆\n"
+        f"───────────────\n"
+        f"<blockquote>{ranks_body}</blockquote>\n\n"
+        f"👤 <b>Your Rank</b>: <code>#{user_rank}</code> (<b>{user_msgs:,} msgs</b>)\n"
+        f"───────────────\n"
+        f"🎁 <i>Top 1 chatter on Weekly & Monthly reset wins an Exclusive Art/AMV Pokémon!</i>"
+    )
+
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="📅 Daily", callback_data=f"rank_{chat_id}_{user_id}_daily"),
+        InlineKeyboardButton(text="🗓️ Weekly", callback_data=f"rank_{chat_id}_{user_id}_weekly")
+    )
+    builder.row(
+        InlineKeyboardButton(text="📆 Monthly", callback_data=f"rank_{chat_id}_{user_id}_monthly"),
+        InlineKeyboardButton(text="🏆 Overall", callback_data=f"rank_{chat_id}_{user_id}_overall")
+    )
+
+    return text, builder.as_markup()
+
+
+@router.message(Command("rankings", "chatrankings", "chattop"))
+async def cmd_rankings(message: Message, db: AsyncSession):
+    if message.chat.type not in ["group", "supergroup"]:
+        await message.answer("⚠️ Chat Rankings are for group chats! Use /rankings inside a group chat.")
+        return
+
+    text, kb = await build_rankings_payload(message.chat.id, message.from_user.id, "weekly", db)
+    await message.answer(text, reply_markup=kb, parse_mode="HTML")
+
+
+@router.callback_query(F.data.startswith("rank_"))
+async def cb_rankings_filter(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_")
+    chat_id = int(parts[1])
+    user_id = int(parts[2])
+    period = parts[3]
+
+    if callback.from_user.id != user_id:
+        await callback.answer("❌ This is not your menu! Type /rankings to view yours.", show_alert=True)
+        return
+
+    text, kb = await build_rankings_payload(chat_id, user_id, period, db)
+    try:
+        await callback.message.edit_text(text=text, reply_markup=kb, parse_mode="HTML")
+    except Exception:
+        pass
+    await callback.answer()
+
 @router.message(Command("search"))
 @router.message(Command("s"))
 @router.message(Command("cid"))

@@ -182,4 +182,22 @@ class AuctionBid(Base):
     bidder = relationship("User", foreign_keys=[bidder_id])
 
 
+class ChatMessageStat(Base):
+    __tablename__ = "chat_message_stats"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    chat_id = Column(BigInteger, nullable=False, index=True)
+    daily_count = Column(Integer, default=0, nullable=False)
+    weekly_count = Column(Integer, default=0, nullable=False)
+    monthly_count = Column(Integer, default=0, nullable=False)
+    overall_count = Column(Integer, default=0, nullable=False)
+    last_daily_reset = Column(String(20), nullable=True)   # "YYYY-MM-DD"
+    last_weekly_reset = Column(String(20), nullable=True)  # "YYYY-WW"
+    last_monthly_reset = Column(String(20), nullable=True) # "YYYY-MM"
+
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+
+
 

@@ -217,6 +217,12 @@ class GroupActivityMiddleware(BaseMiddleware):
 
         chat_id = chat.id
 
+        # Track user chat activity and rankings
+        try:
+            await track_user_chat_activity(db, chat_id, user, event)
+        except Exception as track_err:
+            print(f"Error tracking user chat activity: {track_err}")
+
         # 3. Retrieve or initialize Group Settings from cache
         if chat_id not in group_settings_cache:
             stmt = select(GroupSetting).where(GroupSetting.chat_id == chat_id)
@@ -261,3 +267,145 @@ class GroupActivityMiddleware(BaseMiddleware):
                 group_message_counters[chat_id] = current_count
 
         return await handler(event, data)
+
+
+async def track_user_chat_activity(db: AsyncSession, chat_id: int, user, event: Message):
+    if not user or user.is_bot:
+        return
+    user_id = user.id
+    now_dt = datetime.utcnow()
+    today_str = now_dt.strftime("%Y-%m-%d")
+    week_str = now_dt.strftime("%Y-%W")
+    month_str = now_dt.strftime("%Y-%m")
+
+    from database.models import ChatMessageStat
+    stmt = select(ChatMessageStat).where(
+        ChatMessageStat.user_id == user_id,
+        ChatMessageStat.chat_id == chat_id
+    )
+    res = await db.execute(stmt)
+    stat = res.scalar_one_or_none()
+
+    if not stat:
+        stat = ChatMessageStat(
+            user_id=user_id,
+            chat_id=chat_id,
+            daily_count=1,
+            weekly_count=1,
+            monthly_count=1,
+            overall_count=1,
+            last_daily_reset=today_str,
+            last_weekly_reset=week_str,
+            last_monthly_reset=month_str
+        )
+        db.add(stat)
+        await db.commit()
+        return
+
+    # Check reset periods
+    # 1. Weekly Reset Check & Reward
+    if stat.last_weekly_reset and stat.last_weekly_reset != week_str:
+        top_weekly_stmt = (
+            select(ChatMessageStat)
+            .where(ChatMessageStat.chat_id == chat_id)
+            .order_by(ChatMessageStat.weekly_count.desc())
+            .limit(1)
+        )
+        top_res = await db.execute(top_weekly_stmt)
+        topper_stat = top_res.scalar_one_or_none()
+        if topper_stat and topper_stat.user_id == user_id and stat.weekly_count > 10:
+            await reward_chat_topper(db, chat_id, user_id, "Weekly", stat.weekly_count, event)
+
+        stat.weekly_count = 1
+        stat.last_weekly_reset = week_str
+    else:
+        stat.weekly_count += 1
+
+    # 2. Monthly Reset Check & Reward
+    if stat.last_monthly_reset and stat.last_monthly_reset != month_str:
+        top_monthly_stmt = (
+            select(ChatMessageStat)
+            .where(ChatMessageStat.chat_id == chat_id)
+            .order_by(ChatMessageStat.monthly_count.desc())
+            .limit(1)
+        )
+        top_res = await db.execute(top_monthly_stmt)
+        topper_stat = top_res.scalar_one_or_none()
+        if topper_stat and topper_stat.user_id == user_id and stat.monthly_count > 50:
+            await reward_chat_topper(db, chat_id, user_id, "Monthly", stat.monthly_count, event)
+
+        stat.monthly_count = 1
+        stat.last_monthly_reset = month_str
+    else:
+        stat.monthly_count += 1
+
+    # 3. Daily Reset Check
+    if stat.last_daily_reset != today_str:
+        stat.daily_count = 1
+        stat.last_daily_reset = today_str
+    else:
+        stat.daily_count += 1
+
+    stat.overall_count += 1
+    await db.commit()
+
+
+async def reward_chat_topper(db: AsyncSession, chat_id: int, user_id: int, period: str, count: int, event: Message):
+    """Gifts a random Art/AMV or Custom Form Pokemon to the weekly/monthly chat topper."""
+    from database.models import User, Pokemon, UserPokemon, PokemonFormMedia
+    import random
+
+    # Get random Art/AMV or form entry from PokemonFormMedia
+    stmt = select(PokemonFormMedia).order_by(func.random()).limit(1)
+    res = await db.execute(stmt)
+    pfm = res.scalar_one_or_none()
+
+    if pfm:
+        pokemon_id = pfm.pokemon_id
+        form_index = pfm.form_index
+    else:
+        pokemon_id = random.randint(1, 151)
+        form_index = 1
+
+    # Fetch Pokemon details
+    p_stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
+    p_res = await db.execute(p_stmt)
+    pokemon = p_res.scalar_one_or_none()
+    if not pokemon:
+        return
+
+    # Add reward Pokemon to winner's inventory
+    reward_poke = UserPokemon(
+        user_id=user_id,
+        pokemon_id=pokemon.id,
+        form_index=form_index,
+        is_amv=(form_index == 1),
+        is_shiny=False,
+        level=100,
+        serial_number="#TOPPER"
+    )
+    db.add(reward_poke)
+    await db.commit()
+
+    # Announce in group
+    user_stmt = select(User).where(User.id == user_id)
+    user_res = await db.execute(user_stmt)
+    topper_user = user_res.scalar_one_or_none()
+    topper_name = topper_user.nickname if topper_user else "Trainer"
+
+    from utils.settings import get_custom_rarity_forms
+    custom_forms = await get_custom_rarity_forms(db)
+    from handlers.profile import get_form_label
+    form_lbl = get_form_label(form_index, pfm.media_value if pfm else None, custom_forms)
+
+    try:
+        await event.answer(
+            f"👑 <b>{period.upper()} CHAT TOPPER CROWNED!</b> 👑\n"
+            f"───────────────\n"
+            f"<blockquote>👤 Trainer: <b>{html.escape(topper_name)}</b>\n"
+            f"📊 Activity: <b>{count:,} messages</b> sent this {period.lower()}!\n\n"
+            f"🎨 <b>REWARD GIFT</b>: <b>{pokemon.name.title()} ({form_lbl})</b> added directly to inventory! 🎉</blockquote>",
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        print(f"Error sending chat topper announcement: {e}")

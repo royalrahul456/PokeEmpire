@@ -577,9 +577,9 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
         total_entries = total_species + total_forms
 
         caught_entries_subq = (
-            select(UserPokemon.pokemon_id, UserPokemon.form_index)
+            select(UserPokemon.pokemon_id)
             .where(UserPokemon.user_id == user_id)
-            .group_by(UserPokemon.pokemon_id, UserPokemon.form_index)
+            .group_by(UserPokemon.pokemon_id)
             .subquery()
         )
         caught_count_res = await db.execute(select(func.count()).select_from(caught_entries_subq))
@@ -634,14 +634,13 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
         poke_stmt = (
             select(
                 Pokemon,
-                UserPokemon.form_index.label("entry_form_index"),
                 func.count(UserPokemon.id).label("total_caught"),
                 func.max(case((UserPokemon.is_shiny == True, 1), else_=0)).label("has_shiny"),
             )
             .join(UserPokemon, UserPokemon.pokemon_id == Pokemon.id)
             .where(UserPokemon.user_id == user_id)
-            .group_by(Pokemon.id, UserPokemon.form_index)
-            .order_by(Pokemon.id, UserPokemon.form_index)
+            .group_by(Pokemon.id)
+            .order_by(Pokemon.id)
             .offset(offset)
             .limit(per_page)
         )
@@ -649,11 +648,11 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
         page_entries = [
             {
                 "pokemon": pokemon,
-                "form_index": form_index,
+                "form_index": 0,
                 "total_caught": total_caught,
                 "has_shiny": bool(has_shiny),
             }
-            for pokemon, form_index, total_caught, has_shiny in poke_res.all()
+            for pokemon, total_caught, has_shiny in poke_res.all()
         ]
     elif view_mode == "form":
         poke_stmt = (

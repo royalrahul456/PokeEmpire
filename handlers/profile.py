@@ -865,7 +865,7 @@ def get_pokedex_keyboard(user_id: int, page: int, max_page: int, rarity_filter: 
     # Row 1: Tab Switches (Clean, no extra stars, matching mockup)
     builder.row(
         InlineKeyboardButton(text="Collection", callback_data=f"pd_tab_{user_id}_col"),
-        InlineKeyboardButton(text="💟 AMV", callback_data=f"pd_tab_{user_id}_cov")
+        InlineKeyboardButton(text="💟 Forms & Covers", callback_data=f"pd_tab_{user_id}_cov")
     )
     
     # Row 2: Dynamic Pagination Buttons (no wrapping, only show arrows if next/prev page exists)
@@ -995,11 +995,11 @@ async def cb_pokedex_tab(callback: CallbackQuery, db: AsyncSession):
         
     if tab == "cov":
         text = (
-            f"💟 <b>AMV Cover Favorite</b>\n"
+            f"💟 <b>Forms & Cover Favorite</b>\n"
             f"───────────────\n\n"
-            f"Set your favorite Pokémon AMV / Art as the Pokédex cover illustration!\n\n"
+            f"Set any of your owned Pokémon forms / AMVs as your Pokédex cover illustration!\n\n"
             f"👉 <b>How to set</b>: Type <code>/fav &lt;pokedex_id&gt;.&lt;form_index&gt;</code> in chat.\n"
-            f"<i>(e.g., <code>/fav 6.1</code> to set Charizard AMV as cover)</i>"
+            f"<i>(e.g., <code>/fav 6.1</code> for AMV or <code>/fav 6.7</code> for Custom Form)</i>"
         )
         builder = InlineKeyboardBuilder()
         builder.row(InlineKeyboardButton(text="🔙 Back to Collection", callback_data=f"pd_page_{user_id}_1_All"))
@@ -1462,8 +1462,10 @@ async def cmd_fav(message: Message, db: AsyncSession):
     res = await db.execute(stmt)
     up = res.scalar()
     
+    custom_forms = await get_custom_rarity_forms(db)
     if not up:
-        form_suffix = f" (Form {form_index})" if form_index > 0 else ""
+        form_lbl = get_form_label(form_index, None, custom_forms)
+        form_suffix = f" ({form_lbl})" if form_index > 0 else ""
         await message.answer(f"❌ You don't own a Pokémon with that Pokédex ID{form_suffix} in your collection!")
         return
         
@@ -1481,7 +1483,8 @@ async def cmd_fav(message: Message, db: AsyncSession):
     has_shiny = shiny_res.scalar() is not None
     
     shiny_tag = "✨ Shiny " if has_shiny else ""
-    form_suffix = f" (Form {form_index})" if form_index > 0 else ""
+    form_lbl = get_form_label(form_index, None, custom_forms)
+    form_suffix = f" ({form_lbl})" if form_index > 0 else ""
     await message.answer(f"🌟 <b>{shiny_tag}{p.name.title()}</b>{form_suffix} (Pokédex ID: {fav_str}) has been set as your Pokédex cover favorite!", parse_mode="HTML")
 
 @router.message(Command("unfav"))
@@ -1555,24 +1558,16 @@ async def build_variants_search_payload(pokemon_id: int, page: int, db: AsyncSes
     res = await db.execute(stmt)
     form_entries = res.all()
     
+    custom_forms = await get_custom_rarity_forms(db)
+    custom_rarities = await get_all_custom_rarities(db)
+    
     # Build list of variants: (form_index, label, rarity_emoji, entry_id)
-    base_emoji = get_rarity_emoji(pokemon.rarity)
+    base_emoji = get_rarity_emoji(pokemon.rarity, custom_rarities)
     variants = [(0, pokemon.rarity, base_emoji, f"{pokemon.id}")]
     
     for form_index, media_value in form_entries:
-        form_label = get_form_label(form_index, media_value)
-        if form_index == 1:
-            form_emoji = "📺" # AMV
-        elif form_index == 2:
-            form_emoji = "⚡" # Dmax
-        elif form_index == 3:
-            form_emoji = "💥" # Gmax
-        elif form_index == 4:
-            form_emoji = "🌀" # Z-Move
-        elif form_index == 5:
-            form_emoji = "🔮" # Terastal
-        else:
-            form_emoji = "🔮"
+        form_label = get_form_label(form_index, media_value, custom_forms)
+        form_emoji = get_rarity_emoji(form_label, custom_rarities)
         variants.append((form_index, form_label, form_emoji, f"{pokemon.id}.{form_index}"))
         
     total_variants = len(variants)
@@ -1927,23 +1922,21 @@ async def cmd_dex(message: Message, db: AsyncSession):
         form_badges[f_idx] = r_emoji
     
     subtypes_text = ""
-    # We will list Form 0, and any other forms that are configured.
-    available_forms = [0] + sorted([f for f in configured_media.keys() if f > 0])
+    # List Form 0, configured forms, AND any forms owned by the user
+    available_forms = sorted(list({0} | set(configured_media.keys()) | owned_forms))
     
     builder = InlineKeyboardBuilder()
     
     for f in available_forms:
-        f_name = form_names.get(f, f"Form {f}")
-        f_badge = form_badges.get(f, "🌀")
+        val = configured_media.get(f, "")
+        f_name = form_names.get(f, get_form_label(f, val, custom_forms))
+        f_badge = form_badges.get(f, get_rarity_emoji(f_name))
         is_owned = f in owned_forms
         owned_status = "✅ Owned" if is_owned else "❌ Locked"
         
         # Rarity for subtypes
         if f == 0:
             rarity_lbl = pokemon.rarity
-        elif f == 1:
-            val = configured_media.get(1, "")
-            rarity_lbl = "Art" if val.startswith("photo:") else "AMV"
         else:
             rarity_lbl = f_name
             
@@ -2062,18 +2055,21 @@ async def cb_dex_play(callback: CallbackQuery, db: AsyncSession):
                     media_type = "video"
                     
     if not media_value:
-        await callback.answer("❌ Media not configured for this form.", show_alert=True)
-        return
-        
+        media_type = "photo"
+        media_value = pokemon.image_url
+
+    custom_forms = await get_custom_rarity_forms(db)
+    form_label = get_form_label(form_index, media_value, custom_forms)
+
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 Back to Dex Info", callback_data=f"dex_back_{user_id}_{pokemon_id}")
     
     from aiogram.types import InputMediaPhoto, InputMediaVideo
     try:
         if media_type in ["video", "animation"]:
-            new_media = InputMediaVideo(media=media_value, caption=f"🎥 Playing <b>{pokemon.name.title()} Form {form_index}</b>", parse_mode="HTML")
+            new_media = InputMediaVideo(media=media_value, caption=f"🎥 Playing <b>{pokemon.name.title()} ({html.escape(form_label)})</b>", parse_mode="HTML")
         else:
-            new_media = InputMediaPhoto(media=media_value, caption=f"📸 Showing <b>{pokemon.name.title()} Form {form_index}</b>", parse_mode="HTML")
+            new_media = InputMediaPhoto(media=media_value, caption=f"📸 Showing <b>{pokemon.name.title()} ({html.escape(form_label)})</b>", parse_mode="HTML")
             
         await callback.message.edit_media(media=new_media, reply_markup=builder.as_markup())
     except Exception as e:

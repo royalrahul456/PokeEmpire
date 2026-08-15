@@ -513,8 +513,7 @@ async def cmd_gen(message: Message, db: AsyncSession):
             form_media = await get_single_form_media_value(db, pokemon.id, form_index)
             if form_media:
                 media_type, media_value = parse_stored_media_value(form_media)
-        else:
-            if pokemon.video_url:
+            elif form_index == 1 and pokemon.video_url:
                 media_type, media_value = parse_stored_media_value(pokemon.video_url)
                 
         # Send media

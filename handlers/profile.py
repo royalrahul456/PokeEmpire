@@ -1162,14 +1162,15 @@ async def build_check_pokemon_payload(pokemon_id: int, form_index: int, db: Asyn
     # Resolve media
     media_type = "photo"
     media_value = pokemon.image_url
+    if pokemon.image_url:
+        media_type, media_value = parse_stored_media_value(pokemon.image_url)
+
     if form_index > 0:
         form_media = await get_single_form_media_value(db, pokemon.id, form_index)
         if form_media:
             media_type, media_value = parse_stored_media_value(form_media)
-    else:
-        if pokemon.video_url:
-            media_type = "video"
-            media_value = pokemon.video_url
+        elif form_index == 1 and pokemon.video_url:
+            media_type, media_value = parse_stored_media_value(pokemon.video_url)
             
     # Resolve form label
     if form_index > 0:
@@ -1626,10 +1627,8 @@ async def send_search_result_message(message: Message, pokemon: Pokemon, page: i
     
     media_value = pokemon.image_url
     media_type = "photo"
-    
-    if pokemon.video_url:
-        media_type = "video"
-        media_value = pokemon.video_url
+    if pokemon.image_url:
+        media_type, media_value = parse_stored_media_value(pokemon.image_url)
         
     from aiogram.types import FSInputFile
     if isinstance(media_value, str) and os.path.exists(media_value):
@@ -2304,16 +2303,17 @@ async def cmd_gift(message: Message, db: AsyncSession):
     r_emoji = get_rarity_emoji(up.pokemon.rarity)
     
     # Resolve media of the gifted Pokémon
-    media_value = up.pokemon.image_url
     media_type = "photo"
+    media_value = up.pokemon.image_url
+    if up.pokemon.image_url:
+        media_type, media_value = parse_stored_media_value(up.pokemon.image_url)
+
     if up.form_index > 0:
         form_media = await get_single_form_media_value(db, up.pokemon_id, up.form_index)
         if form_media:
             media_type, media_value = parse_stored_media_value(form_media)
-    else:
-        if up.pokemon.video_url:
-            media_type = "video"
-            media_value = up.pokemon.video_url
+        elif up.form_index == 1 and up.pokemon.video_url:
+            media_type, media_value = parse_stored_media_value(up.pokemon.video_url)
 
     pokemon_display = f"{r_emoji} {shiny_badge}{form_badge}<b>{up.pokemon.name.title()}</b>"
 

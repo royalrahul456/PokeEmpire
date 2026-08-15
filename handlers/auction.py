@@ -180,8 +180,7 @@ async def get_auction_card(db: AsyncSession, auction: Auction) -> tuple[str, str
         form_media = await get_single_form_media_value(db, pokemon.id, resolved_form)
         if form_media:
             media_type, media_value = parse_stored_media_value(form_media)
-    else:
-        if pokemon.video_url:
+        elif resolved_form == 1 and pokemon.video_url:
             media_type, media_value = parse_stored_media_value(pokemon.video_url)
 
     return caption, media_type, media_value
@@ -294,7 +293,7 @@ async def process_auction_bid(db: AsyncSession, bot: Bot, auction: Auction, bidd
 
 
 async def send_auction_settlement_channel_report(bot: Bot, db: AsyncSession, auction: Auction, status_type: str):
-    """Sends a full settlement report to @PokeEmpireAuctions channel with media, stats, seller, winner, payout, and complete bid history."""
+    """Sends a full settlement report to @PokeEmpireAuctions channel with media, stats, seller, winner, payout, and complete bid history, formatted with blockquotes in a single media post."""
     try:
         channel_id = config.AUCTION_CHANNEL
         if not channel_id:
@@ -332,9 +331,6 @@ async def send_auction_settlement_channel_report(bot: Bot, db: AsyncSession, auc
         bids_res = await db.execute(stmt_bids)
         all_bids = bids_res.all()
 
-        total_iv = auction.iv_hp + auction.iv_atk + auction.iv_def + auction.iv_spd
-        iv_pct = (total_iv / 124.0) * 100
-
         if status_type == "COMPLETED" and all_bids:
             highest_bid_rec, winner_user = all_bids[0]
             winner_name = winner_user.nickname or winner_user.username or f"Trainer {winner_user.id}"
@@ -345,7 +341,7 @@ async def send_auction_settlement_channel_report(bot: Bot, db: AsyncSession, auc
 
             title_header = "🎉 <b>AUCTION COMPLETED & SETTLED!</b> 🎉"
             winning_str = f"<b>{highest_bid_rec.amount:,} coins</b>"
-            payout_str = f"<b>{payout:,} coins</b> (5% tax deducted: {tax:,})"
+            payout_str = f"<b>{payout:,} coins</b> (5% tax: {tax:,})"
             winner_str = f"{winner_handle} (ID: <code>{winner_user.id}</code>)"
         elif status_type == "UNSOLD":
             title_header = "🪙 <b>AUCTION ENDED — UNSOLD</b>"
@@ -363,27 +359,20 @@ async def send_auction_settlement_channel_report(bot: Bot, db: AsyncSession, auc
             for rank, (bid_rec, bidder_u) in enumerate(all_bids, start=1):
                 b_name = bidder_u.nickname or bidder_u.username or f"Trainer {bidder_u.id}"
                 b_handle = f"@{bidder_u.username}" if bidder_u.username else html.escape(b_name)
-                b_time = bid_rec.bid_at.strftime("%H:%M:%S UTC")
+                b_time = bid_rec.bid_at.strftime("%H:%M:%S")
                 
-                if rank == 1:
-                    rank_icon = "🥇"
-                elif rank == 2:
-                    rank_icon = "🥈"
-                elif rank == 3:
-                    rank_icon = "🥉"
-                else:
-                    rank_icon = "🔹"
-
-                history_lines.append(f"{rank_icon} <b>#{rank}</b> {b_handle} — <b>{bid_rec.amount:,} coins</b> ({b_time})")
+                rank_icon = "🥇" if rank == 1 else ("🥈" if rank == 2 else ("🥉" if rank == 3 else "🔹"))
+                history_lines.append(f"{rank_icon} #{rank} {b_handle}: {bid_rec.amount:,} coins ({b_time})")
+            
             bid_history_text = "\n".join(history_lines)
         else:
-            bid_history_text = "<i>No bids were placed on this auction.</i>"
+            bid_history_text = "╰─ No bids placed on this auction."
 
         caption_text = (
             f"{title_header}\n"
             f"───────────────\n"
             f"<blockquote>📌 <b>Auction ID</b>: <code>#{auction.id:03d}</code>\n"
-            f"🆔 <b>Pokédex ID</b>: <code>#{pokemon.id}</code> | 🎫 <b>Serial Number</b>: <code>{auction.serial_number}</code>\n"
+            f"🆔 <b>Pokédex ID</b>: <code>#{pokemon.id}</code> | 🎫 <b>Serial</b>: <code>{auction.serial_number}</code>\n"
             f"📛 <b>Pokémon</b>: <b>{pokemon.name.title()}</b> ({form_label})\n"
             f"💎 <b>Rarity</b>: {r_emoji} {pokemon.rarity}</blockquote>\n\n"
             f"<blockquote>👥 <b>Seller</b>: {seller_user_handle} (ID: <code>{auction.seller_id}</code>)\n"
@@ -391,10 +380,42 @@ async def send_auction_settlement_channel_report(bot: Bot, db: AsyncSession, auc
             f"💰 <b>Starting Price</b>: {auction.starting_price:,} coins\n"
             f"🔨 <b>Winning Bid</b>: {winning_str}\n"
             f"💸 <b>Seller Net Payout</b>: {payout_str}</blockquote>\n\n"
-            f"📜 <b>COMPLETE BID HISTORY ({len(all_bids)} bids):</b>\n"
+            f"📜 <b>BID HISTORY ({len(all_bids)} bids):</b>\n"
             f"<blockquote>{bid_history_text}</blockquote>\n\n"
             f"📢 Official Channel: @PokeEmpireAuctions"
         )
+
+        if len(caption_text) > 980 and all_bids:
+            truncated_history = []
+            for rank, (bid_rec, bidder_u) in enumerate(all_bids[:6], start=1):
+                b_name = bidder_u.nickname or bidder_u.username or f"Trainer {bidder_u.id}"
+                b_handle = f"@{bidder_u.username}" if bidder_u.username else html.escape(b_name)
+                b_time = bid_rec.bid_at.strftime("%H:%M:%S")
+                rank_icon = "🥇" if rank == 1 else ("🥈" if rank == 2 else ("🥉" if rank == 3 else "🔹"))
+                truncated_history.append(f"{rank_icon} #{rank} {b_handle}: {bid_rec.amount:,} ({b_time})")
+            
+            rem = len(all_bids) - 6
+            if rem > 0:
+                truncated_history.append(f"└ ... and {rem} more bids")
+            
+            bid_history_text = "\n".join(truncated_history)
+
+            caption_text = (
+                f"{title_header}\n"
+                f"───────────────\n"
+                f"<blockquote>📌 <b>Auction ID</b>: <code>#{auction.id:03d}</code>\n"
+                f"🆔 <b>Pokédex ID</b>: <code>#{pokemon.id}</code> | 🎫 <b>Serial</b>: <code>{auction.serial_number}</code>\n"
+                f"📛 <b>Pokémon</b>: <b>{pokemon.name.title()}</b> ({form_label})\n"
+                f"💎 <b>Rarity</b>: {r_emoji} {pokemon.rarity}</blockquote>\n\n"
+                f"<blockquote>👥 <b>Seller</b>: {seller_user_handle} (ID: <code>{auction.seller_id}</code>)\n"
+                f"👑 <b>Buyer / Winner</b>: {winner_str}\n"
+                f"💰 <b>Starting Price</b>: {auction.starting_price:,} coins\n"
+                f"🔨 <b>Winning Bid</b>: {winning_str}\n"
+                f"💸 <b>Seller Net Payout</b>: {payout_str}</blockquote>\n\n"
+                f"📜 <b>BID HISTORY ({len(all_bids)} bids):</b>\n"
+                f"<blockquote>{bid_history_text}</blockquote>\n\n"
+                f"📢 Official Channel: @PokeEmpireAuctions"
+            )
 
         media_type = "photo"
         media_value = pokemon.image_url
@@ -409,40 +430,19 @@ async def send_auction_settlement_channel_report(bot: Bot, db: AsyncSession, auc
             form_media = await get_single_form_media_value(db, pokemon.id, resolved_form)
             if form_media:
                 media_type, media_value = parse_stored_media_value(form_media)
-        else:
-            if pokemon.video_url:
+            elif resolved_form == 1 and pokemon.video_url:
                 media_type, media_value = parse_stored_media_value(pokemon.video_url)
 
-        if len(caption_text) <= 1024:
-            if media_type == "video":
-                await bot.send_video(chat_id=channel_id, video=media_value, caption=caption_text, parse_mode="HTML")
-            elif media_type == "animation":
-                await bot.send_animation(chat_id=channel_id, animation=media_value, caption=caption_text, parse_mode="HTML")
-            else:
-                await bot.send_photo(chat_id=channel_id, photo=media_value, caption=caption_text, parse_mode="HTML")
+        if media_type == "video":
+            await bot.send_video(chat_id=channel_id, video=media_value, caption=caption_text, parse_mode="HTML")
+        elif media_type == "animation":
+            await bot.send_animation(chat_id=channel_id, animation=media_value, caption=caption_text, parse_mode="HTML")
         else:
-            short_caption = (
-                f"{title_header}\n"
-                f"───────────────\n"
-                f"📌 <b>Auction ID</b>: <code>#{auction.id:03d}</code>\n"
-                f"🆔 <b>Pokédex ID</b>: <code>#{pokemon.id}</code> | 🎫 <b>Serial</b>: <code>{auction.serial_number}</code>\n"
-                f"📛 <b>Pokémon</b>: <b>{pokemon.name.title()}</b> ({form_label})\n"
-                f"💎 <b>Rarity</b>: {r_emoji} {pokemon.rarity}\n"
-                f"🔨 <b>Final Bid</b>: {winning_str}\n"
-                f"👑 <b>Winner</b>: {winner_str}\n\n"
-                f"👇 <b>See full bid history in text message below!</b>"
-            )
-            if media_type == "video":
-                await bot.send_video(chat_id=channel_id, video=media_value, caption=short_caption, parse_mode="HTML")
-            elif media_type == "animation":
-                await bot.send_animation(chat_id=channel_id, animation=media_value, caption=short_caption, parse_mode="HTML")
-            else:
-                await bot.send_photo(chat_id=channel_id, photo=media_value, caption=short_caption, parse_mode="HTML")
-
-            await bot.send_message(chat_id=channel_id, text=caption_text, parse_mode="HTML")
+            await bot.send_photo(chat_id=channel_id, photo=media_value, caption=caption_text, parse_mode="HTML")
 
     except Exception as report_err:
         print(f"⚠️ Failed to post settlement report to {config.AUCTION_CHANNEL}: {report_err}")
+
 
 
 @router.message(Command("auction"))

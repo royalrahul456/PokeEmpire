@@ -336,12 +336,18 @@ async def send_auction_settlement_channel_report(bot: Bot, db: AsyncSession, auc
             winner_name = winner_user.nickname or winner_user.username or f"Trainer {winner_user.id}"
             winner_handle = f"@{winner_user.username}" if winner_user.username else html.escape(winner_name)
             
-            tax = int(highest_bid_rec.amount * 0.05)
-            payout = highest_bid_rec.amount - tax
+            is_seller_owner = (auction.seller_id in config.ADMIN_IDS)
+            if is_seller_owner:
+                tax = 0
+                payout = highest_bid_rec.amount
+                payout_str = f"<b>{payout:,} coins</b> (Owner: 0% tax)"
+            else:
+                tax = int(highest_bid_rec.amount * 0.05)
+                payout = highest_bid_rec.amount - tax
+                payout_str = f"<b>{payout:,} coins</b> (5% tax: {tax:,})"
 
             title_header = "🎉 <b>AUCTION COMPLETED & SETTLED!</b> 🎉"
             winning_str = f"<b>{highest_bid_rec.amount:,} coins</b>"
-            payout_str = f"<b>{payout:,} coins</b> (5% tax: {tax:,})"
             winner_str = f"{winner_handle} (ID: <code>{winner_user.id}</code>)"
         elif status_type == "UNSOLD":
             title_header = "🪙 <b>AUCTION ENDED — UNSOLD</b>"
@@ -505,6 +511,15 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
     if starting_price <= 0:
         await message.answer("❌ Starting price must be greater than 0.")
         return
+
+    # Validate starting price limits (owners bypass)
+    if not is_owner:
+        if form_index == 0 and starting_price > 50000:
+            await message.answer("❌ Maximum starting price for Standard form (Form 0) Pokémon is <b>50,000 coins</b>.", parse_mode="HTML")
+            return
+        elif form_index > 0 and starting_price > 500000:
+            await message.answer("❌ Maximum starting price for special form Pokémon is <b>500,000 coins</b>.", parse_mode="HTML")
+            return
 
     duration_str = parts[3] if len(parts) >= 4 else "5m"
     duration_sec = parse_duration(duration_str)
@@ -1208,8 +1223,16 @@ async def auction_settlement_worker(bot: Bot):
                             )
                             db.add(new_poke)
 
-                            tax = int(highest_bid_rec.amount * 0.05)
-                            payout = highest_bid_rec.amount - tax
+                            is_seller_owner = (auction.seller_id in config.ADMIN_IDS)
+                            if is_seller_owner:
+                                tax = 0
+                                payout = highest_bid_rec.amount
+                                tax_note = "(Owner: 0% tax)"
+                            else:
+                                tax = int(highest_bid_rec.amount * 0.05)
+                                payout = highest_bid_rec.amount - tax
+                                tax_note = "(5% tax deducted)"
+
                             seller.coins += payout
                             db.add(seller)
                             
@@ -1222,7 +1245,7 @@ async def auction_settlement_worker(bot: Bot):
                                 f"<blockquote>👑 <b>{html.escape(winner_name)}</b> won Auction #{auction.id:03d}!\n"
                                 f"🙇 <b>{pokemon.name.title()}</b> (Pokédex #{pokemon.id}) added to collection\n"
                                 f"💰 Winning Bid: <b>{highest_bid_rec.amount:,} coins</b>\n"
-                                f"💰 Seller <b>{html.escape(seller_name)}</b> received <b>{payout:,} coins</b> (5% tax deducted)\n"
+                                f"💰 Seller <b>{html.escape(seller_name)}</b> received <b>{payout:,} coins</b> {tax_note}\n"
                                 f"🎉 Congratulations!</blockquote>"
                             )
                             
@@ -1244,7 +1267,7 @@ async def auction_settlement_worker(bot: Bot):
                                 f"🔔 <b>Auction Sold!</b> 🔔\n"
                                 f"───────────────\n"
                                 f"<blockquote>👑 Your <b>{pokemon.name.title()}</b> (Pokédex #{pokemon.id}) has been sold to <b>{html.escape(winner_name)}</b>!\n"
-                                f"💰 Payout: <b>{payout:,} coins</b> (5% tax deducted)\n"
+                                f"💰 Payout: <b>{payout:,} coins</b> {tax_note}\n"
                                 f"🎫 Serial: <code>{auction.serial_number}</code></blockquote>"
                             )
                             try:

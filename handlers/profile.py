@@ -67,9 +67,11 @@ def get_media_type_from_value(media_value: str | None) -> str | None:
         return "video"
     if media_value.startswith("animation:"):
         return "animation"
-    if media_value.startswith("http"):
+    if media_value.startswith("http") or media_value.startswith("AgAC"):
         return "photo"
-    return "video"
+    if media_value.startswith("BAAC"):
+        return "video"
+    return "photo"
 
 
 def get_form_label(form_index: int, media_value: str | None = None, custom_forms: dict = None) -> str:
@@ -90,9 +92,11 @@ def parse_stored_media_value(media_value: str | None) -> tuple[str, str | None]:
         media_type, clean_value = media_value.split(":", 1)
         if media_type in {"photo", "video", "animation"}:
             return media_type, clean_value
-    if media_value.startswith("http"):
+    if media_value.startswith("http") or media_value.startswith("AgAC"):
         return "photo", media_value
-    return "video", media_value
+    if media_value.startswith("BAAC"):
+        return "video", media_value
+    return "photo", media_value
 
 
 async def get_form_media_lookup(db: AsyncSession, pokemon_ids: list[int]) -> dict[tuple[int, int], str]:

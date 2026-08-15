@@ -1138,6 +1138,17 @@ async def cmd_check_pokemon(message: Message, db: AsyncSession):
         
     caption, reply_markup, media_type, media_value = await build_check_pokemon_payload(pokemon.id, form_index, db)
     
+    if form_index > 0 and not media_value:
+        custom_forms = await get_custom_rarity_forms(db)
+        form_label = get_form_label(form_index, None, custom_forms)
+        notif_text = (
+            f"{caption}\n\n"
+            f"<blockquote>⚠️ <b>Media Not Registered</b>\n"
+            f"Media for <b>{pokemon.name.title()} ({html.escape(form_label)})</b> (Form {form_index}) is not registered yet.</blockquote>"
+        )
+        await message.answer(notif_text, reply_markup=reply_markup, parse_mode="HTML")
+        return
+    
     from aiogram.types import FSInputFile
     if isinstance(media_value, str) and os.path.exists(media_value):
         media_value = FSInputFile(media_value)
@@ -1164,9 +1175,7 @@ async def build_check_pokemon_payload(pokemon_id: int, form_index: int, db: Asyn
         
     # Resolve media
     media_type = "photo"
-    media_value = pokemon.image_url
-    if pokemon.image_url:
-        media_type, media_value = parse_stored_media_value(pokemon.image_url)
+    media_value = None
 
     if form_index > 0:
         form_media = await get_single_form_media_value(db, pokemon.id, form_index)
@@ -1174,6 +1183,11 @@ async def build_check_pokemon_payload(pokemon_id: int, form_index: int, db: Asyn
             media_type, media_value = parse_stored_media_value(form_media)
         elif form_index == 1 and pokemon.video_url:
             media_type, media_value = parse_stored_media_value(pokemon.video_url)
+        else:
+            media_value = None
+    else:
+        if pokemon.image_url:
+            media_type, media_value = parse_stored_media_value(pokemon.image_url)
             
     # Resolve form label
     if form_index > 0:
@@ -2167,6 +2181,9 @@ async def cb_dex_play(callback: CallbackQuery, db: AsyncSession):
                     media_type = "video"
                     
     if not media_value:
+        if form_index > 0:
+            await callback.answer(f"⚠️ Media for Form {form_index} is not registered yet.", show_alert=True)
+            return
         media_type = "photo"
         media_value = pokemon.image_url
 

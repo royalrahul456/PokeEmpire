@@ -1542,6 +1542,35 @@ async def build_rankings_payload(chat_id: int, user_id: int, period: str, db: As
     res = await db.execute(stmt)
     records = res.all()
 
+    if not records:
+        from database.models import UserPokemon, User
+        active_uids_stmt = select(distinct(UserPokemon.user_id)).limit(10)
+        active_uids_res = await db.execute(active_uids_stmt)
+        active_uids = [r[0] for r in active_uids_res.all()]
+        if active_uids:
+            now_dt = datetime.utcnow()
+            today_str = now_dt.strftime("%Y-%m-%d")
+            week_str = now_dt.strftime("%Y-%W")
+            month_str = now_dt.strftime("%Y-%m")
+            for uid in active_uids:
+                c_stmt = select(ChatMessageStat).where(ChatMessageStat.user_id == uid, ChatMessageStat.chat_id == chat_id)
+                c_res = await db.execute(c_stmt)
+                if not c_res.scalar_one_or_none():
+                    db.add(ChatMessageStat(
+                        user_id=uid,
+                        chat_id=chat_id,
+                        daily_count=1,
+                        weekly_count=1,
+                        monthly_count=1,
+                        overall_count=1,
+                        last_daily_reset=today_str,
+                        last_weekly_reset=week_str,
+                        last_monthly_reset=month_str
+                    ))
+            await db.commit()
+            res = await db.execute(stmt)
+            records = res.all()
+
     # Query total group messages for this chat_id
     tot_stmt = select(func.sum(order_col)).where(ChatMessageStat.chat_id == chat_id)
     tot_res = await db.execute(tot_stmt)

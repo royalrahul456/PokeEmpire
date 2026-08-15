@@ -202,26 +202,26 @@ class GroupActivityMiddleware(BaseMiddleware):
                             print(f"Error executing anti-flood fine: {err}")
                 return None  # Stop handler execution for this message
 
+        db: AsyncSession = data.get("db")
+        if db and user and not user.is_bot:
+            try:
+                await track_user_chat_activity(db, chat.id, user, event)
+            except Exception as track_err:
+                print(f"Error tracking user chat activity: {track_err}")
+
         # 2. Skip counting stickers for spawns
         if event.sticker:
             return await handler(event, data)
 
-        # Skip counting bot commands to prevent spam exploits
+        # Skip counting bot commands to prevent spawn exploits
         is_command = (event.text and event.text.startswith("/")) or (event.caption and event.caption.startswith("/"))
         if is_command:
             return await handler(event, data)
 
-        db: AsyncSession = data.get("db")
         if not db:
             return await handler(event, data)
 
         chat_id = chat.id
-
-        # Track user chat activity and rankings
-        try:
-            await track_user_chat_activity(db, chat_id, user, event)
-        except Exception as track_err:
-            print(f"Error tracking user chat activity: {track_err}")
 
         # 3. Retrieve or initialize Group Settings from cache
         if chat_id not in group_settings_cache:
@@ -273,12 +273,26 @@ async def track_user_chat_activity(db: AsyncSession, chat_id: int, user, event: 
     if not user or user.is_bot:
         return
     user_id = user.id
+
+    from database.models import User, ChatMessageStat
+    u_stmt = select(User).where(User.id == user_id)
+    u_res = await db.execute(u_stmt)
+    u_rec = u_res.scalar_one_or_none()
+    if not u_rec:
+        u_rec = User(
+            id=user_id,
+            username=user.username,
+            nickname=user.first_name or user.username or "Trainer",
+            coins=500
+        )
+        db.add(u_rec)
+        await db.flush()
+
     now_dt = datetime.utcnow()
     today_str = now_dt.strftime("%Y-%m-%d")
     week_str = now_dt.strftime("%Y-%W")
     month_str = now_dt.strftime("%Y-%m")
 
-    from database.models import ChatMessageStat
     stmt = select(ChatMessageStat).where(
         ChatMessageStat.user_id == user_id,
         ChatMessageStat.chat_id == chat_id

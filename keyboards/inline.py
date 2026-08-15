@@ -27,6 +27,9 @@ def get_dm_menu_keyboard() -> InlineKeyboardMarkup:
     )
     builder.row(
         InlineKeyboardButton(text="🔥 Streak", callback_data="dm_streak"),
+        InlineKeyboardButton(text="📈 Chat Rankings", callback_data="dm_rankings_info")
+    )
+    builder.row(
         InlineKeyboardButton(text="❓ Guide", callback_data="dm_help")
     )
     return builder.as_markup()
@@ -94,6 +97,9 @@ def get_admin_menu_keyboard() -> InlineKeyboardMarkup:
     )
     builder.row(
         InlineKeyboardButton(text="🔥 Streak", callback_data="dm_streak"),
+        InlineKeyboardButton(text="📈 Chat Rankings", callback_data="dm_rankings_info")
+    )
+    builder.row(
         InlineKeyboardButton(text="❓ Guide", callback_data="dm_help")
     )
     builder.row(

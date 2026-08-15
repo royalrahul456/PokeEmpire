@@ -1532,6 +1532,13 @@ async def build_rankings_payload(chat_id: int, user_id: int, period: str, db: As
     tot_stmt = select(func.sum(order_col)).where(ChatMessageStat.chat_id == chat_id)
     tot_res = await db.execute(tot_stmt)
     total_chat_messages = tot_res.scalar() or 0
+
+    from database.models import GroupSetting
+    gs_stmt = select(GroupSetting.message_counter).where(GroupSetting.chat_id == chat_id)
+    gs_res = await db.execute(gs_stmt)
+    gs_counter = gs_res.scalar() or 0
+    total_chat_messages = max(total_chat_messages, gs_counter)
+
     formatted_total = f"{total_chat_messages:,}".replace(",", ".")
 
     rows = []

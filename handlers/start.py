@@ -490,6 +490,25 @@ async def cb_dm_help(callback: CallbackQuery):
             pass
     await callback.answer()
 
+
+@router.callback_query(F.data == "dm_rankings_info")
+async def cb_dm_rankings_info(callback: CallbackQuery):
+    rank_text = (
+        f"📈 <b>CHAT ACTIVITY LEADERBOARD</b> 📈\n"
+        f"───────────────\n\n"
+        f"Track chat message activity and view top chatters in any group chat!\n\n"
+        f"👉 <b>How to use</b>: Type <code>/rankings</code> inside any group chat to open the group leaderboard.\n\n"
+        f"<blockquote>👑 <b>Weekly & Monthly Rewards</b>: The #1 top chatter on reset wins a direct <b>Art / AMV / Custom Form Pokémon</b> gift added straight to their inventory! 🎉</blockquote>"
+    )
+    try:
+        await callback.message.edit_caption(caption=rank_text, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
+    except Exception:
+        try:
+            await callback.message.edit_text(rank_text, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
+        except Exception:
+            pass
+    await callback.answer()
+
 @router.callback_query(F.data.startswith("dm_dex_"))
 async def cb_dm_dex(callback: CallbackQuery, db: AsyncSession):
     user_id = callback.from_user.id

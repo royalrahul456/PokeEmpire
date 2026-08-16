@@ -1167,7 +1167,7 @@ async def cmd_spawn(message: Message, db: AsyncSession):
 @router.message(Command("spawnchance"))
 async def cmd_spawn_chance(message: Message):
     user_id = message.from_user.id if message.from_user else 0
-    is_owner = user_id in config.ADMIN_IDS
+    is_owner = bool(config.ADMIN_IDS and user_id == config.ADMIN_IDS[0])
 
     parts = message.text.split()
     from utils.settings import load_spawn_settings, save_spawn_settings

@@ -271,7 +271,7 @@ async def cb_spawn_hint(callback: CallbackQuery, db: AsyncSession):
     pokemon_name = pokemon.name.title()
 
     # 3. Check if user is owner
-    is_owner = user_id in config.ADMIN_IDS
+    is_owner = bool(config.ADMIN_IDS and user_id == config.ADMIN_IDS[0])
 
     if is_owner:
         # Owner gets it for free!

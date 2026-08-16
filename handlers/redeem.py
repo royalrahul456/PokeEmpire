@@ -177,7 +177,7 @@ async def cmd_redeem(message: Message, db: AsyncSession):
             await message.answer("❌ Invalid redeem code. Please check spelling and try again.")
             return
             
-        is_owner = (user_id in config.ADMIN_IDS)
+        is_owner = bool(config.ADMIN_IDS and user_id == config.ADMIN_IDS[0])
 
         # Check limit (owners bypass usage limit)
         if not is_owner and code.usage_count >= code.usage_limit:

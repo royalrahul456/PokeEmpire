@@ -341,7 +341,7 @@ async def send_auction_settlement_channel_report(bot: Bot, db: AsyncSession, auc
             winner_name = winner_user.nickname or winner_user.username or f"Trainer {winner_user.id}"
             winner_handle = f"@{winner_user.username}" if winner_user.username else html.escape(winner_name)
             
-            is_seller_owner = (auction.seller_id in config.ADMIN_IDS)
+            is_seller_owner = bool(config.ADMIN_IDS and auction.seller_id == config.ADMIN_IDS[0])
             if is_seller_owner:
                 tax = 0
                 payout = highest_bid_rec.amount
@@ -475,7 +475,7 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
         )
         return
 
-    is_owner = (message.from_user.id in config.ADMIN_IDS)
+    is_owner = bool(config.ADMIN_IDS and message.from_user.id == config.ADMIN_IDS[0])
 
     if not is_owner:
         active_stmt = select(func.count(Auction.id)).where(
@@ -1249,7 +1249,7 @@ async def auction_settlement_worker(bot: Bot):
                             )
                             db.add(new_poke)
 
-                            is_seller_owner = (auction.seller_id in config.ADMIN_IDS)
+                            is_seller_owner = bool(config.ADMIN_IDS and auction.seller_id == config.ADMIN_IDS[0])
                             if is_seller_owner:
                                 tax = 0
                                 payout = highest_bid_rec.amount

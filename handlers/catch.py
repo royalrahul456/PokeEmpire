@@ -194,7 +194,7 @@ async def cmd_catch(message: Message, db: AsyncSession):
             print(f"Failed to react to message: {e}")
 
         # 2. Send quick coins victory reply (Message 1)
-        msg1_text = f"🎉 +{coins_won} coins! Balance: {user_coins}"
+        msg1_text = f"🎉 +{coins_won} coins | ⚡ +100 EXP! Balance: {user_coins}"
         await message.reply(msg1_text)
 
         # Hook EXP leveling, transaction history, and quest progress

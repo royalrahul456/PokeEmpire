@@ -77,7 +77,7 @@ async def cmd_guild(message: Message, db: AsyncSession):
             return
 
         member, existing_g = await get_user_guild_data(user_id, db)
-        if guild:
+        if existing_g:
             await message.answer("❌ You are already in a Guild! Leave your current Guild first with <code>/guild leave</code>.", parse_mode="HTML")
             return
 
@@ -85,9 +85,9 @@ async def cmd_guild(message: Message, db: AsyncSession):
         u_res = await db.execute(u_stmt)
         user = u_res.scalar_one_or_none()
 
-        creation_fee = 5000
+        creation_fee = 500000
         if not user or user.coins < creation_fee:
-            await message.answer(f"❌ Founding a Guild costs <b>💰 {creation_fee:,} coins</b>!", parse_mode="HTML")
+            await message.answer(f"❌ Founding a Guild costs <b>💰 {creation_fee:,} coins</b> (500k)! Your balance: 💰 {user.coins:,} coins.", parse_mode="HTML")
             return
 
         # Check name availability

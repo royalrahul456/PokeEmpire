@@ -60,15 +60,15 @@ class SpawnService:
             is_shiny = False
 
             # 4. Build spawn text & keyboards
-            status_text = "✨ **SHINY** ✨" if is_shiny else "🌳 **Normal**"
+            status_text = "✨ <b>SHINY POKÉMON</b> ✨" if is_shiny else "🌳 <b>Wild Encounter</b>"
             caption = (
-                f"🌳 **WILD ENCOUNTER** 🌳\n"
-                f"A wild Pokémon appeared in the tall grass!\n\n"
-                f"✨ **Status**: {status_text}\n"
-                f"✨ **Rarity**: `{selected_rarity}`\n\n"
-                f"👉 Guess the Pokémon and catch it with:\n"
-                f"`/catch <name>`\n"
-                f"───────────────"
+                f"⚡ <b>A WILD POKÉMON APPEARED!</b> ⚡\n"
+                f"◈ ────────────────── ◈\n"
+                f"🌿 <i>A wild Pokémon emerged from the tall grass!</i>\n\n"
+                f"✨ <b>Status:</b> {status_text}\n"
+                f"💎 <b>Rarity:</b> <code>{selected_rarity}</code>\n"
+                f"◈ ────────────────── ◈\n"
+                f"👉 <i>Type <code>/catch &lt;name&gt;</code> to catch it!</i>"
             )
 
             hint_keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -100,22 +100,21 @@ class SpawnService:
                     photo=spawn_photo,
                     caption=caption,
                     reply_markup=hint_keyboard,
-                    parse_mode="Markdown"
+                    parse_mode="HTML"
                 )
                 message_id = msg.message_id
             except Exception as e:
                 print(f"Error sending spawn photo to chat {chat_id}: {e}")
                 # Fallback: send a text-only spawn message so players can still catch
                 try:
-                    r_emoji = "⭐" if selected_rarity == "Legendary" else "✨"
                     fallback = (
-                        f"🌳 **WILD ENCOUNTER** 🌳\n"
-                        f"A wild **{selected_rarity}** Pokémon appeared!\n\n"
-                        f"{r_emoji} **Rarity**: `{selected_rarity}`\n\n"
-                        f"👉 `/catch <name>` to catch it!\n"
-                        f"───────────────"
+                        f"⚡ <b>A WILD POKÉMON APPEARED!</b> ⚡\n"
+                        f"◈ ────────────────── ◈\n"
+                        f"🌿 A wild <b>{selected_rarity}</b> Pokémon appeared!\n"
+                        f"◈ ────────────────── ◈\n"
+                        f"👉 <i>Type <code>/catch &lt;name&gt;</code> to catch it!</i>"
                     )
-                    msg = await bot.send_message(chat_id=chat_id, text=fallback, reply_markup=hint_keyboard, parse_mode="Markdown")
+                    msg = await bot.send_message(chat_id=chat_id, text=fallback, reply_markup=hint_keyboard, parse_mode="HTML")
                     message_id = msg.message_id
                 except Exception:
                     pass

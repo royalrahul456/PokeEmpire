@@ -657,13 +657,14 @@ async def start_auto_nameguess_game(chat_id: int, bot: Bot, db: AsyncSession):
             "is_auto": True
         }
 
-        # Format message in clean card style with photo
         text = (
-            f"🧠 **Guess The Pokémon!**\n"
-            f"───────────────\n"
-            f"💭 **Think you know this Pokémon?**\n"
-            f"⌛ **You have 60 seconds!**\n"
-            f"💰 **Reward**: `100-200 coins`"
+            f"⚡ <b>POKÉMON NAME GUESS</b> ⚡\n"
+            f"◈ ────────────────── ◈\n"
+            f"🧠 <i>Who's That Pokémon?</i>\n\n"
+            f"💭 Type the correct name in chat to win!\n"
+            f"⏳ <b>Time Limit:</b> <code>60 seconds</code>\n"
+            f"🎁 <b>Reward:</b> <code>100-200 coins</code>\n"
+            f"◈ ────────────────── ◈"
         )
         
         # Add inline buttons
@@ -678,7 +679,7 @@ async def start_auto_nameguess_game(chat_id: int, bot: Bot, db: AsyncSession):
             photo=pokemon.image_url,
             caption=text,
             reply_markup=builder.as_markup(),
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
         
         active_games[chat_id]["message_id"] = sent_msg.message_id

@@ -54,12 +54,21 @@ async def add_trainer_xp(user: User, xp_amount: int, db: AsyncSession, bot=None,
         try:
             name = html.escape(user.nickname or user.username or f"Trainer {user.id}")
             title = get_trainer_title(user.trainer_level)
+            bonus_coins = levels_gained * user.trainer_level * 250
+            req_xp = get_xp_required_for_next_level(user.trainer_level)
+            pct = min(100, int(((user.trainer_xp or 0) / req_xp) * 100)) if req_xp > 0 else 0
+            filled = pct // 10
+            xp_bar = "█" * filled + "░" * (10 - filled)
+
             text = (
                 f"🎉 <b>TRAINER LEVEL UP!</b> 🎉\n"
                 f"◈ ────────────────── ◈\n"
-                f"👤 <b>{name}</b> reached <b>Level {user.trainer_level}</b> ({title})!\n"
-                f"🎁 <b>Level Up Bonus:</b> +💰 {levels_gained * user.trainer_level * 250:,} coins!\n"
-                f"◈ ────────────────── ◈"
+                f"👤 <b>{name}</b> leveled up to <b>Level {user.trainer_level}</b>!\n"
+                f"🏷️ <b>Title:</b> {title}\n"
+                f"⚡ <b>Next Level EXP:</b> [{xp_bar}] {pct}%\n"
+                f"🎁 <b>Level Up Bonus:</b> 💰 <code>+{bonus_coins:,} coins</code>\n"
+                f"◈ ────────────────── ◈\n"
+                f"🔥 <i>Keep catching and battling to reach Level 100!</i>"
             )
             await bot.send_message(chat_id, text, parse_mode="HTML")
         except Exception as e:

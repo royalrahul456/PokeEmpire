@@ -783,8 +783,12 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
         for pokemon_id, owned_form_index in owned_forms_res.all():
             owned_species_forms.setdefault(pokemon_id, set()).add(owned_form_index)
 
-    filter_str = f" ({html.escape(filter_label)})" if rarity_filter and rarity_filter != "All" else ""
-    text = f"🌟 <b>{html.escape(nickname)}'s Pokédex</b> 🌟{filter_str} — Page {page}/{max_page}\n"
+    filter_str = f" • {html.escape(filter_label)}" if rarity_filter and rarity_filter != "All" else ""
+    text = (
+        f"⚡ <b>{html.escape(nickname).upper()}'S POKÉDEX</b> ⚡\n"
+        f"◈ ────────────────── ◈\n"
+        f"📖 <b>Pokédex Checklist</b>{filter_str} • Page {page}/{max_page}\n\n"
+    )
 
     from utils.settings import get_all_custom_rarities
     custom_rarities = await get_all_custom_rarities(db)
@@ -1631,14 +1635,13 @@ async def cmd_rankings(message: Message, db: AsyncSession):
         return
 
     text, kb = await build_rankings_payload(message.chat.id, message.from_user.id, "weekly", db)
-    await send_player_cover(
+    await send_cover_media(
         chat_id=message.chat.id,
-        user_id=message.from_user.id,
+        key="pokedex",
         caption=text,
         reply_markup=kb,
         bot=message.bot,
-        db=db,
-        message_to_reply=message
+        default_file="data/pokeempire_banner.png"
     )
 
 
@@ -1654,7 +1657,13 @@ async def cb_rankings_filter(callback: CallbackQuery, db: AsyncSession):
         return
 
     text, kb = await build_rankings_payload(chat_id, user_id, period, db)
-    await edit_player_cover_message(callback, user_id, text, kb, db, parse_mode="HTML")
+    try:
+        if callback.message.photo or callback.message.video or callback.message.animation:
+            await callback.message.edit_caption(caption=text, reply_markup=kb, parse_mode="HTML")
+        else:
+            await callback.message.edit_text(text=text, reply_markup=kb, parse_mode="HTML")
+    except Exception as e:
+        print(f"Error editing rankings callback: {e}")
     await callback.answer()
 
 @router.message(Command("search"))

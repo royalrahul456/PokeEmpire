@@ -67,9 +67,9 @@ async def is_user_admin(message: Message) -> bool:
 async def cmd_set_spawn(message: Message, db: AsyncSession):
     chat_id = message.chat.id
 
-    # Enforce admin authorization
-    if not await is_user_admin(message):
-        await message.answer("❌ Denied. Only group administrators can configure settings.")
+    # Enforce Bot Admin / Owner authorization
+    if not message.from_user or message.from_user.id not in config.ADMIN_IDS:
+        await message.answer("❌ Denied. Only Bot Admins & Bot Owner can change spawn settings.")
         return
 
     # Check arguments
@@ -115,9 +115,9 @@ async def cmd_set_spawn(message: Message, db: AsyncSession):
 async def cmd_toggle_spawns(message: Message, db: AsyncSession):
     chat_id = message.chat.id
 
-    # Enforce admin authorization
-    if not await is_user_admin(message):
-        await message.answer("❌ Denied. Only group administrators can toggle settings.")
+    # Enforce Bot Admin / Owner authorization
+    if not message.from_user or message.from_user.id not in config.ADMIN_IDS:
+        await message.answer("❌ Denied. Only Bot Admins & Bot Owner can toggle spawns.")
         return
 
     # Query or create GroupSetting
@@ -1120,9 +1120,9 @@ async def cmd_spawn(message: Message, db: AsyncSession):
         await message.answer("⚠️ Wild Pokémon only spawn in group chats! Use `/spawn` inside a group chat.")
         return
 
-    # Enforce authorization (group admin or bot owner)
-    if not await is_user_admin(message):
-        await message.answer("❌ Denied. Only group administrators or bot owners can trigger a manual spawn.")
+    # Enforce Bot Admin / Owner authorization
+    if not message.from_user or message.from_user.id not in config.ADMIN_IDS:
+        await message.answer("❌ Denied. Only Bot Admins & Bot Owner can trigger a manual spawn.")
         return
 
     parts = message.text.split()
@@ -2714,10 +2714,9 @@ async def handle_spam_wizard_text(message: Message):
 
 @router.message(Command("toggleemojis"))
 @router.message(Command("togglepremiumemojis"))
-async def cmd_toggle_emojis(message: Message):
-    from handlers.admin import is_user_admin
-    if not await is_user_admin(message):
-        await message.answer("❌ Denied. Only bot owners or admins can toggle premium emojis.")
+async def cmd_toggle_emojis(message: Message, db: AsyncSession):
+    if not message.from_user or message.from_user.id not in config.ADMIN_IDS:
+        await message.answer("❌ Denied. Only Bot Creator & Admins can toggle premium emojis.")
         return
 
     from utils.emoji_patch import is_premium_emojis_enabled, set_premium_emojis_status
@@ -2725,9 +2724,20 @@ async def cmd_toggle_emojis(message: Message):
     new_status = not current
     set_premium_emojis_status(new_status)
 
+    from database.models import GlobalSetting
+    stmt = select(GlobalSetting).where(GlobalSetting.key == "premium_emojis_enabled")
+    res = await db.execute(stmt)
+    setting = res.scalar_one_or_none()
+    val_str = "true" if new_status else "false"
+    if setting:
+        setting.value = val_str
+    else:
+        db.add(GlobalSetting(key="premium_emojis_enabled", value=val_str))
+    await db.commit()
+
     status_str = "Enabled 🟢 (Custom Telegram Premium Emojis)" if new_status else "Disabled 🔴 (Standard Clean Unicode Emojis)"
     await message.answer(
         f"✨ <b>Premium Emoji Mode</b> is now <b>{status_str}</b>.\n\n"
-        f"<i>Note: If your account's Telegram Premium is active, enable this. If Telegram Premium is expired, keep disabled so messages send cleanly!</i>",
+        f"<i>Saved in database! Setting will remain unchanged across all future bot restarts & updates.</i>",
         parse_mode="HTML"
     )

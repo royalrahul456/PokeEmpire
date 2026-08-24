@@ -233,8 +233,14 @@ _PREMIUM_EMOJIS_ENABLED = getattr(config, "ENABLE_PREMIUM_EMOJIS", True)
 def set_premium_emojis_status(enabled: bool):
     global _PREMIUM_EMOJIS_ENABLED
     _PREMIUM_EMOJIS_ENABLED = enabled
+    from utils.settings import global_settings_cache
+    global_settings_cache["premium_emojis_enabled"] = "true" if enabled else "false"
 
 def is_premium_emojis_enabled() -> bool:
+    from utils.settings import global_settings_cache
+    val = global_settings_cache.get("premium_emojis_enabled")
+    if val is not None:
+        return val.lower() == "true"
     return _PREMIUM_EMOJIS_ENABLED
 
 def strip_tg_emojis(text: str) -> str:

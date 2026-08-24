@@ -74,7 +74,7 @@ SEED_POKEMON = [
 async def init_db():
     """Initialize the SQLite database, creating all tables and seeding Pokémon list if empty."""
     async with engine.begin() as conn:
-        from database.models import User, Pokemon, UserPokemon, ActiveSpawn, GroupSetting, GlobalSetting, PokemonFormMedia, PvpBattle, Auction, AuctionBid, ChatMessageStat, Guild, GuildMember, TrainerQuest, TransactionHistory, MysteryEventState
+        from database.models import User, Pokemon, UserPokemon, ActiveSpawn, GroupSetting, GlobalSetting, PokemonFormMedia, PvpBattle, Auction, AuctionBid, ChatMessageStat, Guild, GuildMember, TrainerQuest, TransactionHistory, MysteryEventState, BugReport
         await conn.run_sync(Base.metadata.create_all)
 
     # Run migrations for existing databases

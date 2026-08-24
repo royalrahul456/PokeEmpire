@@ -176,43 +176,100 @@ async def cmd_help(message: Message):
 
 
 @router.message(Command("report"))
-async def cmd_report(message: Message):
+async def cmd_report(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     user_name = html.escape(message.from_user.first_name or message.from_user.username or f"Trainer {user_id}")
     user_handle = f"@{message.from_user.username}" if message.from_user.username else f"ID: <code>{user_id}</code>"
     
-    parts = message.text.split(maxsplit=1)
-    if len(parts) < 2:
+    # Extract report text from caption, text, or reply message
+    raw_text = message.text or message.caption or ""
+    parts = raw_text.split(maxsplit=1)
+    
+    report_text = ""
+    if len(parts) >= 2:
+        report_text = parts[1].strip()
+    elif message.reply_to_message:
+        report_text = message.reply_to_message.text or message.reply_to_message.caption or "Reported message content"
+
+    if not report_text:
         await message.answer(
             "⚠️ <b>How to Report an Error/Bug:</b>\n"
-            "👉 Type: <code>/report &lt;description of your issue or bug&gt;</code>\n\n"
+            "👉 Type: <code>/report &lt;description of your issue or bug&gt;</code>\n"
+            "👉 Or reply to any message with <code>/report</code>!\n\n"
             "<i>Example: <code>/report My auction didn't complete properly</code></i>",
             parse_mode="HTML"
         )
         return
 
-    report_content = html.escape(parts[1].strip())
+    report_content = html.escape(report_text)
+    
+    # Save report to database
+    from database.models import BugReport
+    bug_rec = BugReport(
+        user_id=user_id,
+        chat_id=message.chat.id,
+        content=report_content,
+        status="PENDING"
+    )
+    db.add(bug_rec)
+    await db.commit()
+
     owner_id = config.ADMIN_IDS[0] if config.ADMIN_IDS else None
 
+    report_card = (
+        f"🚨 <b>NEW PLAYER BUG REPORT #{bug_rec.id:04d}!</b> 🚨\n"
+        f"◈ ────────────────── ◈\n"
+        f"👤 <b>Reporter:</b> {user_name} ({user_handle})\n"
+        f"🆔 <b>User ID:</b> <code>{user_id}</code>\n"
+        f"💬 <b>Chat ID:</b> <code>{message.chat.id}</code>\n\n"
+        f"📝 <b>Report Message:</b>\n"
+        f"<i>{report_content}</i>\n"
+        f"◈ ────────────────── ◈"
+    )
+
     if owner_id:
-        report_card = (
-            f"🚨 <b>NEW PLAYER BUG REPORT!</b> 🚨\n"
-            f"◈ ────────────────── ◈\n"
-            f"👤 <b>Reporter:</b> {user_name} ({user_handle})\n"
-            f"🆔 <b>User ID:</b> <code>{user_id}</code>\n"
-            f"💬 <b>Chat ID:</b> <code>{message.chat.id}</code>\n\n"
-            f"📝 <b>Report Message:</b>\n"
-            f"<i>{report_content}</i>\n"
-            f"◈ ────────────────── ◈"
-        )
         try:
             await message.bot.send_message(owner_id, report_card, parse_mode="HTML")
-            await message.answer("✅ <b>Report Submitted!</b> Your bug report has been forwarded directly to the Bot Creator.", parse_mode="HTML")
-            return
         except Exception as e:
-            print(f"Error forwarding report to owner: {e}")
+            print(f"Notice: Could not send DM to owner {owner_id} ({e}), report saved in DB #{bug_rec.id:04d}.")
 
-    await message.answer("✅ Report recorded! Thank you for helping improve PokeEmpire.", parse_mode="HTML")
+    await message.answer(
+        f"✅ <b>Report Submitted!</b>\n"
+        f"Your report <b>#{bug_rec.id:04d}</b> has been saved and sent directly to the Bot Creator.",
+        parse_mode="HTML"
+    )
+
+@router.message(Command("reports", "bugreports"))
+async def cmd_view_reports(message: Message, db: AsyncSession):
+    if not message.from_user or message.from_user.id not in config.ADMIN_IDS:
+        await message.answer("❌ Denied. Only Bot Creator & Admins can view bug reports.")
+        return
+
+    from database.models import BugReport, User
+    stmt = select(BugReport, User).join(User, BugReport.user_id == User.id).order_by(BugReport.created_at.desc()).limit(10)
+    res = await db.execute(stmt)
+    records = res.all()
+
+    if not records:
+        await message.answer("📋 <b>No pending bug reports found!</b>", parse_mode="HTML")
+        return
+
+    rows = []
+    for r, u in records:
+        u_name = html.escape(u.nickname or u.username or f"Trainer {u.id}")
+        dt_str = r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else ""
+        rows.append(
+            f"✦ <b>Report #{r.id:04d}</b> by 👤 {u_name} (<code>{r.user_id}</code>)\n"
+            f"   <i>{html.escape(r.content)}</i> ({dt_str})"
+        )
+
+    text = (
+        f"⚡ <b>RECENT PLAYER BUG REPORTS</b> ⚡\n"
+        f"◈ ────────────────── ◈\n"
+        + "\n\n".join(rows) +
+        f"\n◈ ────────────────── ◈"
+    )
+    await message.answer(text, parse_mode="HTML")
 
 @router.callback_query(F.data == "dm_home")
 async def cb_dm_home(callback: CallbackQuery, db: AsyncSession):

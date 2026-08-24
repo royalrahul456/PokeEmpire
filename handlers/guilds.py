@@ -3,11 +3,12 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from sqlalchemy import select, func, distinct
+from sqlalchemy import select, func, distinct, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import User, Guild, GuildMember
 from utils.trainer_level import log_transaction
+import config
 
 router = Router()
 
@@ -31,8 +32,10 @@ async def cmd_guild(message: Message, db: AsyncSession):
                 f"◈ ────────────────── ◈\n"
                 f"You are currently <b>not in any Guild</b>!\n\n"
                 f"💡 <b>Guild Commands</b>:\n"
-                f"👉 <code>/guild create &lt;name&gt;</code> — Found a new Guild (5,000 coins)\n"
+                f"👉 <code>/guild create &lt;name&gt;</code> — Found a new Guild (500k coins)\n"
                 f"👉 <code>/guild join &lt;name&gt;</code> — Join an existing Guild\n"
+                f"👉 <code>/guild delete</code> — Disband/Delete your Guild (Owner only)\n"
+                f"👉 <code>/guild leave</code> — Leave your current Guild\n"
                 f"👉 <code>/guildlb</code> — View top Guild Leaderboards\n"
                 f"◈ ────────────────── ◈\n"
                 f"✨ Guild members receive passive +5% Shiny Chance & +10% Coin Boosts!"
@@ -198,12 +201,31 @@ async def cmd_guild(message: Message, db: AsyncSession):
             return
 
         if guild.owner_id == user_id:
-            await message.answer("❌ Guild Leaders cannot leave. Delete or transfer ownership first.", parse_mode="HTML")
+            await message.answer("❌ Guild Leaders cannot leave. Use <code>/guild delete</code> to disband the Guild.", parse_mode="HTML")
             return
 
         await db.delete(member)
         await db.commit()
         await message.answer(f"🚪 You left <b>{html.escape(guild.name)}</b>.", parse_mode="HTML")
+
+    elif sub in ["delete", "disband"]:
+        member, guild = await get_user_guild_data(user_id, db)
+        if not guild:
+            await message.answer("❌ You are not in any Guild!", parse_mode="HTML")
+            return
+
+        if guild.owner_id != user_id and user_id not in config.ADMIN_IDS:
+            await message.answer("❌ Only the Guild Leader can delete or disband the Guild!", parse_mode="HTML")
+            return
+
+        guild_name = guild.name
+        # Delete all member records & the guild itself
+        del_mems = delete(GuildMember).where(GuildMember.guild_id == guild.id)
+        await db.execute(del_mems)
+        await db.delete(guild)
+        await db.commit()
+
+        await message.answer(f"🗑️ Guild <b>{html.escape(guild_name)}</b> has been successfully disbanded and deleted!", parse_mode="HTML")
 
 @router.message(Command("guildlb", "clanlb"))
 async def cmd_guild_lb(message: Message, db: AsyncSession):

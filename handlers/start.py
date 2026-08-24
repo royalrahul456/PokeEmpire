@@ -828,17 +828,25 @@ def is_renaming(message: Message) -> bool:
     return message.from_user.id in active_renames
 
 @router.message(Command("ping"))
-async def cmd_ping(message: Message):
+async def cmd_ping(message: Message, db: AsyncSession):
     import time
     from datetime import datetime, timezone
     
     start_time = time.time()
     sent_message = await message.reply("🏓 <b>Pinging...</b>", parse_mode="HTML")
     latency_ms = int((time.time() - start_time) * 1000)
-    
     transit_latency = int((datetime.now(timezone.utc) - message.date).total_seconds() * 1000)
     
-    # Get system stats dynamically
+    db_status = "Connected (CockroachDB)"
+    try:
+        from sqlalchemy import text as sa_text
+        db_start = time.time()
+        await db.execute(sa_text("SELECT 1"))
+        db_ms = int((time.time() - db_start) * 1000)
+        db_status = f"🟢 Connected ({db_ms}ms)"
+    except Exception:
+        db_status = "🔴 Error"
+
     cpu_usage = "N/A"
     ram_usage = "N/A"
     try:
@@ -850,15 +858,16 @@ async def cmd_ping(message: Message):
         pass
 
     text = (
-        f"🏓 <b>PONG!</b> 🏓\n"
-        f"───────────────\n"
-        f"📡 <b>API Latency</b>: <code>{latency_ms}ms</code>\n"
-        f"⚡ <b>Transit Latency</b>: <code>{max(0, transit_latency)}ms</code>\n"
-        f"⚙️ <b>CPU Usage</b>: <code>{cpu_usage}</code>\n"
-        f"💾 <b>RAM Usage</b>: <code>{ram_usage}</code>\n"
-        f"🟢 <b>Status</b>: <code>Stable</code>\n"
-            f"🏷️ <b>Release</b>: <code>v2.1.0</code>\n"
-        f"───────────────"
+        f"⚡ <b>POKÉEMPIRE SYSTEM PING</b> ⚡\n"
+        f"◈ ────────────────── ◈\n"
+        f"🚀 <b>Release:</b> <code>v3.0 Mega Update</code>\n"
+        f"📡 <b>API Latency:</b> <code>{latency_ms}ms</code>\n"
+        f"⚡ <b>Transit Latency:</b> <code>{max(0, transit_latency)}ms</code>\n"
+        f"💾 <b>Database:</b> {db_status}\n"
+        f"⚙️ <b>CPU Usage:</b> <code>{cpu_usage}</code>\n"
+        f"🧠 <b>RAM Usage:</b> <code>{ram_usage}</code>\n"
+        f"◈ ────────────────── ◈\n"
+        f"🟢 <b>System Status:</b> <code>Fully Operational</code>"
     )
     await sent_message.edit_text(text, parse_mode="HTML")
 

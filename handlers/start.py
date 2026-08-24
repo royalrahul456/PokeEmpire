@@ -50,99 +50,87 @@ async def cmd_start(message: Message, db: AsyncSession):
         db.add(user)
         await db.commit()
 
-    if message.chat.type == "private":
-        bot_info = await message.bot.get_me()
-        bot_username = bot_info.username or "PokeEmpireBot"
+    bot_info = await message.bot.get_me()
+    bot_username = bot_info.username or "PokeEmpireBot"
 
-        from keyboards.inline import get_start_welcome_keyboard
+    from keyboards.inline import get_start_welcome_keyboard
 
-        text = (
-            "🌟 <b>Welcome to PokeEmpire!</b> 🐾\n"
-            "◈ ────────────────── ◈\n"
-            "Your adventure starts here. ⚡\n"
-            "Catch • Battle • Trade • Explore\n\n"
-            "🎮 <b>Ready, Trainer? Let’s begin!</b>"
-        )
+    text = (
+        "🌟 <b>Welcome to PokeEmpire!</b> 🐾\n"
+        "◈ ────────────────── ◈\n"
+        "Your adventure starts here. ⚡\n"
+        "Catch • Battle • Trade • Explore\n\n"
+        "🎮 <b>Ready, Trainer? Let’s begin!</b>"
+    )
 
-        reply_markup = get_start_welcome_keyboard(bot_username)
+    reply_markup = get_start_welcome_keyboard(bot_username)
 
-        await send_cover_media(
+    await send_cover_media(
+        chat_id=message.chat.id,
+        key="start",
+        caption=text,
+        reply_markup=reply_markup,
+        bot=message.bot,
+        default_file="data/pokeempire_banner.png"
+    )
+
+
+@router.message(Command("settings", "gcsettings"))
+async def cmd_gc_settings(message: Message, db: AsyncSession):
+    if message.chat.type not in ["group", "supergroup"]:
+        await message.answer("⚠️ Group settings are only available inside group chats!")
+        return
+
+    from handlers.admin import is_user_admin
+    if not await is_user_admin(message):
+        await message.answer("❌ Denied. Only group administrators can configure settings.")
+        return
+
+    nickname = message.from_user.first_name or message.from_user.username or "Admin"
+
+    # Query group settings
+    stmt = select(GroupSetting).where(GroupSetting.chat_id == message.chat.id)
+    res = await db.execute(stmt)
+    gs = res.scalar_one_or_none()
+    if not gs:
+        gs = GroupSetting(
             chat_id=message.chat.id,
-            key="start",
-            caption=text,
-            reply_markup=reply_markup,
-            bot=message.bot,
-            default_file="data/pokeempire_banner.png"
+            message_counter=0,
+            spawn_threshold=100,
+            enabled=True
         )
-    else:
-        # Group chats start command
-        # Check if the user is a group administrator
-        from handlers.admin import is_user_admin
-        is_admin = await is_user_admin(message)
+        db.add(gs)
+        await db.commit()
         
-        if is_admin:
-            # Query group settings
-            stmt = select(GroupSetting).where(GroupSetting.chat_id == message.chat.id)
-            res = await db.execute(stmt)
-            gs = res.scalar_one_or_none()
-            if not gs:
-                gs = GroupSetting(
-                    chat_id=message.chat.id,
-                    message_counter=0,
-                    spawn_threshold=100,
-                    enabled=True
-                )
-                db.add(gs)
-                await db.commit()
-                
-            spawn_status = "Enabled 🟢" if gs.enabled else "Disabled 🔴"
-            scribble_status = "Enabled 🟢" if is_scribble_enabled(message.chat.id) else "Disabled 🔴"
-            nameguess_status = "Enabled 🟢" if is_nameguess_enabled(message.chat.id) else "Disabled 🔴"
-            
-            text = (
-                f"⚙️ <b>POKÉEMPIRE ADMIN CONSOLE</b> ⚙️\n"
-                f"───────────────────────────────\n"
-                f"Welcome, Administrator <b>{escape_md(nickname)}</b>!\n\n"
-                f"Configure the bot settings in this group:\n"
-                f"• 🌳 Wild Spawns: <b>{spawn_status}</b>\n"
-                f"• 📈 Spawn Frequency: every <b>{gs.spawn_threshold} messages</b>\n"
-                f"• ✏️ Word Scribble: <b>{scribble_status}</b>\n"
-                f"• 🖼️ Pokémon Nameguess: <b>{nameguess_status}</b>\n"
-                f"───────────────────────────────"
-            )
-            
-            builder = InlineKeyboardBuilder()
-            builder.row(
-                InlineKeyboardButton(text="🔔 Toggle Spawns", callback_data=f"adm_toggle_spawns_{message.chat.id}"),
-                InlineKeyboardButton(text="📈 Adjust Spawns", callback_data=f"adm_adjust_threshold_{message.chat.id}")
-            )
-            builder.row(
-                InlineKeyboardButton(text="✏️ Toggle Scribble", callback_data=f"adm_toggle_scribble_{message.chat.id}"),
-                InlineKeyboardButton(text="🖼️ Toggle Nameguess", callback_data=f"adm_toggle_nameguess_{message.chat.id}")
-            )
-            me = await message.bot.get_me()
-            builder.row(InlineKeyboardButton(text="💬 Open Private DMs", url=f"https://t.me/{me.username}?start=help"))
-            
-            await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
-        else:
-            # Generic member group welcome card
-            me = await message.bot.get_me()
-            welcome_text = (
-                f"🌲 <b>POKÉEMPIRE ACTIVE</b> 🌲\n"
-                f"───────────────\n\n"
-                f"Start chatting in this group, and a wild Pokémon will eventually appear!\n\n"
-                f"💬 <b>How to Play</b>:\n"
-                f"• Catch wild spawns with <code>/catch &lt;name&gt;</code>\n"
-                f"• Play Scramble & Guess the Pokémon games\n"
-                f"• Earn coins to spend in the shop\n\n"
-                f"👉 Click the buttons below to open private DMs or join our official group chat!"
-            )
-            builder = InlineKeyboardBuilder()
-            builder.row(
-                InlineKeyboardButton(text="💬 Open Private DMs", url=f"https://t.me/{me.username}?start=help"),
-                InlineKeyboardButton(text="🌲 Union Group", url="https://t.me/pokeempireunion")
-            )
-            await message.answer(welcome_text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    spawn_status = "Enabled 🟢" if gs.enabled else "Disabled 🔴"
+    scribble_status = "Enabled 🟢" if is_scribble_enabled(message.chat.id) else "Disabled 🔴"
+    nameguess_status = "Enabled 🟢" if is_nameguess_enabled(message.chat.id) else "Disabled 🔴"
+    
+    text = (
+        f"⚙️ <b>POKÉEMPIRE ADMIN CONSOLE</b> ⚙️\n"
+        f"◈ ────────────────── ◈\n"
+        f"Welcome, Administrator <b>{html.escape(nickname)}</b>!\n\n"
+        f"Configure the bot settings in this group:\n"
+        f"• 🌳 Wild Spawns: <b>{spawn_status}</b>\n"
+        f"• 📈 Spawn Frequency: every <b>{gs.spawn_threshold} messages</b>\n"
+        f"• ✏️ Word Scribble: <b>{scribble_status}</b>\n"
+        f"• 🖼️ Pokémon Nameguess: <b>{nameguess_status}</b>\n"
+        f"◈ ────────────────── ◈"
+    )
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🔔 Toggle Spawns", callback_data=f"adm_toggle_spawns_{message.chat.id}"),
+        InlineKeyboardButton(text="📈 Adjust Spawns", callback_data=f"adm_adjust_threshold_{message.chat.id}")
+    )
+    builder.row(
+        InlineKeyboardButton(text="✏️ Toggle Scribble", callback_data=f"adm_toggle_scribble_{message.chat.id}"),
+        InlineKeyboardButton(text="🖼️ Toggle Nameguess", callback_data=f"adm_toggle_nameguess_{message.chat.id}")
+    )
+    me = await message.bot.get_me()
+    builder.row(InlineKeyboardButton(text="💬 Open Private DMs", url=f"https://t.me/{me.username}?start=help"))
+    
+    await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 @router.message(Command("help", "guide"))
 async def cmd_help(message: Message):

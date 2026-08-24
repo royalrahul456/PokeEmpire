@@ -2,6 +2,18 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from typing import List, Any
 
+def get_start_welcome_keyboard(bot_username: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="👑 Owner", url="https://t.me/TheDarkKratosX"),
+        InlineKeyboardButton(text="👥 Official Group", url="https://t.me/pokeempireunion")
+    )
+    builder.row(
+        InlineKeyboardButton(text="📢 Updates Channel", url="https://t.me/pokeempireupdates"),
+        InlineKeyboardButton(text="➕ Add to your Group", url=f"https://t.me/{bot_username}?startgroup=true")
+    )
+    return builder.as_markup()
+
 def get_dm_menu_keyboard() -> InlineKeyboardMarkup:
     """Generates the primary Hub menu keyboard for DMs."""
     builder = InlineKeyboardBuilder()
@@ -10,12 +22,16 @@ def get_dm_menu_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="🏆 Pokédex", callback_data="dm_dex_1")
     )
     builder.row(
-        InlineKeyboardButton(text="🎒 My Bag", callback_data="dm_bag_1"),
-        InlineKeyboardButton(text="📊 Leaderboard", callback_data="dm_leaderboard")
+        InlineKeyboardButton(text="⚔️ Quests", callback_data="refresh_quests"),
+        InlineKeyboardButton(text="🏰 Guilds", callback_data="dm_guild_info")
     )
     builder.row(
-        InlineKeyboardButton(text="🛡️ Battle", callback_data="dm_battle_menu"),
-        InlineKeyboardButton(text="⚔️ Duel Trainer", callback_data="dm_duel_info")
+        InlineKeyboardButton(text="📜 Transactions", callback_data="dm_transactions"),
+        InlineKeyboardButton(text="🎒 My Bag", callback_data="dm_bag_1")
+    )
+    builder.row(
+        InlineKeyboardButton(text="📊 Leaderboard", callback_data="dm_leaderboard"),
+        InlineKeyboardButton(text="🛡️ Battle", callback_data="dm_battle_menu")
     )
     builder.row(
         InlineKeyboardButton(text="🔄 Trade", callback_data="dm_trade_info"),

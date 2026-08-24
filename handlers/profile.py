@@ -492,10 +492,21 @@ async def cmd_profile(message: Message, db: AsyncSession):
                     form_suffix = f" (Form {form_index})" if form_index > 0 else ""
                     fav_name = f"{p_name.title()}{form_suffix}"
 
+        from utils.trainer_level import get_trainer_title, get_xp_required_for_next_level
+        lvl = user.trainer_level or 1
+        xp = user.trainer_xp or 0
+        req_xp = get_xp_required_for_next_level(lvl)
+        xp_pct = min(100, int((xp / req_xp) * 100)) if req_xp > 0 else 0
+        xp_filled = xp_pct // 10
+        xp_bar = "█" * xp_filled + "░" * (10 - xp_filled)
+        title = get_trainer_title(lvl)
+
         profile_card = (
             f"╭──「 🏆 Trainer Profile 」\n"
             f"├─➩ 🏓 User: {html.escape(user_nickname)}\n"
             f"├─➩ 🆔 ID: <code>{user.id}</code>\n"
+            f"├─➩ 🎖️ Level: <code>Lv. {lvl} ({title})</code>\n"
+            f"├─➩ ⚡ EXP: [{xp_bar}] {xp_pct}% (<code>{xp:,}/{req_xp:,}</code>)\n"
             f"├─➩ 💰 Balance: <code>{formatted_coins} coins</code>\n"
             f"├─➩ ⚡ Pokémon: {unique_caught} (Total Catches: {total_caught})\n"
             f"├─➩ 🌍 Pokédex: {unique_caught}/{total_species} ({dex_pct:.3f}%)\n"
@@ -1587,13 +1598,16 @@ async def build_rankings_payload(chat_id: int, user_id: int, period: str, db: As
         else:
             user_str = display_name
             
-        rows.append(f"{idx}. 👤 {user_str} • {formatted_count}")
+        rows.append(f"✦ {idx}. 👤 {user_str} ➔ {formatted_count} msgs")
 
     ranks_body = "\n".join(rows) if rows else "<i>No chat activity recorded yet for this period.</i>"
 
     text = (
-        f"📈 <b>LEADERBOARD ({period_title.upper()})</b>\n\n"
-        f"<blockquote>{ranks_body}</blockquote>\n\n"
+        f"⚡ <b>CHAT RANKINGS</b> ⚡\n"
+        f"◈ ──────────────── ◈\n"
+        f"🏆 <b>Leaderboard ({period_title})</b>\n\n"
+        f"{ranks_body}\n\n"
+        f"◈ ──────────────── ◈\n"
         f"✉️ <b>Total messages:</b> {formatted_total}"
     )
 
@@ -2503,5 +2517,79 @@ async def cmd_gift(message: Message, db: AsyncSession):
         await message.bot.send_message(chat_id=target_user.id, text=dm_text, parse_mode="HTML")
     except Exception:
         pass
+
+
+@router.message(Command("transactions", "tx", "history"))
+async def cmd_transactions(message: Message, db: AsyncSession):
+    user_id = message.from_user.id
+    from database.models import TransactionHistory
+    stmt = select(TransactionHistory).where(TransactionHistory.user_id == user_id).order_by(TransactionHistory.created_at.desc()).limit(10)
+    res = await db.execute(stmt)
+    txs = res.scalars().all()
+
+    if not txs:
+        text = (
+            f"⚡ <b>TRANSACTION HISTORY</b> ⚡\n"
+            f"◈ ────────────────── ◈\n"
+            f"<i>No transaction records found yet.</i>\n"
+            f"◈ ────────────────── ◈"
+        )
+        await message.answer(text, parse_mode="HTML")
+        return
+
+    rows = []
+    for tx in txs:
+        sign = "+" if tx.amount >= 0 else ""
+        icon = "🟢" if tx.amount >= 0 else "🔴"
+        dt_str = tx.created_at.strftime("%Y-%m-%d %H:%M") if tx.created_at else ""
+        rows.append(f"✦ {icon} <code>{sign}{tx.amount:,} coins</code> — <b>{html.escape(tx.category)}</b>\n   <i>{html.escape(tx.description)}</i> ({dt_str})")
+
+    tx_body = "\n\n".join(rows)
+    text = (
+        f"⚡ <b>TRANSACTION HISTORY</b> ⚡\n"
+        f"◈ ────────────────── ◈\n"
+        f"{tx_body}\n"
+        f"◈ ────────────────── ◈\n"
+        f"👉 <i>Showing your last 10 coin transactions</i>"
+    )
+    await message.answer(text, parse_mode="HTML")
+
+@router.callback_query(F.data == "dm_transactions")
+async def cb_dm_transactions(callback: CallbackQuery, db: AsyncSession):
+    user_id = callback.from_user.id
+    from database.models import TransactionHistory
+    stmt = select(TransactionHistory).where(TransactionHistory.user_id == user_id).order_by(TransactionHistory.created_at.desc()).limit(10)
+    res = await db.execute(stmt)
+    txs = res.scalars().all()
+
+    if not txs:
+        text = (
+            f"⚡ <b>TRANSACTION HISTORY</b> ⚡\n"
+            f"◈ ────────────────── ◈\n"
+            f"<i>No transaction records found yet.</i>\n"
+            f"◈ ────────────────── ◈"
+        )
+        await callback.message.edit_text(text, parse_mode="HTML")
+        await callback.answer()
+        return
+
+    rows = []
+    for tx in txs:
+        sign = "+" if tx.amount >= 0 else ""
+        icon = "🟢" if tx.amount >= 0 else "🔴"
+        dt_str = tx.created_at.strftime("%Y-%m-%d %H:%M") if tx.created_at else ""
+        rows.append(f"✦ {icon} <code>{sign}{tx.amount:,} coins</code> — <b>{html.escape(tx.category)}</b>\n   <i>{html.escape(tx.description)}</i> ({dt_str})")
+
+    tx_body = "\n\n".join(rows)
+    text = (
+        f"⚡ <b>TRANSACTION HISTORY</b> ⚡\n"
+        f"◈ ────────────────── ◈\n"
+        f"{tx_body}\n"
+        f"◈ ────────────────── ◈\n"
+        f"👉 <i>Showing your last 10 coin transactions</i>"
+    )
+    await callback.message.edit_text(text, parse_mode="HTML")
+    await callback.answer()
+
 
 

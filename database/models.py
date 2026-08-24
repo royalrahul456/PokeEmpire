@@ -17,6 +17,8 @@ class User(Base):
     last_secured_date = Column(String(20), nullable=True)
     last_catch_date = Column(String(20), nullable=True)
     catches_today = Column(Integer, default=0, nullable=False)
+    trainer_level = Column(Integer, default=1, nullable=False)
+    trainer_xp = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)
 
     # Relationships
@@ -198,6 +200,68 @@ class ChatMessageStat(Base):
 
     # Relationships
     user = relationship("User", foreign_keys=[user_id])
+
+
+class Guild(Base):
+    __tablename__ = "guilds"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), unique=True, nullable=False)
+    tag = Column(String(10), unique=True, nullable=False)
+    owner_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    treasury = Column(Integer, default=0, nullable=False)
+    level = Column(Integer, default=1, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+
+    owner = relationship("User", foreign_keys=[owner_id])
+
+
+class GuildMember(Base):
+    __tablename__ = "guild_members"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    guild_id = Column(Integer, ForeignKey("guilds.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
+    role = Column(String(20), default="member", nullable=False)  # "leader", "co_leader", "member"
+    joined_at = Column(DateTime, default=func.now(), nullable=False)
+
+    guild = relationship("Guild")
+    user = relationship("User", foreign_keys=[user_id])
+
+
+class TrainerQuest(Base):
+    __tablename__ = "trainer_quests"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    quest_key = Column(String(50), nullable=False)
+    progress = Column(Integer, default=0, nullable=False)
+    target = Column(Integer, nullable=False)
+    is_claimed = Column(Boolean, default=False, nullable=False)
+    period = Column(String(20), default="daily", nullable=False)  # "daily", "weekly"
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+
+
+class TransactionHistory(Base):
+    __tablename__ = "transaction_history"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    amount = Column(Integer, nullable=False)  # positive for gain, negative for spent
+    category = Column(String(50), nullable=False)
+    description = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+
+    user = relationship("User", foreign_keys=[user_id])
+
+
+class MysteryEventState(Base):
+    __tablename__ = "mystery_event_state"
+
+    key = Column(String(50), primary_key=True)
+    value = Column(String(500), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
 
 
 

@@ -197,6 +197,15 @@ async def cmd_catch(message: Message, db: AsyncSession):
         msg1_text = f"🎉 +{coins_won} coins! Balance: {user_coins}"
         await message.reply(msg1_text)
 
+        # Hook EXP leveling, transaction history, and quest progress
+        from utils.trainer_level import add_trainer_xp, log_transaction
+        from handlers.quests import update_quest_progress
+
+        await add_trainer_xp(user, 100, db, message.bot, message.chat.id)
+        await log_transaction(user_id, coins_won, "CATCH", f"Caught {pokemon.name.title()}", db)
+        await update_quest_progress(user_id, "daily_catch", 1, db)
+        await update_quest_progress(user_id, "weekly_catch", 1, db)
+
         # 3. Calculate time taken
         import datetime
         time_taken = 1

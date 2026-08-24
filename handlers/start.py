@@ -51,95 +51,29 @@ async def cmd_start(message: Message, db: AsyncSession):
         await db.commit()
 
     if message.chat.type == "private":
-        import html
-        # Check if the user is the bot owner
-        if user_id in config.ADMIN_IDS:
-            # Query db metrics for Owner Dashboard
-            u_count = await db.execute(select(func.count(User.id)))
-            total_users = u_count.scalar() or 0
-            
-            c_count = await db.execute(select(func.count(UserPokemon.id)))
-            total_catches = c_count.scalar() or 0
-            
-            s_count = await db.execute(select(func.count(ActiveSpawn.chat_id)))
-            active_spawns = s_count.scalar() or 0
+        bot_info = await message.bot.get_me()
+        bot_username = bot_info.username or "PokeEmpireBot"
 
-            text = (
-                f"⚡ <b>POKÉEMPIRE CREATOR DASHBOARD</b> ⚡\n"
-                f"💎 <i>Master Control & Operations Center</i>\n"
-                f"───────────────────────────────\n"
-                f"👑 Welcome back, Creator <b>{html.escape(user.nickname or nickname)}</b>!\n\n"
-                f"<blockquote>📊 <b>REAL-TIME SYSTEM METRICS</b>\n"
-                f"• 👥 Total Trainers: <code>{total_users:,}</code>\n"
-                f"• ⚡ Total Pokémon Caught: <code>{total_catches:,}</code>\n"
-                f"• 🌳 Active Group Spawns: <code>{active_spawns:,}</code></blockquote>\n\n"
-                f"👑 <b>Executive Control Panel</b>:\n"
-                f"Type ⚡ <code>/panel</code> to launch the full Executive Operations Console!\n"
-                f"───────────────────────────────"
-            )
-            
-            await send_cover_media(
-                chat_id=message.chat.id,
-                key="start",
-                caption=text,
-                reply_markup=get_admin_menu_keyboard(),
-                bot=message.bot,
-                default_file="data/pokeempire_banner.png"
-            )
-        elif user_id in config.UPLOADER_IDS:
-            # Uploader Console
-            text = (
-                f"📤 <b>POKÉEMPIRE UPLOADER CONSOLE</b> 📤\n"
-                f"✨ <i>Media Management Hub</i>\n"
-                f"───────────────────────────────\n"
-                f"✨ Welcome, Uploader <b>{html.escape(user.nickname or nickname)}</b>!\n\n"
-                f"<blockquote>📋 <b>UPLOADER PRIVILEGES</b>\n"
-                f"• <code>/setpokemedia &lt;name/id&gt;</code> — Set photo/video/AMV media\n"
-                f"• <code>/medialist</code> — View active uploaded media assets</blockquote>\n\n"
-                f"👉 <i>Use the dashboard below to navigate your profile & collection:</i>\n"
-                f"───────────────────────────────"
-            )
-            
-            await send_cover_media(
-                chat_id=message.chat.id,
-                key="start",
-                caption=text,
-                reply_markup=get_uploader_menu_keyboard(),
-                bot=message.bot,
-                default_file="data/pokeempire_banner.png"
-            )
-        else:
-            # Standard premium player dashboard
-            # Query caught count for this player
-            c_stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == user_id)
-            c_res = await db.execute(c_stmt)
-            user_catches = c_res.scalar() or 0
+        from keyboards.inline import get_start_welcome_keyboard
 
-            from utils.streak import get_streak_data
-            s_data = await get_streak_data(user_id, db)
-            user_streak = s_data.get("current_streak", 0)
+        text = (
+            "🌟 <b>Welcome to PokeEmpire!</b> 🐾\n"
+            "◈ ────────────────── ◈\n"
+            "Your adventure starts here. ⚡\n"
+            "Catch • Battle • Trade • Explore\n\n"
+            "🎮 <b>Ready, Trainer? Let’s begin!</b>"
+        )
 
-            text = (
-                f"⚡ <b>POKÉEMPIRE HUB</b> ⚡\n"
-                f"✨ <i>Your Ultimate Pokémon Companion</i>\n"
-                f"───────────────────────────────\n"
-                f"👋 Welcome, Trainer <b>{html.escape(user.nickname or nickname)}</b>!\n\n"
-                f"<blockquote>🎒 <b>TRAINER QUICK STATS</b>\n"
-                f"• 💳 Coin Balance: <code>💰 {user.coins:,} coins</code>\n"
-                f"• 🏆 Caught Collection: <code>{user_catches:,} Pokémon</code>\n"
-                f"• 🔥 Daily Catch Streak: <code>{user_streak} Days</code></blockquote>\n\n"
-                f"🌲 Wild Pokémon spawn in your active groups based on chat activity! Guess their names & catch them with <code>/catch</code>.\n\n"
-                f"👉 <i>Select an option from the interactive menu below:</i>\n"
-                f"───────────────────────────────"
-            )
-            await send_cover_media(
-                chat_id=message.chat.id,
-                key="start",
-                caption=text,
-                reply_markup=get_dm_menu_keyboard(),
-                bot=message.bot,
-                default_file="data/pokeempire_banner.png"
-            )
+        reply_markup = get_start_welcome_keyboard(bot_username)
+
+        await send_cover_media(
+            chat_id=message.chat.id,
+            key="start",
+            caption=text,
+            reply_markup=reply_markup,
+            bot=message.bot,
+            default_file="data/pokeempire_banner.png"
+        )
     else:
         # Group chats start command
         # Check if the user is a group administrator
@@ -210,41 +144,75 @@ async def cmd_start(message: Message, db: AsyncSession):
             )
             await message.answer(welcome_text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
-@router.message(Command("help"))
+@router.message(Command("help", "guide"))
 async def cmd_help(message: Message):
     help_text = (
-        f"❓ <b>POKÉEMPIRE GUIDE</b> ❓\n"
-        f"───────────────\n\n"
-        f"🌲 <b>Trainer Commands</b>:\n"
-        f"<blockquote>• <code>/profile</code> — Check Trainer level, coins & titles\n"
-        f"• <code>/pokemon &lt;page&gt;</code> — View caught collection bag\n"
-        f"• <code>/pokedex</code> — Review species checklist & completion\n"
-        f"• <code>/leaderboard</code> (or <code>/lb</code>) — Global coin ranks\n"
-        f"• <code>/catch &lt;name&gt;</code> — Catch a wild Pokémon when one spawns\n"
-        f"• <code>/gift &lt;@user/user_id&gt; &lt;pokedex_id&gt;</code> — Gift a Pokémon to a trainer\n"
-        f"• <code>/shop</code> — Open Coin Shop to buy items\n"
-        f"• <code>/claim</code> — Claim a free daily random Pokémon\n"
-        f"• <code>/help</code> — Show this guide</blockquote>\n"
-        f"🔥 <b>Streak Commands</b>:\n"
-        f"<blockquote>• <code>/streak</code> — Check your current/best daily catch streak\n"
-        f"• <code>/streaklb</code> (or <code>/slb</code>) — View streak leaderboards</blockquote>\n"
-        f"🎮 <b>Earning Coins (Games)</b>:\n"
-        f"<blockquote>• <code>/daily</code> — Claim daily reward (24h cooldown)\n"
-        f"• <code>/spin</code> — Spin wheel of fortune (4h cooldown)\n"
-        f"• <code>/coinflip &lt;bet&gt; &lt;h/t&gt;</code> — Bet coins on a coin flip\n"
-        f"• <code>/rps &lt;bet&gt; &lt;r/p/s&gt;</code> — Play rock-paper-scissors\n"
-        f"• <code>/mines &lt;bet&gt; [mines]</code> — Play 5x5 Mines (groups/DMs)\n"
-        f"• <code>/endmines</code> — Stop your active Mines game\n"
-        f"• <code>/trivia</code> — Answer trivia for coins\n"
-        f"• <code>/scribble</code> — Unscramble a Pokémon's name Extraction</blockquote>\n"
-        f"🛡️ <b>Admin Group Commands</b>:\n"
-        f"<blockquote>• <code>/setspawn &lt;threshold&gt;</code> — Configure spawn rate (Admins only)\n"
-        f"• <code>/toggle_spawns</code> — Enable/Disable spawns in this group (Admins only)</blockquote>"
+        f"⚡ <b>POKÉEMPIRE OFFICIAL GUIDE</b> ⚡\n"
+        f"◈ ────────────────── ◈\n"
+        f"🌲 <b>Trainer Commands:</b>\n"
+        f"✦ <code>/profile</code> — Check Trainer level, coins & stats\n"
+        f"✦ <code>/quests</code> — View Daily & Weekly Bounties\n"
+        f"✦ <code>/guild</code> — Manage Trainer Guild & Clans\n"
+        f"✦ <code>/transactions</code> — View coin transaction history\n"
+        f"✦ <code>/pokemon</code> — View caught collection bag\n"
+        f"✦ <code>/pokedex</code> — Review species checklist\n"
+        f"✦ <code>/rankings</code> — View chat message leaderboards\n"
+        f"✦ <code>/catch &lt;name&gt;</code> — Catch a wild Pokémon\n"
+        f"✦ <code>/auction</code> — List Pokémon for live auction\n"
+        f"✦ <code>/report &lt;issue&gt;</code> — Report a bug to the Bot Creator\n\n"
+        f"🎮 <b>Games & Economy:</b>\n"
+        f"✦ <code>/daily</code> — Claim daily coin reward\n"
+        f"✦ <code>/spin</code> — Spin wheel of fortune\n"
+        f"✦ <code>/coinflip</code> • <code>/rps</code> • <code>/mines</code> — Bet coins in minigames\n"
+        f"✦ <code>/trivia</code> • <code>/scribble</code> — Answer quizzes for rewards\n\n"
+        f"🛡️ <b>Bot Security & Management:</b>\n"
+        f"✦ <code>/setspawn</code> • <code>/spawn</code> — Bot Admins & Owner only\n"
+        f"◈ ────────────────── ◈"
     )
     if message.chat.type == "private":
         await message.answer(help_text, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
     else:
         await message.answer(help_text, parse_mode="HTML")
+
+
+@router.message(Command("report"))
+async def cmd_report(message: Message):
+    user_id = message.from_user.id
+    user_name = html.escape(message.from_user.first_name or message.from_user.username or f"Trainer {user_id}")
+    user_handle = f"@{message.from_user.username}" if message.from_user.username else f"ID: <code>{user_id}</code>"
+    
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer(
+            "⚠️ <b>How to Report an Error/Bug:</b>\n"
+            "👉 Type: <code>/report &lt;description of your issue or bug&gt;</code>\n\n"
+            "<i>Example: <code>/report My auction didn't complete properly</code></i>",
+            parse_mode="HTML"
+        )
+        return
+
+    report_content = html.escape(parts[1].strip())
+    owner_id = config.ADMIN_IDS[0] if config.ADMIN_IDS else None
+
+    if owner_id:
+        report_card = (
+            f"🚨 <b>NEW PLAYER BUG REPORT!</b> 🚨\n"
+            f"◈ ────────────────── ◈\n"
+            f"👤 <b>Reporter:</b> {user_name} ({user_handle})\n"
+            f"🆔 <b>User ID:</b> <code>{user_id}</code>\n"
+            f"💬 <b>Chat ID:</b> <code>{message.chat.id}</code>\n\n"
+            f"📝 <b>Report Message:</b>\n"
+            f"<i>{report_content}</i>\n"
+            f"◈ ────────────────── ◈"
+        )
+        try:
+            await message.bot.send_message(owner_id, report_card, parse_mode="HTML")
+            await message.answer("✅ <b>Report Submitted!</b> Your bug report has been forwarded directly to the Bot Creator.", parse_mode="HTML")
+            return
+        except Exception as e:
+            print(f"Error forwarding report to owner: {e}")
+
+    await message.answer("✅ Report recorded! Thank you for helping improve PokeEmpire.", parse_mode="HTML")
 
 @router.callback_query(F.data == "dm_home")
 async def cb_dm_home(callback: CallbackQuery, db: AsyncSession):

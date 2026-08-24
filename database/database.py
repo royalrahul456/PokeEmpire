@@ -74,7 +74,7 @@ SEED_POKEMON = [
 async def init_db():
     """Initialize the SQLite database, creating all tables and seeding Pokémon list if empty."""
     async with engine.begin() as conn:
-        from database.models import User, Pokemon, UserPokemon, ActiveSpawn, GroupSetting, GlobalSetting, PokemonFormMedia, PvpBattle, Auction, AuctionBid, ChatMessageStat
+        from database.models import User, Pokemon, UserPokemon, ActiveSpawn, GroupSetting, GlobalSetting, PokemonFormMedia, PvpBattle, Auction, AuctionBid, ChatMessageStat, Guild, GuildMember, TrainerQuest, TransactionHistory, MysteryEventState
         await conn.run_sync(Base.metadata.create_all)
 
     # Run migrations for existing databases
@@ -90,13 +90,15 @@ async def init_db():
             except Exception:
                 pass
 
-        # User streak columns
+        # User streak & level columns
         streak_cols = [
             ("current_streak", "INTEGER DEFAULT 0"),
             ("best_streak", "INTEGER DEFAULT 0"),
             ("last_secured_date", "VARCHAR(20)"),
             ("last_catch_date", "VARCHAR(20)"),
-            ("catches_today", "INTEGER DEFAULT 0")
+            ("catches_today", "INTEGER DEFAULT 0"),
+            ("trainer_level", "INTEGER DEFAULT 1"),
+            ("trainer_xp", "INTEGER DEFAULT 0")
         ]
         for col, col_type in streak_cols:
             try:

@@ -27,7 +27,10 @@ from handlers import (
     xo,
     redeem,
     mines,
-    auction
+    auction,
+    quests,
+    guilds,
+    mystery_events
 )
 
 # Set up logging configuration
@@ -153,6 +156,10 @@ async def register_bot_commands(bot: Bot):
         BotCommand(command="banword", description="⛔ Ban a word in group chats"),
         BotCommand(command="removebanword", description="✅ Unban a word"),
         BotCommand(command="banwords", description="📋 Show all banned words"),
+        BotCommand(command="quests", description="⚔️ View Daily & Weekly Bounties"),
+        BotCommand(command="guild", description="🏰 Manage Trainer Guild & Clan"),
+        BotCommand(command="transactions", description="💳 View coin transaction history"),
+        BotCommand(command="report", description="🚩 Report an error or bug to Creator"),
         BotCommand(command="help", description="ℹ️ Show complete guide instructions")
     ]
     try:
@@ -298,6 +305,9 @@ async def main():
     dp.include_router(redeem.router)
     dp.include_router(mines.router)
     dp.include_router(auction.router)
+    dp.include_router(quests.router)
+    dp.include_router(guilds.router)
+    dp.include_router(mystery_events.router)
 
     logger.info("Bot handlers and routers registered.")
 

@@ -327,8 +327,9 @@ async def main():
     # Register bot menu commands
     await register_bot_commands(bot)
     
-    # Start a dummy HTTP server in the background for Render health checks
-    await start_dummy_server()
+    # Start the REST API & Web Dashboard server in the background
+    from api_server import start_api_server
+    await start_api_server()
 
     # Start the Auction settlement background loop worker task
     from handlers.auction import auction_settlement_worker

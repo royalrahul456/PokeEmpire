@@ -94,34 +94,26 @@ class DbSessionMiddleware:
 
 async def start_dummy_server():
     import os
+    from aiohttp import web
     port = int(os.getenv("PORT", "8000"))
     
-    async def handle_client(reader, writer):
-        try:
-            await reader.read(1024)
-        except Exception:
-            pass
-        response = (
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Type: text/plain\r\n"
-            "Content-Length: 2\r\n"
-            "Connection: close\r\n\r\n"
-            "OK"
-        )
-        try:
-            writer.write(response.encode("utf-8"))
-            await writer.drain()
-            writer.close()
-            await writer.wait_closed()
-        except Exception:
-            pass
+    app = web.Application()
+    
+    async def health_check(request):
+        return web.Response(text="OK", content_type="text/plain")
         
+    app.router.add_get("/", health_check)
+    app.router.add_get("/healthz", health_check)
+    app.router.add_get("/api/health", health_check)
+    
     try:
-        server = await asyncio.start_server(handle_client, "0.0.0.0", port)
-        logger.info(f"Dummy HTTP server started on port {port} for health checks")
-        asyncio.create_task(server.serve_forever())
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "0.0.0.0", port)
+        await site.start()
+        logger.info(f"✅ Web health check server active on port {port}")
     except Exception as e:
-        logger.error(f"Failed to start dummy HTTP server: {e}")
+        logger.error(f"Failed to start web health check server: {e}")
 
 async def register_bot_commands(bot: Bot):
     from aiogram.types import BotCommand

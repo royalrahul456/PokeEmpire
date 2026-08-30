@@ -1,9 +1,13 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from typing import List, Any
+import config
 
 def get_start_welcome_keyboard(bot_username: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="⚡ OPEN POKEEMPIRE MINI APP 🎮", web_app=WebAppInfo(url=getattr(config, "WEBAPP_URL", "https://pokeempire-app.web.app")))
+    )
     builder.row(
         InlineKeyboardButton(text="👑 Owner", url="https://t.me/TheDarkKratosX"),
         InlineKeyboardButton(text="👥 Official Group", url="https://t.me/pokeempireunion")
@@ -17,6 +21,9 @@ def get_start_welcome_keyboard(bot_username: str) -> InlineKeyboardMarkup:
 def get_dm_menu_keyboard() -> InlineKeyboardMarkup:
     """Generates the primary Hub menu keyboard for DMs."""
     builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="⚡ OPEN POKEEMPIRE MINI APP 🎮", web_app=WebAppInfo(url=getattr(config, "WEBAPP_URL", "https://pokeempire-app.web.app")))
+    )
     builder.row(
         InlineKeyboardButton(text="👤 Profile", callback_data="dm_profile"),
         InlineKeyboardButton(text="🏆 Pokédex", callback_data="dm_dex_1")

@@ -6,6 +6,7 @@ load_dotenv()
 
 # Bot Setup
 BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
+WEBAPP_URL = os.getenv("WEBAPP_URL", "https://pokeempire-app.web.app")
 
 # Check if we are running in Render with persistent volume mount
 PERSISTENT_VOLUME = "/app/data_volume"

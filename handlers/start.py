@@ -74,6 +74,20 @@ async def cmd_start(message: Message, db: AsyncSession):
         default_file="data/pokeempire_banner.png"
     )
 
+@router.message(Command("app", "miniapp", "play"))
+async def cmd_open_miniapp(message: Message):
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+    webapp_url = getattr(config, "WEBAPP_URL", "https://pokeempire-app.web.app")
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⚡ OPEN POKEEMPIRE MINI APP 🎮", web_app=WebAppInfo(url=webapp_url))]
+    ])
+    await message.answer(
+        "⚡ <b>POKEEMPIRE V3 MINI APP</b> 🎮\n"
+        "◈ ────────────────── ◈\n"
+        "Tap the button below to open the mobile gaming app directly in Telegram!",
+        reply_markup=kb,
+        parse_mode="HTML"
+    )
 
 @router.message(Command("settings", "gcsettings"))
 async def cmd_gc_settings(message: Message, db: AsyncSession):

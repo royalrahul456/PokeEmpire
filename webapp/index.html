@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>POKEEMPIRE V3 - Telegram Mini App</title>
+  <!-- Telegram WebApp SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <!-- Tailwind CSS -->
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700;800&family=Inter:wght@400;500;600;700;800&display=swap');
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #02040a;
+      color: #f8fafc;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .font-rajdhani { font-family: 'Rajdhani', sans-serif; }
+
+    ::-webkit-scrollbar { width: 3px; height: 3px; }
+    ::-webkit-scrollbar-track { background: #070a14; }
+    ::-webkit-scrollbar-thumb { background: #facc15; border-radius: 4px; }
+
+    .glass-card {
+      background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(7, 10, 20, 0.98) 100%);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 14px;
+    }
+
+    .glass-card-gold {
+      background: linear-gradient(135deg, rgba(250, 204, 21, 0.2) 0%, rgba(11, 15, 29, 0.96) 100%);
+      border: 1.5px solid rgba(250, 204, 21, 0.6);
+      box-shadow: 0 0 25px rgba(250, 204, 21, 0.25);
+      border-radius: 14px;
+    }
+
+    .btn-gold {
+      background: linear-gradient(135deg, #fffbeb 0%, #facc15 40%, #ca8a04 100%);
+      color: #04060b;
+      font-weight: 800;
+      box-shadow: 0 4px 18px rgba(250, 204, 21, 0.45);
+      transition: all 0.15s ease;
+    }
+    .btn-gold:hover { box-shadow: 0 0 25px rgba(250, 204, 21, 0.7); }
+    .btn-gold:active { transform: scale(0.95); }
+
+    .phone-screen {
+      background: #060913;
+      border: 1.5px solid rgba(250, 204, 21, 0.4);
+      border-radius: 28px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.95), 0 0 30px rgba(250, 204, 21, 0.15);
+    }
+
+    .card-gold-glow { border: 1.5px solid rgba(250, 204, 21, 0.9); box-shadow: 0 0 16px rgba(250, 204, 21, 0.35); }
+    .card-purple-glow { border: 1.5px solid rgba(192, 132, 252, 0.9); box-shadow: 0 0 16px rgba(192, 132, 252, 0.35); }
+    .card-sky-glow { border: 1.5px solid rgba(56, 189, 248, 0.9); box-shadow: 0 0 16px rgba(56, 189, 248, 0.35); }
+    .card-rose-glow { border: 1.5px solid rgba(244, 63, 94, 0.9); box-shadow: 0 0 18px rgba(244, 63, 94, 0.4); }
+    .card-emerald-glow { border: 1.5px solid rgba(52, 211, 153, 0.9); box-shadow: 0 0 16px rgba(52, 211, 153, 0.35); }
+
+    .poke-img-bounce {
+      filter: drop-shadow(0 6px 10px rgba(0,0,0,0.7));
+      transition: transform 0.2s ease;
+    }
+    .poke-img-bounce:hover { transform: scale(1.12) translateY(-2px); }
+
+    .coin-update-pulse { animation: coinPulse 0.4s ease-out; }
+    @keyframes coinPulse {
+      0% { transform: scale(1); color: #ffffff; }
+      50% { transform: scale(1.3); color: #facc15; }
+      100% { transform: scale(1); color: #fde047; }
+    }
+  </style>
+</head>
+<body class="bg-[#02040a] min-h-screen text-slate-100 p-0 sm:p-4 flex items-center justify-center relative overflow-x-hidden">
+
+  <canvas id="particleCanvas" class="fixed inset-0 pointer-events-none z-0 opacity-50"></canvas>
+
+  <!-- TELEGRAM MINI APP MAIN CONTAINER (MOBILE 9:16 FRAME) -->
+  <div id="tmaShell" class="phone-screen w-full max-w-[430px] h-[860px] max-h-[100vh] relative z-10">
+
+    <!-- TELEGRAM WEBAPP TOP HEADER BAR -->
+    <div class="bg-[#0b0f1d] px-4 py-2.5 flex items-center justify-between border-b border-white/10 text-xs text-slate-400 select-none shrink-0 z-30">
+      <div class="flex items-center space-x-2">
+        <span class="text-amber-400 font-bold">⚡ POKEEMPIRE V3</span>
+      </div>
+      <!-- Live Currency Header -->
+      <div class="flex items-center space-x-2 bg-slate-950/80 px-2.5 py-1 rounded-lg border border-amber-500/30">
+        <span>🪙 <strong id="globalCoins" class="text-amber-300">12,450</strong></span>
+        <span>💎 <strong id="globalGems" class="text-sky-300">320</strong></span>
+      </div>
+    </div>
+
+    <!-- MAIN VIEWPORT -->
+    <div id="viewport" class="flex-1 overflow-y-auto overflow-x-hidden p-3.5 space-y-3.5 no-scrollbar">
+
+      <!-- ==================== SCREEN 1: HOME ==================== -->
+      <div id="screen-home" class="space-y-3.5">
+        <!-- Trainer Header Card -->
+        <div class="glass-card-gold p-3">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+              <div class="w-12 h-12 rounded-full bg-slate-900 border-2 border-amber-400 overflow-hidden flex items-center justify-center shrink-0">
+                <img id="userAvatar" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/trainers/1.png" alt="Ash" class="w-full h-full object-cover">
+              </div>
+              <div>
+                <div class="font-bold text-white text-sm flex items-center space-x-1">
+                  <span id="userName">Ace Trainer</span>
+                  <span class="text-xs text-amber-400">✏️</span>
+                </div>
+                <div class="flex items-center space-x-1.5 mt-0.5">
+                  <span class="text-xs text-slate-400">Lv. <span id="userLv">24</span></span>
+                  <span class="bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[9px] font-bold px-1.5 py-0.2 rounded">Ace</span>
+                </div>
+                <div class="w-24 h-1.5 bg-slate-950 rounded-full mt-1 overflow-hidden">
+                  <div class="h-full bg-gradient-to-r from-amber-500 to-yellow-300 w-[72%]"></div>
+                </div>
+              </div>
+            </div>
+            <div class="text-right space-y-1 text-xs">
+              <div>🪙 <strong class="displayCoins text-amber-300">12,450</strong></div>
+              <div>💎 <strong class="displayGems text-sky-300">320</strong></div>
+              <div>⭐ <strong class="displayBP text-purple-300">1,245 BP</strong></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Featured Event Card -->
+        <div class="glass-card p-3.5 border-purple-500/50 bg-gradient-to-br from-purple-900/40 via-slate-900 to-slate-950 relative overflow-hidden">
+          <div class="flex justify-between items-start">
+            <div class="z-10 max-w-[65%]">
+              <span class="bg-purple-500 text-white font-extrabold text-[9px] px-1.5 py-0.5 rounded uppercase">LIVE EVENT</span>
+              <h3 class="font-rajdhani font-bold text-sm text-amber-300 mt-1 leading-tight">2x Shiny & Legendary Spawn Frenzy!</h3>
+              <div class="font-mono text-xs text-amber-200 mt-1">⏱️ 09:42:18</div>
+              <button onclick="switchTab('events')" class="btn-gold px-3.5 py-1.5 rounded-xl text-xs font-bold mt-2.5">JOIN EVENT ⚡</button>
+            </div>
+            <div class="w-24 h-24 -mr-2 -mb-2 z-0">
+              <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/448.png" alt="Lucario" class="w-full h-full object-contain poke-img-bounce cursor-pointer" onclick="openPokeDetail('Lucario', 448, 'Epic', 2154, 38, 92)">
+            </div>
+          </div>
+        </div>
+
+        <!-- Daily Streak Bar -->
+        <div class="glass-card p-2.5 text-xs space-y-1.5">
+          <div class="flex justify-between text-slate-400"><span>🔥 DAILY STREAK</span> <span class="text-amber-300 font-bold">7 Days Active</span></div>
+          <div class="flex justify-between items-center text-amber-400 text-sm font-bold pt-1 px-1">
+            <span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>✓</span><span>🎁</span>
+          </div>
+        </div>
+
+        <!-- Quick Access -->
+        <div class="space-y-1.5">
+          <div class="text-xs text-slate-400 font-bold uppercase tracking-wider">Quick Access</div>
+          <div class="grid grid-cols-4 gap-2 text-center text-xs">
+            <div onclick="switchTab('quests')" class="glass-card p-2.5 cursor-pointer hover:border-amber-400 relative">
+              <span class="absolute top-1 right-1 w-2 h-2 bg-amber-400 rounded-full animate-pulse"></span>
+              <span class="text-xl">📜</span><br><span class="text-[10px] mt-1 block">Quests</span>
+            </div>
+            <div onclick="switchTab('battle')" class="glass-card p-2.5 cursor-pointer hover:border-amber-400">
+              <span class="text-xl">⚔️</span><br><span class="text-[10px] mt-1 block">Arena</span>
+            </div>
+            <div onclick="switchTab('guild')" class="glass-card p-2.5 cursor-pointer hover:border-amber-400">
+              <span class="text-xl">🏰</span><br><span class="text-[10px] mt-1 block">Guild</span>
+            </div>
+            <div onclick="switchTab('market')" class="glass-card p-2.5 cursor-pointer hover:border-amber-400">
+              <span class="text-xl">🛒</span><br><span class="text-[10px] mt-1 block">Shop</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== SCREEN 2: POKÉMON ==================== -->
+      <div id="screen-pokemon" class="space-y-3 hidden">
+        <div class="flex justify-between items-center">
+          <h2 class="font-rajdhani font-bold text-xl text-white">🐾 MY POKÉMON</h2>
+          <span class="text-xs text-amber-400 font-bold">✨ 3 Shiny</span>
+        </div>
+
+        <div class="flex space-x-1.5 text-xs">
+          <button class="bg-amber-400 text-slate-950 font-bold px-3 py-1 rounded-lg">All</button>
+          <button class="bg-slate-800 text-slate-400 px-3 py-1 rounded-lg">Shiny</button>
+          <button class="bg-slate-800 text-slate-400 px-3 py-1 rounded-lg">Legendary</button>
+          <button class="bg-slate-800 text-slate-400 px-3 py-1 rounded-lg">Mythical</button>
+        </div>
+
+        <!-- 3x3 Card Grid -->
+        <div class="grid grid-cols-3 gap-2">
+          <!-- Pikachu -->
+          <div onclick="openPokeDetail('Shiny Pikachu', 25, 'Shiny Legendary', 2531, 31, 96)" class="glass-card p-1.5 card-gold-glow text-center cursor-pointer hover:scale-105 transition">
+            <span class="text-[9px] text-amber-300 font-bold block text-left">CP 2531</span>
+            <div class="w-14 h-14 mx-auto my-0.5">
+              <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/25.png" class="w-full h-full object-contain poke-img-bounce">
+            </div>
+            <div class="font-bold text-xs text-white">Pikachu</div>
+            <div class="text-[9px] text-slate-400">Lv. 31</div>
+          </div>
+
+          <!-- Charizard -->
+          <div onclick="openPokeDetail('Charizard', 6, 'Epic', 4520, 42, 93)" class="glass-card p-1.5 card-purple-glow text-center cursor-pointer hover:scale-105 transition">
+            <span class="text-[9px] text-amber-300 font-bold block text-left">CP 4520</span>
+            <div class="w-14 h-14 mx-auto my-0.5">
+              <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/6.png" class="w-full h-full object-contain poke-img-bounce">
+            </div>
+            <div class="font-bold text-xs text-white">Charizard</div>
+            <div class="text-[9px] text-slate-400">Lv. 42</div>
+          </div>
+
+          <!-- Gyarados -->
+          <div onclick="openPokeDetail('Gyarados', 130, 'Shiny Rare', 3821, 37, 95)" class="glass-card p-1.5 card-sky-glow text-center cursor-pointer hover:scale-105 transition">
+            <span class="text-[9px] text-amber-300 font-bold block text-left">CP 3821</span>
+            <div class="w-14 h-14 mx-auto my-0.5">
+              <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/130.png" class="w-full h-full object-contain poke-img-bounce">
+            </div>
+            <div class="font-bold text-xs text-white">Gyarados</div>
+            <div class="text-[9px] text-slate-400">Lv. 37</div>
+          </div>
+
+          <!-- Gengar -->
+          <div onclick="openPokeDetail('Gengar', 94, 'Epic', 2160, 29, 88)" class="glass-card p-1.5 card-purple-glow text-center cursor-pointer hover:scale-105 transition">
+            <span class="text-[9px] text-amber-300 font-bold block text-left">CP 2160</span>
+            <div class="w-14 h-14 mx-auto my-0.5">
+              <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/94.png" class="w-full h-full object-contain poke-img-bounce">
+            </div>
+            <div class="font-bold text-xs text-white">Gengar</div>
+            <div class="text-[9px] text-slate-400">Lv. 29</div>
+          </div>
+
+          <!-- Dragonite -->
+          <div onclick="openPokeDetail('Dragonite', 149, 'Legendary', 2987, 45, 94)" class="glass-card p-1.5 card-gold-glow text-center cursor-pointer hover:scale-105 transition">
+            <span class="text-[9px] text-amber-300 font-bold block text-left">CP 2987</span>
+            <div class="w-14 h-14 mx-auto my-0.5">
+              <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/149.png" class="w-full h-full object-contain poke-img-bounce">
+            </div>
+            <div class="font-bold text-xs text-white">Dragonite</div>
+            <div class="text-[9px] text-slate-400">Lv. 45</div>
+          </div>
+
+          <!-- Lucario -->
+          <div onclick="openPokeDetail('Lucario', 448, 'Epic', 2154, 38, 92)" class="glass-card p-1.5 card-sky-glow text-center cursor-pointer hover:scale-105 transition">
+            <span class="text-[9px] text-amber-300 font-bold block text-left">CP 2154</span>
+            <div class="w-14 h-14 mx-auto my-0.5">
+              <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/448.png" class="w-full h-full object-contain poke-img-bounce">
+            </div>
+            <div class="font-bold text-xs text-white">Lucario</div>
+            <div class="text-[9px] text-slate-400">Lv. 38</div>
+          </div>
+        </div>
+
+        <div class="bg-slate-950 p-2 rounded-xl flex justify-between items-center text-xs text-slate-300 border border-white/10">
+          <span>Caught 92 / 150</span>
+          <span class="text-amber-400 font-bold">✨ Shiny 3</span>
+        </div>
+      </div>
+
+      <!-- ==================== SCREEN 3: BATTLE ARENA ==================== -->
+      <div id="screen-battle" class="space-y-3.5 hidden">
+        <h2 class="font-rajdhani font-bold text-xl text-white">⚔️ BATTLE ARENA</h2>
+
+        <div onclick="triggerBattleSim('PVP Battle')" class="glass-card-gold p-3.5 flex justify-between items-center border-l-4 border-l-amber-400 cursor-pointer hover:scale-102 transition">
+          <div>
+            <div class="font-bold text-white text-sm">PVP BATTLE</div>
+            <div class="text-xs text-slate-400">Challenge real trainers worldwide!</div>
+            <div class="text-xs text-amber-300 font-bold mt-1">🏆 1,245 Rating</div>
+          </div>
+          <div class="w-14 h-14">
+            <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/25.png" class="w-full h-full object-contain">
+          </div>
+        </div>
+
+        <div onclick="triggerBattleSim('AI Battle')" class="glass-card p-3.5 flex justify-between items-center border-l-4 border-l-sky-400 cursor-pointer hover:scale-102 transition">
+          <div>
+            <div class="font-bold text-white text-sm">AI BATTLE</div>
+            <div class="text-xs text-slate-400">Fight against AI trainers & improve!</div>
+          </div>
+          <div class="text-3xl">🤖</div>
+        </div>
+
+        <div onclick="triggerBattleSim('Ranked Arena')" class="glass-card p-3.5 flex justify-between items-center border-l-4 border-l-purple-400 cursor-pointer hover:scale-102 transition">
+          <div>
+            <div class="font-bold text-white text-sm">RANKED ARENA</div>
+            <div class="text-xs text-slate-400">Compete in seasonal arena!</div>
+          </div>
+          <div class="text-3xl">🏆</div>
+        </div>
+      </div>
+
+      <!-- ==================== SCREEN 4: TRAINER PROFILE ==================== -->
+      <div id="screen-profile" class="space-y-3.5 hidden">
+        <h2 class="font-rajdhani font-bold text-xl text-white">👤 TRAINER PROFILE</h2>
+
+        <div class="glass-card-gold p-3.5 text-center space-y-1.5">
+          <div class="w-16 h-16 mx-auto rounded-full bg-slate-900 border-2 border-amber-400 overflow-hidden">
+            <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/trainers/1.png" class="w-full h-full object-cover">
+          </div>
+          <h3 class="font-bold text-base text-white">Ace Trainer</h3>
+          <p class="text-xs text-slate-400">ID: 123456789</p>
+          <div class="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden"><div class="h-full bg-amber-400 w-[72%]"></div></div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-2 text-center text-xs">
+          <div class="glass-card p-2"><div class="text-amber-300 font-bold text-sm">92</div><div class="text-slate-400 text-[10px]">Caught</div></div>
+          <div class="glass-card p-2"><div class="text-yellow-300 font-bold text-sm">✨ 3</div><div class="text-slate-400 text-[10px]">Shinies</div></div>
+          <div class="glass-card p-2"><div class="text-emerald-400 font-bold text-sm">245</div><div class="text-slate-400 text-[10px]">Battles Won</div></div>
+        </div>
+      </div>
+
+      <!-- SUB-SCREENS FOR TOP QUICK ACCESS BUTTONS -->
+      <!-- QUESTS SCREEN -->
+      <div id="screen-quests" class="space-y-3 hidden">
+        <h2 class="font-rajdhani font-bold text-xl text-white">📋 QUESTS</h2>
+        <div class="glass-card-gold p-3 flex justify-between items-center">
+          <div>
+            <div class="font-bold text-white text-xs">💬 Be active in chat</div>
+            <div class="text-[10px] text-emerald-400 font-semibold">1 / 1 COMPLETED</div>
+          </div>
+          <button onclick="claimReward(this, 300)" class="bg-emerald-400 text-slate-950 font-extrabold px-3 py-1.5 rounded-lg text-xs">CLAIM +300🪙</button>
+        </div>
+      </div>
+
+      <!-- MARKETPLACE SCREEN -->
+      <div id="screen-market" class="space-y-3 hidden">
+        <h2 class="font-rajdhani font-bold text-xl text-white">🏪 MARKETPLACE</h2>
+        <div class="glass-card p-2.5 flex items-center justify-between border-amber-400/40">
+          <div class="flex items-center space-x-2">
+            <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/25.png" class="w-9 h-9 object-contain">
+            <div>
+              <div class="font-bold text-amber-300 text-xs">✨ Shiny Pikachu</div>
+              <div class="text-[10px] text-slate-400">Lv. 31 · IV 96%</div>
+            </div>
+          </div>
+          <button onclick="buyMarketItem('Shiny Pikachu', 5000)" class="btn-gold px-3 py-1 rounded-lg text-xs">🪙 5,000</button>
+        </div>
+      </div>
+
+      <!-- EVENTS SCREEN -->
+      <div id="screen-events" class="space-y-3 hidden">
+        <h2 class="font-rajdhani font-bold text-xl text-white">🎪 SPECIAL EVENTS</h2>
+        <div class="glass-card-gold p-3.5 space-y-2 border-purple-500/40">
+          <h3 class="font-bold text-sm text-white">Mystery Spawn Frenzy!</h3>
+          <p class="text-xs text-amber-200">2× Shiny & Legendary Spawn Rate!</p>
+        </div>
+      </div>
+
+      <!-- GUILD SCREEN -->
+      <div id="screen-guild" class="space-y-3 hidden">
+        <h2 class="font-rajdhani font-bold text-xl text-white">🏰 GUILD HUB</h2>
+        <div class="glass-card-gold p-3.5 text-center">
+          <h3 class="font-bold text-base text-amber-300">Shadow Legends</h3>
+          <p class="text-xs text-slate-400">Lv. 12 Guild · 48/50 Members</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- GLOBAL BOTTOM NAVIGATION BAR (4 CORE TABS) -->
+    <div class="bg-[#0b0f1d] px-2 py-2 border-t border-amber-500/30 flex justify-around items-center shrink-0 text-xs z-30">
+      <button onclick="switchTab('home')" id="tab-home" class="flex flex-col items-center text-amber-400 font-bold">
+        <span class="text-lg">🏠</span><span class="text-[10px] mt-0.5">Home</span>
+      </button>
+      <button onclick="switchTab('pokemon')" id="tab-pokemon" class="flex flex-col items-center text-slate-400">
+        <span class="text-lg">🐾</span><span class="text-[10px] mt-0.5">Pokémon</span>
+      </button>
+      <button onclick="switchTab('battle')" id="tab-battle" class="flex flex-col items-center text-slate-400">
+        <span class="text-lg">⚔️</span><span class="text-[10px] mt-0.5">Battle</span>
+      </button>
+      <button onclick="switchTab('profile')" id="tab-profile" class="flex flex-col items-center text-slate-400">
+        <span class="text-lg">👤</span><span class="text-[10px] mt-0.5">Profile</span>
+      </button>
+    </div>
+
+  </div>
+
+  <!-- POKÉMON STATS MODAL DIALOG -->
+  <div id="pokeModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 hidden z-50">
+    <div class="glass-card-gold max-w-sm w-full p-4 relative overflow-hidden border-2 border-amber-400 shadow-2xl">
+      <button onclick="closePokeDetail()" class="absolute top-3 right-3 text-slate-400 hover:text-white font-bold text-sm bg-slate-900/80 w-6 h-6 rounded-full flex items-center justify-center">✕</button>
+      
+      <div class="flex items-center space-x-3 border-b border-white/10 pb-3">
+        <div class="w-16 h-16 bg-slate-900/90 rounded-2xl border border-amber-400 p-1 flex items-center justify-center">
+          <img id="modalImg" src="" class="w-full h-full object-contain poke-img-bounce">
+        </div>
+        <div>
+          <span id="modalRarity" class="bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[9px] font-extrabold px-2 py-0.5 rounded">RARITY</span>
+          <h3 id="modalName" class="font-rajdhani font-extrabold text-lg text-white mt-0.5">Pokémon Name</h3>
+          <div class="text-xs text-slate-400 flex space-x-2">
+            <span>Level: <strong id="modalLv" class="text-amber-300">30</strong></span>
+            <span>CP: <strong id="modalCP" class="text-amber-300">2500</strong></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-3 space-y-2 text-xs">
+        <div class="flex justify-between items-center text-[11px]">
+          <span>IV Perfection:</span>
+          <span id="modalIV" class="text-emerald-400 font-bold">96%</span>
+        </div>
+        <div class="w-full h-2 bg-slate-900 rounded-full overflow-hidden">
+          <div id="modalIVBar" class="h-full bg-gradient-to-r from-emerald-500 to-teal-300" style="width: 96%;"></div>
+        </div>
+      </div>
+
+      <button onclick="closePokeDetail(); triggerToast('Selected for Battle! ⚔️')" class="w-full btn-gold py-2 rounded-xl text-xs font-bold mt-4">
+        SELECT FOR BATTLE
+      </button>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION -->
+  <div id="toast" class="fixed top-16 left-1/2 -translate-x-1/2 bg-amber-400 text-slate-950 font-extrabold px-5 py-2.5 rounded-2xl text-xs shadow-2xl opacity-0 transition-all pointer-events-none z-50 border border-amber-300">
+    Notification
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

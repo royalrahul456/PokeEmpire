@@ -77,7 +77,7 @@ async def cmd_start(message: Message, db: AsyncSession):
 @router.message(Command("app", "miniapp", "play"))
 async def cmd_open_miniapp(message: Message):
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
-    webapp_url = getattr(config, "WEBAPP_URL", "https://pokeempire-app.web.app")
+    webapp_url = getattr(config, "WEBAPP_URL", "https://royalrahul456.github.io/PokeEmpire/webapp/")
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⚡ OPEN POKEEMPIRE MINI APP 🎮", web_app=WebAppInfo(url=webapp_url))]
     ])

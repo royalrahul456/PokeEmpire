@@ -6,7 +6,7 @@ import config
 def get_start_welcome_keyboard(bot_username: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="⚡ OPEN POKEEMPIRE MINI APP 🎮", web_app=WebAppInfo(url=getattr(config, "WEBAPP_URL", "https://pokeempire-app.web.app")))
+        InlineKeyboardButton(text="⚡ OPEN POKEEMPIRE MINI APP 🎮", web_app=WebAppInfo(url=getattr(config, "WEBAPP_URL", "https://royalrahul456.github.io/PokeEmpire/webapp/")))
     )
     builder.row(
         InlineKeyboardButton(text="👑 Owner", url="https://t.me/TheDarkKratosX"),
@@ -22,7 +22,7 @@ def get_dm_menu_keyboard() -> InlineKeyboardMarkup:
     """Generates the primary Hub menu keyboard for DMs."""
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="⚡ OPEN POKEEMPIRE MINI APP 🎮", web_app=WebAppInfo(url=getattr(config, "WEBAPP_URL", "https://pokeempire-app.web.app")))
+        InlineKeyboardButton(text="⚡ OPEN POKEEMPIRE MINI APP 🎮", web_app=WebAppInfo(url=getattr(config, "WEBAPP_URL", "https://royalrahul456.github.io/PokeEmpire/webapp/")))
     )
     builder.row(
         InlineKeyboardButton(text="👤 Profile", callback_data="dm_profile"),

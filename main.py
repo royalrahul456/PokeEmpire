@@ -170,16 +170,11 @@ async def register_bot_commands(bot: Bot):
         logger.error(f"Failed to register bot commands: {e}")
 
     try:
-        from aiogram.types import MenuButtonWebApp, WebAppInfo
-        await bot.set_chat_menu_button(
-            menu_button=MenuButtonWebApp(
-                text="🎮 PLAY POKEEMPIRE",
-                web_app=WebAppInfo(url=getattr(config, "WEBAPP_URL", "https://pokeempire-app.web.app"))
-            )
-        )
-        logger.info("✅ Set official Chat Menu Button for Telegram Mini App")
+        from aiogram.types import MenuButtonCommands
+        await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+        logger.info("✅ Reset Chat Menu Button to standard commands menu")
     except Exception as e:
-        logger.error(f"Failed to set chat menu button: {e}")
+        logger.error(f"Failed to reset chat menu button: {e}")
 
 def apply_auto_reply_patch():
     from aiogram.types import Message

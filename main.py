@@ -203,6 +203,9 @@ def apply_auto_reply_patch():
     logger.info("Applied global auto-reply monkey patch to Message class for group chats.")
 
 async def main():
+    # Start web health check server FIRST so Render detects port immediately
+    await start_dummy_server()
+    
     # Apply the global auto-reply patch for group chats
     apply_auto_reply_patch()
     
@@ -215,6 +218,11 @@ async def main():
     # Initialize Database tables and seeds
     await init_db()
     logger.info("Database initialized and seeded successfully.")
+
+    # Retroactively calculate trainer levels for old players
+    from utils.trainer_level import sync_retroactive_levels
+    async with SessionLocal() as db:
+        await sync_retroactive_levels(db)
 
     # Load dynamic admins and uploaders from database
     from database.models import GlobalSetting

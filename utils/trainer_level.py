@@ -92,3 +92,34 @@ async def log_transaction(user_id: int, amount: int, category: str, description:
         db.add(tx)
     except Exception as e:
         print(f"Error logging transaction: {e}")
+
+async def sync_retroactive_levels(db: AsyncSession):
+    """Calculates retroactive EXP and levels for old players based on their total catches."""
+    from sqlalchemy import select, func
+    from database.models import User, UserPokemon
+    
+    try:
+        users = (await db.execute(select(User))).scalars().all()
+        updated_count = 0
+        for u in users:
+            catches_stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == u.id)
+            total_catches = (await db.scalar(catches_stmt)) or 0
+            
+            if total_catches > 0:
+                retroactive_xp = total_catches * 60
+                u.trainer_xp = retroactive_xp
+                u.trainer_level = 1
+                
+                while True:
+                    req = get_xp_required_for_next_level(u.trainer_level)
+                    if u.trainer_xp >= req and u.trainer_level < 100:
+                        u.trainer_xp -= req
+                        u.trainer_level += 1
+                    else:
+                        break
+                updated_count += 1
+        
+        await db.commit()
+        print(f"[Retroactive Level Sync] Calculated levels & EXP for {updated_count} trainers based on catch history!", flush=True)
+    except Exception as e:
+        print(f"Error syncing retroactive levels: {e}", flush=True)

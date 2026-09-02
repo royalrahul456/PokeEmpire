@@ -27,6 +27,11 @@ def _format_db_url(url: str) -> str:
         db_url = db_url.replace("sslmode=prefer", "ssl=prefer")
         db_url = db_url.replace("sslmode=verify-full", "ssl=require")
         db_url = db_url.replace("sslmode=verify-ca", "ssl=require")
+    
+    if "channel_binding=" in db_url:
+        import re
+        db_url = re.sub(r'[&?]channel_binding=[^&]*', '', db_url)
+
     return db_url
 
 if os.path.exists(PERSISTENT_VOLUME) and os.path.isdir(PERSISTENT_VOLUME):

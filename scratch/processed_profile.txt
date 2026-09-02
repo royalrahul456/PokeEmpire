@@ -1,0 +1,37 @@
+╭──「 <tg-emoji emoji-id="5188344996356448758">🏆</tg-emoji> Trainer Profile 」
+├─➩ <tg-emoji emoji-id="5269563867305879894">🏓</tg-emoji> User: Rahul Pachute <tg-emoji emoji-id="5411590687663608498">⚡</tg-emoji>
+├─➩ 🆔 ID: <code>123456789</code>
+├─➩ <tg-emoji emoji-id="5287231198098117669">💰</tg-emoji> Balance: <code>1,500,000 coins</code>
+├─➩ <tg-emoji emoji-id="5411590687663608498">⚡</tg-emoji> Pokémon: 150 (Total Catches: 450)
+├─➩ 🌍 Pokédex: 150/1025 (14.634%)
+├─➩ <tg-emoji emoji-id="5203996991054432397">🎁</tg-emoji> Progress:
+╰         ▰▰▰▱▱▱▱▱▱▱
+
+╭─ Cover & Streaks ─
+├─➩ <tg-emoji emoji-id="5438496463044752972">⭐</tg-emoji> Favorite: <code>Charizard (Form 1)</code>
+├─➩ <tg-emoji emoji-id="5424972470023104089">🔥</tg-emoji> Current Streak: <code>5 days</code>
+├─➩ <tg-emoji emoji-id="5188344996356448758">🏆</tg-emoji> Best Streak: <code>12 days</code>
+╰───────────────────
+
+╭─ Rarity Breakdown ─
+├─➩ <tg-emoji emoji-id="5391014263852647327">⚪</tg-emoji>️ Common: 50
+├─➩ <tg-emoji emoji-id="5416081784641168838">🟢</tg-emoji> Uncommon: 40
+├─➩ <tg-emoji emoji-id="4965219701572503640">🔵</tg-emoji> Medium: 30
+├─➩ <tg-emoji emoji-id="5197368799954738967">🟣</tg-emoji> Rare: 20
+├─➩ <tg-emoji emoji-id="5244955049024581265">🔮</tg-emoji> Epic: 8
+├─➩ <tg-emoji emoji-id="5469741319330996757">🌟</tg-emoji> Legendary: 1
+├─➩ <tg-emoji emoji-id="5812392946917445652">🌌</tg-emoji> Mythical: 1
+├─➩ <tg-emoji emoji-id="5325547803936572038">✨</tg-emoji> Shiny: 5
+╰───────────────────
+
+╭─ Forms Breakdown ─
+├─➩ <tg-emoji emoji-id="5375464961822695044">🎬</tg-emoji> AMV / Art: 10
+├─➩ <tg-emoji emoji-id="5411590687663608498">⚡</tg-emoji> Dmax: 5
+├─➩ <tg-emoji emoji-id="5240492311716054039">💥</tg-emoji> Gmax: 2
+├─➩ <tg-emoji emoji-id="5825951969692357786">🌀</tg-emoji> Z-Move: 1
+├─➩ <tg-emoji emoji-id="5244955049024581265">🔮</tg-emoji> Terastal: 1
+╰───────────────────
+
+╭─ Global Rank ─
+├─➩ <tg-emoji emoji-id="5188344996356448758">🏆</tg-emoji> Position: #15
+╰───────────────────

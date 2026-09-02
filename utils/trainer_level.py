@@ -99,12 +99,13 @@ async def sync_retroactive_levels(db: AsyncSession):
     from database.models import User, UserPokemon
     
     try:
+        catches_stmt = select(UserPokemon.user_id, func.count(UserPokemon.id)).group_by(UserPokemon.user_id)
+        catch_counts = dict((await db.execute(catches_stmt)).all())
+        
         users = (await db.execute(select(User))).scalars().all()
         updated_count = 0
         for u in users:
-            catches_stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == u.id)
-            total_catches = (await db.scalar(catches_stmt)) or 0
-            
+            total_catches = catch_counts.get(u.id, 0)
             if total_catches > 0:
                 retroactive_xp = total_catches * 60
                 u.trainer_xp = retroactive_xp

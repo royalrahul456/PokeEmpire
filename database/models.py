@@ -45,7 +45,7 @@ class Pokemon(Base):
 class UserPokemon(Base):
     __tablename__ = "user_pokemon"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     pokemon_id = Column(Integer, ForeignKey("pokemon.id", ondelete="CASCADE"), nullable=False)
     nickname = Column(String(100), nullable=True)
@@ -97,7 +97,7 @@ class GlobalSetting(Base):
 class RedeemCode(Base):
     __tablename__ = "redeem_codes"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
     code = Column(String(50), unique=True, nullable=False)
     reward_type = Column(String(20), nullable=False)  # "coins" or "pokemon"
     reward_value = Column(Integer, nullable=True)     # coin amount or pokemon_id
@@ -112,9 +112,9 @@ class RedeemCode(Base):
 class RedeemClaim(Base):
     __tablename__ = "redeem_claims"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    code_id = Column(Integer, ForeignKey("redeem_codes.id", ondelete="CASCADE"), nullable=False)
+    code_id = Column(BigInteger, ForeignKey("redeem_codes.id", ondelete="CASCADE"), nullable=False)
     claimed_at = Column(DateTime, default=func.now(), nullable=False)
 
 
@@ -128,7 +128,7 @@ class PokemonFormMedia(Base):
 
 class PvpBattle(Base):
     __tablename__ = "pvp_battles"
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
     chat_id = Column(BigInteger, nullable=False)
     message_id = Column(BigInteger, nullable=False)
     challenger_id = Column(BigInteger, nullable=False)
@@ -143,7 +143,7 @@ class PvpBattle(Base):
 class Auction(Base):
     __tablename__ = "auctions"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
     seller_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     pokemon_id = Column(Integer, ForeignKey("pokemon.id", ondelete="CASCADE"), nullable=False)
     nickname = Column(String(100), nullable=True)
@@ -174,8 +174,8 @@ class Auction(Base):
 class AuctionBid(Base):
     __tablename__ = "auction_bids"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    auction_id = Column(Integer, ForeignKey("auctions.id", ondelete="CASCADE"), nullable=False)
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    auction_id = Column(BigInteger, ForeignKey("auctions.id", ondelete="CASCADE"), nullable=False)
     bidder_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     amount = Column(Integer, nullable=False)
     bid_at = Column(DateTime, default=func.now(), nullable=False)
@@ -205,7 +205,7 @@ class ChatMessageStat(Base):
 class Guild(Base):
     __tablename__ = "guilds"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
     name = Column(String(100), unique=True, nullable=False)
     tag = Column(String(10), unique=True, nullable=False)
     owner_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
@@ -219,8 +219,8 @@ class Guild(Base):
 class GuildMember(Base):
     __tablename__ = "guild_members"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    guild_id = Column(Integer, ForeignKey("guilds.id", ondelete="CASCADE"), nullable=False, index=True)
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    guild_id = Column(BigInteger, ForeignKey("guilds.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
     role = Column(String(20), default="member", nullable=False)  # "leader", "co_leader", "member"
     joined_at = Column(DateTime, default=func.now(), nullable=False)

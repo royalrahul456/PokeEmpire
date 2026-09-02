@@ -72,10 +72,20 @@ SEED_POKEMON = [
 ]
 
 async def init_db():
-    """Initialize the SQLite database, creating all tables and seeding Pokémon list if empty."""
-    async with engine.begin() as conn:
-        from database.models import User, Pokemon, UserPokemon, ActiveSpawn, GroupSetting, GlobalSetting, PokemonFormMedia, PvpBattle, Auction, AuctionBid, ChatMessageStat, Guild, GuildMember, TrainerQuest, TransactionHistory, MysteryEventState, BugReport
-        await conn.run_sync(Base.metadata.create_all)
+    """Initialize the database, creating all tables and seeding Pokémon list. Falls back to SQLite if cloud DB fails."""
+    global engine, SessionLocal
+    try:
+        async with engine.begin() as conn:
+            from database.models import User, Pokemon, UserPokemon, ActiveSpawn, GroupSetting, GlobalSetting, PokemonFormMedia, PvpBattle, Auction, AuctionBid, ChatMessageStat, Guild, GuildMember, TrainerQuest, TransactionHistory, MysteryEventState, BugReport
+            await conn.run_sync(Base.metadata.create_all)
+    except Exception as e:
+        print(f"⚠️ Primary Database connection failed ({e}). Falling back to local SQLite database...")
+        fallback_url = "sqlite+aiosqlite:///pokeempire.db"
+        engine = create_async_engine(fallback_url, connect_args={"check_same_thread": False}, pool_pre_ping=True)
+        SessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+        async with engine.begin() as conn:
+            from database.models import User, Pokemon, UserPokemon, ActiveSpawn, GroupSetting, GlobalSetting, PokemonFormMedia, PvpBattle, Auction, AuctionBid, ChatMessageStat, Guild, GuildMember, TrainerQuest, TransactionHistory, MysteryEventState, BugReport
+            await conn.run_sync(Base.metadata.create_all)
 
     # Run migrations for existing databases
     async with engine.begin() as conn:

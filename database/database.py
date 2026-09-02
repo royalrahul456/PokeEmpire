@@ -1,7 +1,17 @@
+import sys
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import declarative_base
 from sqlalchemy import select, text
 from config import DATABASE_URL
+
+def safe_print(msg: str):
+    try:
+        print(msg)
+    except Exception:
+        try:
+            print(msg.encode('ascii', 'ignore').decode('ascii'))
+        except Exception:
+            pass
 
 # Configure the Async Engine with pooling options for PostgreSQL / CockroachDB
 if "postgresql" in DATABASE_URL or "cockroachdb" in DATABASE_URL:
@@ -79,7 +89,7 @@ async def init_db():
             from database.models import User, Pokemon, UserPokemon, ActiveSpawn, GroupSetting, GlobalSetting, PokemonFormMedia, PvpBattle, Auction, AuctionBid, ChatMessageStat, Guild, GuildMember, TrainerQuest, TransactionHistory, MysteryEventState, BugReport
             await conn.run_sync(Base.metadata.create_all)
     except Exception as e:
-        print(f"⚠️ Primary Database connection failed ({e}). Falling back to local SQLite database...")
+        safe_print(f"⚠️ Primary Database connection failed ({e}). Falling back to local SQLite database...")
         fallback_url = "sqlite+aiosqlite:///pokeempire.db"
         engine = create_async_engine(fallback_url, connect_args={"check_same_thread": False}, pool_pre_ping=True)
         SessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
@@ -96,7 +106,7 @@ async def init_db():
                     await conn.execute(text(f"ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS {col} BOOLEAN DEFAULT true"))
                 else:
                     await conn.execute(text(f"ALTER TABLE group_settings ADD COLUMN {col} BOOLEAN DEFAULT true"))
-                print(f"✅ Migrated database: added {col} column to group_settings")
+                safe_print(f"✅ Migrated database: added {col} column to group_settings")
             except Exception:
                 pass
 
@@ -116,7 +126,7 @@ async def init_db():
                     await conn.execute(text(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col} {col_type}"))
                 else:
                     await conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {col_type}"))
-                print(f"✅ Migrated database: added {col} column to users")
+                safe_print(f"✅ Migrated database: added {col} column to users")
             except Exception:
                 pass
 
@@ -126,7 +136,7 @@ async def init_db():
                 await conn.execute(text("ALTER TABLE pokemon ADD COLUMN IF NOT EXISTS video_url VARCHAR(255)"))
             else:
                 await conn.execute(text("ALTER TABLE pokemon ADD COLUMN video_url VARCHAR(255)"))
-            print("✅ Migrated database: added video_url column to pokemon")
+            safe_print("✅ Migrated database: added video_url column to pokemon")
         except Exception:
             pass
 
@@ -137,7 +147,7 @@ async def init_db():
                     await conn.execute(text(f"ALTER TABLE pokemon ADD COLUMN IF NOT EXISTS {col} VARCHAR(255)"))
                 else:
                     await conn.execute(text(f"ALTER TABLE pokemon ADD COLUMN {col} VARCHAR(255)"))
-                print(f"✅ Migrated database: added {col} column to pokemon")
+                safe_print(f"✅ Migrated database: added {col} column to pokemon")
             except Exception:
                 pass
 
@@ -147,7 +157,7 @@ async def init_db():
                 await conn.execute(text("ALTER TABLE user_pokemon ADD COLUMN IF NOT EXISTS is_amv BOOLEAN DEFAULT false"))
             else:
                 await conn.execute(text("ALTER TABLE user_pokemon ADD COLUMN is_amv BOOLEAN DEFAULT false"))
-            print("✅ Migrated database: added is_amv column to user_pokemon")
+            safe_print("✅ Migrated database: added is_amv column to user_pokemon")
         except Exception:
             pass
 
@@ -156,7 +166,7 @@ async def init_db():
                 await conn.execute(text("ALTER TABLE user_pokemon ADD COLUMN IF NOT EXISTS form_index INTEGER DEFAULT 0"))
             else:
                 await conn.execute(text("ALTER TABLE user_pokemon ADD COLUMN form_index INTEGER DEFAULT 0"))
-            print("✅ Migrated database: added form_index column to user_pokemon")
+            safe_print("✅ Migrated database: added form_index column to user_pokemon")
         except Exception:
             pass
 
@@ -165,7 +175,7 @@ async def init_db():
                 await conn.execute(text("ALTER TABLE user_pokemon ADD COLUMN IF NOT EXISTS serial_number VARCHAR(20)"))
             else:
                 await conn.execute(text("ALTER TABLE user_pokemon ADD COLUMN serial_number VARCHAR(20)"))
-            print("✅ Migrated database: added serial_number column to user_pokemon")
+            safe_print("✅ Migrated database: added serial_number column to user_pokemon")
         except Exception:
             pass
 
@@ -175,7 +185,7 @@ async def init_db():
                 await conn.execute(text("ALTER TABLE redeem_codes ADD COLUMN IF NOT EXISTS reward_form_index INTEGER DEFAULT 0"))
             else:
                 await conn.execute(text("ALTER TABLE redeem_codes ADD COLUMN reward_form_index INTEGER DEFAULT 0"))
-            print("✅ Migrated database: added reward_form_index column to redeem_codes")
+            safe_print("✅ Migrated database: added reward_form_index column to redeem_codes")
         except Exception:
             pass
 
@@ -203,7 +213,7 @@ async def init_db():
                 
             await session.commit()
         except Exception as e:
-            print(f"⚠️ AMV migration error: {e}")
+            safe_print(f"⚠️ AMV migration error: {e}")
 
 
     # Seed the Pokémon table if empty
@@ -218,7 +228,7 @@ async def init_db():
             
             json_path = os.path.join(config.DATA_DIR, "pokemon_seeds.json")
             if os.path.exists(json_path):
-                print(f"🌱 Seeding Pokémon from backup file: {json_path}")
+                safe_print(f"🌱 Seeding Pokémon from backup file: {json_path}")
                 with open(json_path, "r", encoding="utf-8") as f:
                     poke_records = json.load(f)
                 for r in poke_records:
@@ -231,7 +241,7 @@ async def init_db():
                     )
                     session.add(db_poke)
             else:
-                print("🌱 Seeding fallback starter list...")
+                safe_print("🌱 Seeding fallback starter list...")
                 for p_id, name, rarity, gen in SEED_POKEMON:
                     img_url = f"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/{p_id}.png"
                     db_poke = Pokemon(
@@ -252,7 +262,7 @@ async def init_db():
                 "SELECT setval('user_pokemon_id_seq', "
                 "COALESCE((SELECT MAX(id) FROM user_pokemon), 0) + 1, false)"
             ))
-            print("✅ PostgreSQL sequences reset successfully")
+            safe_print("✅ PostgreSQL sequences reset successfully")
 
 async def get_db():
     """Dependency helper to retrieve an active database session."""

@@ -1,3 +1,4 @@
+import imghdr
 import asyncio
 import logging
 import sys

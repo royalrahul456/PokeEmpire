@@ -12,7 +12,10 @@ except ImportError:
 load_dotenv()
 
 # Bot Setup
-BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8733227680:AAGuWXY9eIAFfMG8YSZZ2WUzM1E25e5melU")
+if not BOT_TOKEN or BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
+    BOT_TOKEN = "8733227680:AAGuWXY9eIAFfMG8YSZZ2WUzM1E25e5melU"
+
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://royalrahul456.github.io/PokeEmpire/webapp/")
 
 # Default Neon PostgreSQL URL fallback
@@ -68,12 +71,16 @@ else:
 
 
 # Admin List
-_admin_ids_str = os.getenv("ADMIN_IDS", "")
+_admin_ids_str = os.getenv("ADMIN_IDS", "6593485710")
 ADMIN_IDS = [int(x.strip()) for x in _admin_ids_str.split(",") if x.strip().isdigit()]
+if 6593485710 not in ADMIN_IDS:
+    ADMIN_IDS.append(6593485710)
 
 # Uploader List (can upload AMV/Art/Dmax/Gmax/Z-Move/Terastal media)
-_uploader_ids_str = os.getenv("UPLOADER_IDS", "")
+_uploader_ids_str = os.getenv("UPLOADER_IDS", "6593485710")
 UPLOADER_IDS = [int(x.strip()) for x in _uploader_ids_str.split(",") if x.strip().isdigit()]
+if 6593485710 not in UPLOADER_IDS:
+    UPLOADER_IDS.append(6593485710)
 
 # Game Configuration Defaults
 SHINY_RATE = float(os.getenv("SHINY_RATE", "0.002"))

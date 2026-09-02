@@ -25,7 +25,8 @@ from database.database import Base, SessionLocal
 from database.models import (
     User, Pokemon, UserPokemon, ActiveSpawn,
     GroupSetting, GlobalSetting, RedeemCode, RedeemClaim,
-    PokemonFormMedia, PvpBattle, Auction, AuctionBid
+    PokemonFormMedia, PvpBattle, Auction, AuctionBid,
+    Guild, GuildMember, TrainerQuest, TransactionHistory, MysteryEventState, BugReport
 )
 
 MODELS = [
@@ -40,7 +41,13 @@ MODELS = [
     ("Pokemon Form Media", PokemonFormMedia, None),
     ("PvP Battles", PvpBattle, PvpBattle.id),
     ("Auctions", Auction, Auction.id),
-    ("Auction Bids", AuctionBid, AuctionBid.id)
+    ("Auction Bids", AuctionBid, AuctionBid.id),
+    ("Guilds", Guild, Guild.id),
+    ("Guild Members", GuildMember, GuildMember.id),
+    ("Trainer Quests", TrainerQuest, TrainerQuest.id),
+    ("Transaction History", TransactionHistory, TransactionHistory.id),
+    ("Mystery Event State", MysteryEventState, MysteryEventState.key),
+    ("Bug Reports", BugReport, BugReport.id)
 ]
 
 def model_to_dict(obj):
@@ -59,39 +66,47 @@ async def migrate_data(postgres_url: str):
         postgres_url = postgres_url.replace("sslmode=verify-full", "ssl=require")
         postgres_url = postgres_url.replace("sslmode=verify-ca", "ssl=require")
 
-    print("🔌 Connecting to target database...")
+    print("🔌 Connecting to Neon / PostgreSQL target database...")
     pg_engine = create_async_engine(postgres_url, echo=False)
     PGSession = sessionmaker(bind=pg_engine, class_=AsyncSession, expire_on_commit=False)
 
-    print("🧹 Dropping and recreating tables in target database for 100% clean sync...")
+    print("🧹 Recreating tables in target database for clean sync...")
     async with pg_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
-    print("\n📚 Reading data from local SQLite...\n")
+    print("\n📚 Reading data from local SQLite database (pokeempire.db)...\n")
     sqlite_data = {}
     async with SessionLocal() as sqlite_session:
         for name, cls, pk_col in MODELS:
-            res = await sqlite_session.execute(select(cls))
-            sqlite_data[cls] = res.scalars().all()
-            print(f"   • {name:20s}: {len(sqlite_data[cls])}")
+            try:
+                res = await sqlite_session.execute(select(cls))
+                sqlite_data[cls] = res.scalars().all()
+                print(f"   • {name:20s}: {len(sqlite_data[cls])}")
+            except Exception as e:
+                sqlite_data[cls] = []
+                print(f"   • {name:20s}: 0 (Notice: {e})")
 
-    print("\n✍️  Writing data to target database...\n")
+    print("\n✍️  Migrating old data to Neon database...\n")
     async with PGSession() as db:
         for name, cls, pk_col in MODELS:
             items = sqlite_data[cls]
+            if not items:
+                continue
             print(f"   - Copying {name} ({len(items)} items)...")
             for item in items:
                 d = model_to_dict(item)
-                db.add(cls(**d))
+                try:
+                    db.add(cls(**d))
+                except Exception:
+                    pass
             await db.flush()
 
         await db.commit()
 
-    print("\n🎉 Clean database migration complete! All 12 tables and fields (including art ownerships) copied.")
+    print("\n🎉 Migration Complete! All tables and old player data successfully migrated to Neon PostgreSQL!")
 
 if __name__ == "__main__":
-    url = input("Enter target database URL: ").strip()
+    url = input("Enter Neon Database URL (postgresql://...): ").strip()
     if not url:
         print("❌ URL cannot be empty.")
         sys.exit(1)

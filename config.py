@@ -1,5 +1,12 @@
 import os
+import sys
 from dotenv import load_dotenv
+
+# Polyfill imghdr for Python 3.13+ compatibility
+try:
+    import imghdr
+except ImportError:
+    import imghdr  # Will import imghdr.py polyfill in current directory
 
 # Load variables from .env file
 load_dotenv()
@@ -8,9 +15,18 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://royalrahul456.github.io/PokeEmpire/webapp/")
 
+# Default Neon PostgreSQL URL fallback
+NEON_DB_URL = "postgresql://neondb_owner:npg_eanbgOJq19Kv@ep-weathered-cell-ad5waxtl-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require"
+
 # Check if we are running in Render with persistent volume mount
 PERSISTENT_VOLUME = "/app/data_volume"
-_raw_db_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///pokeempire.db")
+_env_db = os.getenv("DATABASE_URL", "")
+
+# Auto-migrate away from expired CockroachDB URLs or empty DATABASE_URL
+if not _env_db or "cockroachlabs" in _env_db or _env_db == "sqlite+aiosqlite:///pokeempire.db":
+    _raw_db_url = NEON_DB_URL
+else:
+    _raw_db_url = _env_db
 
 def _format_db_url(url: str) -> str:
     if url.startswith("sqlite+aiosqlite:///"):

@@ -92,7 +92,14 @@ class DbSessionMiddleware:
             data["db"] = session
             return await handler(event, data)
 
+_dummy_server_running = False
+
 async def start_dummy_server():
+    global _dummy_server_running
+    if _dummy_server_running:
+        return
+    _dummy_server_running = True
+
     import os
     from aiohttp import web
     port = int(os.getenv("PORT", "8000"))

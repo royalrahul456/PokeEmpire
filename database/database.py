@@ -86,7 +86,7 @@ async def init_db():
     global engine, SessionLocal
     try:
         async with engine.begin() as conn:
-            from database.models import User, Pokemon, UserPokemon, ActiveSpawn, GroupSetting, GlobalSetting, PokemonFormMedia, PvpBattle, Auction, AuctionBid, ChatMessageStat, Guild, GuildMember, TrainerQuest, TransactionHistory, MysteryEventState, BugReport
+            from database.models import User, Pokemon, UserPokemon, ActiveSpawn, GroupSetting, GlobalSetting, PokemonFormMedia, PvpBattle, Auction, AuctionBid, ChatMessageStat, Guild, GuildMember, TrainerQuest, TransactionHistory, MysteryEventState, BugReport, RedeemCode, RedeemClaim
             await conn.run_sync(Base.metadata.create_all)
     except Exception as e:
         safe_print(f"⚠️ Primary Database connection failed ({e}). Falling back to local SQLite database...")
@@ -94,7 +94,7 @@ async def init_db():
         engine = create_async_engine(fallback_url, connect_args={"check_same_thread": False}, pool_pre_ping=True)
         SessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
         async with engine.begin() as conn:
-            from database.models import User, Pokemon, UserPokemon, ActiveSpawn, GroupSetting, GlobalSetting, PokemonFormMedia, PvpBattle, Auction, AuctionBid, ChatMessageStat, Guild, GuildMember, TrainerQuest, TransactionHistory, MysteryEventState, BugReport
+            from database.models import User, Pokemon, UserPokemon, ActiveSpawn, GroupSetting, GlobalSetting, PokemonFormMedia, PvpBattle, Auction, AuctionBid, ChatMessageStat, Guild, GuildMember, TrainerQuest, TransactionHistory, MysteryEventState, BugReport, RedeemCode, RedeemClaim
             await conn.run_sync(Base.metadata.create_all)
 
     # Run migrations for existing databases in a single fast batched query

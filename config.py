@@ -12,24 +12,13 @@ except ImportError:
 load_dotenv()
 
 # Bot Setup
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8733227680:AAGuWXY9eIAFfMG8YSZZ2WUzM1E25e5melU")
-if not BOT_TOKEN or BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
-    BOT_TOKEN = "8733227680:AAGuWXY9eIAFfMG8YSZZ2WUzM1E25e5melU"
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://royalrahul456.github.io/PokeEmpire/webapp/")
 
-# Default Neon PostgreSQL URL fallback
-NEON_DB_URL = "postgresql://neondb_owner:npg_eanbgOJq19Kv@ep-weathered-cell-ad5waxtl-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require"
-
 # Check if we are running in Render with persistent volume mount
 PERSISTENT_VOLUME = "/app/data_volume"
-_env_db = os.getenv("DATABASE_URL", "")
-
-# Auto-migrate away from expired CockroachDB URLs or empty DATABASE_URL
-if not _env_db or "cockroachlabs" in _env_db or _env_db == "sqlite+aiosqlite:///pokeempire.db":
-    _raw_db_url = NEON_DB_URL
-else:
-    _raw_db_url = _env_db
+_raw_db_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///pokeempire.db")
 
 def _format_db_url(url: str) -> str:
     if url.startswith("sqlite+aiosqlite:///"):

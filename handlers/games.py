@@ -47,7 +47,7 @@ async def cmd_daily(message: Message, db: AsyncSession):
         db.add(user)
         await db.flush()
 
-    now = datetime.now()
+    now = datetime.utcnow()
     if user.last_daily_at:
         cooldown = timedelta(hours=24)
         elapsed = now - user.last_daily_at
@@ -223,7 +223,7 @@ async def cmd_spin(message: Message, db: AsyncSession):
         db.add(user)
         await db.flush()
 
-    now = datetime.now()
+    now = datetime.utcnow()
     if user.last_spin_at:
         cooldown = timedelta(hours=4)
         elapsed = now - user.last_spin_at
@@ -1332,7 +1332,7 @@ async def cb_play_daily(callback: CallbackQuery, db: AsyncSession):
         db.add(user)
         await db.flush()
 
-    now = datetime.now()
+    now = datetime.utcnow()
     if user.last_daily_at:
         cooldown = timedelta(hours=24)
         elapsed = now - user.last_daily_at
@@ -1376,7 +1376,7 @@ async def cb_play_spin(callback: CallbackQuery, db: AsyncSession):
         db.add(user)
         await db.flush()
 
-    now = datetime.now()
+    now = datetime.utcnow()
     if user.last_spin_at:
         cooldown = timedelta(hours=4)
         elapsed = now - user.last_spin_at

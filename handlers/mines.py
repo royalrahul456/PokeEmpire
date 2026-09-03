@@ -1,5 +1,6 @@
 import random
 import math
+import html
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
@@ -8,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from database.models import User
 import config
-from utils.formatters import escape_md
 
 router = Router()
 
@@ -160,7 +160,7 @@ async def cmd_mines(message: Message, db: AsyncSession):
 
     text = (
         f"💣 <b>MINES GAME STARTED</b> 💣\n"
-        f"<blockquote>👤 Trainer: <b>{escape_md(game_state['nickname'])}</b>\n"
+        f"<blockquote>👤 Trainer: <b>{html.escape(game_state['nickname'])}</b>\n"
         f"💰 Bet: <b>{bet} coins</b>\n"
         f"💣 Mines: <b>{mines_count} 💣</b>\n"
         f"📈 Multiplier: <b>1.0x</b></blockquote>\n"
@@ -206,7 +206,7 @@ async def cb_mines_reveal(callback: CallbackQuery, db: AsyncSession):
         
         text = (
             f"💥 <b>BOOM! GAME OVER</b> 💥\n"
-            f"<blockquote>👤 Trainer: <b>{escape_md(game['nickname'])}</b>\n"
+            f"<blockquote>👤 Trainer: <b>{html.escape(game['nickname'])}</b>\n"
             f"💣 Hit Tile: <b>#{cell_idx + 1}</b>\n"
             f"💸 Lost Bet: <b>-{game['bet']} coins</b>\n"
             f"💰 New Balance: <b>💰 {bal} coins</b></blockquote>"
@@ -246,7 +246,7 @@ async def cb_mines_reveal(callback: CallbackQuery, db: AsyncSession):
             
         text = (
             f"🏆 <b>MAXIMUM WIN!</b> 🏆\n"
-            f"<blockquote>👤 Trainer: <b>{escape_md(game['nickname'])}</b>\n"
+            f"<blockquote>👤 Trainer: <b>{html.escape(game['nickname'])}</b>\n"
             f"🌟 Result: <b>Cleared all safe tiles!</b>\n"
             f"📈 Multiplier: <b>{multiplier}x</b>\n"
             f"💰 Earnings: <b>+{win_amt} coins</b>\n"
@@ -261,7 +261,7 @@ async def cb_mines_reveal(callback: CallbackQuery, db: AsyncSession):
     win_amt = int(game["bet"] * multiplier)
     text = (
         f"💣 <b>MINES GAME</b> 💣\n"
-        f"<blockquote>👤 Trainer: <b>{escape_md(game['nickname'])}</b>\n"
+        f"<blockquote>👤 Trainer: <b>{html.escape(game['nickname'])}</b>\n"
         f"💰 Bet: <b>{game['bet']} coins</b>\n"
         f"💣 Mines: <b>{mines_count} 💣</b>\n"
         f"💎 Diamonds: <b>{revealed_count} 💎</b>\n"

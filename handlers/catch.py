@@ -217,6 +217,7 @@ async def cmd_catch(message: Message, db: AsyncSession):
             time_taken = max(1, int((now_time - spawn_time).total_seconds()))
 
         # 4. Format and send detailed card message (Message 2)
+        import html
         shiny_badge = "✨ Shiny " if is_shiny else ""
         poke_display = pokemon.name.title()
         r_emoji = get_rarity_emoji(pokemon.rarity)
@@ -226,7 +227,7 @@ async def cmd_catch(message: Message, db: AsyncSession):
             shiny_upgrade_text = "\n🍀 ✨ <b>Shiny Charm Activated!</b> catch upgraded to <b>Shiny</b>! ✨"
 
         msg2_text = (
-            f"💥 🌟 <b>{escape_md(user_nickname)}</b> caught!{shiny_upgrade_text}\n\n"
+            f"💥 🌟 <b>{html.escape(user_nickname)}</b> caught!{shiny_upgrade_text}\n\n"
             f"<blockquote>⛔ <b>NAME:</b> {poke_display}\n"
             f"🎦 <b>ANIME:</b> Gen {pokemon.generation}\n"
             f"{r_emoji} <b>RARITY:</b> {r_emoji} {pokemon.rarity}\n"

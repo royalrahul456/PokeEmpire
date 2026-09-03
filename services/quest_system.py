@@ -5,7 +5,7 @@ from typing import Dict, Any, List, Tuple, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 import config
-from database.models import User, UserQuest, Inventory
+from database.models import User, TrainerQuest
 
 class QuestSystem:
     def __init__(self):

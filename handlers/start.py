@@ -13,6 +13,7 @@ from keyboards.inline import (
     get_admin_menu_keyboard,
     get_uploader_menu_keyboard
 )
+import html
 from utils.formatters import get_hp_bar, get_progress_bar, get_rarity_emoji, escape_md
 from utils.settings import (
     send_cover_media, 
@@ -292,7 +293,7 @@ async def cb_dm_home(callback: CallbackQuery, db: AsyncSession):
             f"⚡ <b>POKÉEMPIRE CREATOR DASHBOARD</b> ⚡\n"
             f"💎 <i>Master Control & Operations Center</i>\n"
             f"───────────────────────────────\n"
-            f"👑 Welcome back, Creator <b>{escape_md(nickname)}</b>!\n\n"
+            f"👑 Welcome back, Creator <b>{html.escape(nickname)}</b>!\n\n"
             f"<blockquote>📊 <b>REAL-TIME SYSTEM METRICS</b>\n"
             f"• 👥 Total Trainers: <code>{total_users:,}</code>\n"
             f"• ⚡ Total Pokémon Caught: <code>{total_catches:,}</code>\n"
@@ -315,7 +316,7 @@ async def cb_dm_home(callback: CallbackQuery, db: AsyncSession):
             f"📤 <b>POKÉEMPIRE UPLOADER CONSOLE</b> 📤\n"
             f"✨ <i>Media Management Hub</i>\n"
             f"───────────────────────────────\n"
-            f"✨ Welcome, Uploader <b>{escape_md(nickname)}</b>!\n\n"
+            f"✨ Welcome, Uploader <b>{html.escape(nickname)}</b>!\n\n"
             f"<blockquote>📋 <b>UPLOADER PRIVILEGES</b>\n"
             f"• <code>/setpokemedia &lt;name/id&gt;</code> — Set photo/video/AMV media\n"
             f"• <code>/medialist</code> — View active uploaded media assets</blockquote>\n\n"
@@ -343,7 +344,7 @@ async def cb_dm_home(callback: CallbackQuery, db: AsyncSession):
             f"⚡ <b>POKÉEMPIRE HUB</b> ⚡\n"
             f"✨ <i>Your Ultimate Pokémon Companion</i>\n"
             f"───────────────────────────────\n"
-            f"👋 Welcome, Trainer <b>{escape_md(nickname)}</b>!\n\n"
+            f"👋 Welcome, Trainer <b>{html.escape(nickname)}</b>!\n\n"
             f"<blockquote>🎒 <b>TRAINER QUICK STATS</b>\n"
             f"• 💳 Coin Balance: <code>💰 {user.coins:,} coins</code>\n"
             f"• 🏆 Caught Collection: <code>{user_catches:,} Pokémon</code>\n"
@@ -1121,7 +1122,7 @@ async def refresh_admin_console(callback: CallbackQuery, chat_id: int, db: Async
     text = (
         f"⚙️ <b>POKÉEMPIRE ADMIN CONSOLE</b> ⚙️\n"
         f"───────────────────────────────\n"
-        f"Configure the bot settings in group <b>{escape_md(group_name)}</b>:\n"
+        f"Configure the bot settings in group <b>{html.escape(group_name)}</b>:\n"
         f"• 🌳 Wild Spawns: <b>{spawn_status}</b>\n"
         f"• 📈 Spawn Frequency: every <b>{gs.spawn_threshold} messages</b>\n"
         f"• ✏️ Word Scribble: <b>{scribble_status}</b>\n"

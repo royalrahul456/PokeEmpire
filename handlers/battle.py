@@ -241,6 +241,13 @@ async def cb_pvp_accept(callback: CallbackQuery, db: AsyncSession):
         await callback.answer()
         return
 
+    if bet > 0:
+        challenger.coins -= bet
+        opponent.coins -= bet
+        from utils.trainer_level import log_transaction
+        await log_transaction(challenger_id, -bet, "PVP_BET", f"PvP Battle Wager vs {opponent.nickname or opponent.id}", db)
+        await log_transaction(opponent_id, -bet, "PVP_BET", f"PvP Battle Wager vs {challenger.nickname or challenger.id}", db)
+
     # Create PvpBattle record
     battle = PvpBattle(
         chat_id=callback.message.chat.id,
@@ -630,6 +637,8 @@ async def run_battle_simulation(bot: Bot, battle_id: int):
         if bet > 0:
             pot = 2 * bet
             winner_user.coins += pot
+            from utils.trainer_level import log_transaction
+            await log_transaction(winner_id, pot, "PVP_WIN", f"Won PvP Battle Pot ({pot} coins)", db)
             await db.commit()
             win_msg = f"🏆 **{winner_name} wins the battle and takes the pot of 🪙 {pot:,} Coins!**"
         else:

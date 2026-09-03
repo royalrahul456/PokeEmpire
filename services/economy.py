@@ -6,7 +6,7 @@ from typing import Dict, Any, Tuple, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import config
-from database.models import User, Inventory
+from database.models import User, UserPokemon
 
 class EconomySystem:
     def __init__(self):

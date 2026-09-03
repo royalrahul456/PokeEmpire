@@ -50,6 +50,27 @@ QUEST_DEFINITIONS = {
     }
 }
 
+def check_and_reset_quest(quest: TrainerQuest) -> bool:
+    """Resets daily or weekly quest if it was created/last reset before the current period."""
+    if not quest or not quest.created_at:
+        return False
+    now = datetime.utcnow()
+    need_reset = False
+    
+    if quest.period == "daily":
+        if quest.created_at.date() < now.date():
+            need_reset = True
+    elif quest.period == "weekly":
+        if quest.created_at.isocalendar()[:2] < now.isocalendar()[:2]:
+            need_reset = True
+            
+    if need_reset:
+        quest.progress = 0
+        quest.is_claimed = False
+        quest.created_at = now
+        return True
+    return False
+
 async def update_quest_progress(user_id: int, quest_key: str, increment: int, db: AsyncSession):
     """Increments progress for a specific quest key for user_id."""
     if quest_key not in QUEST_DEFINITIONS:
@@ -70,10 +91,12 @@ async def update_quest_progress(user_id: int, quest_key: str, increment: int, db
             progress=increment,
             target=q_def["target"],
             period=q_def["period"],
-            is_claimed=False
+            is_claimed=False,
+            created_at=datetime.utcnow()
         )
         db.add(quest)
     else:
+        check_and_reset_quest(quest)
         if not quest.is_claimed and quest.progress < quest.target:
             quest.progress = min(quest.target, quest.progress + increment)
             
@@ -88,15 +111,19 @@ async def build_quests_payload(user_id: int, db: AsyncSession):
             TrainerQuest.quest_key == qk
         )
         res = await db.execute(stmt)
-        if not res.scalar_one_or_none():
+        q_item = res.scalar_one_or_none()
+        if not q_item:
             db.add(TrainerQuest(
                 user_id=user_id,
                 quest_key=qk,
                 progress=0,
                 target=qdef["target"],
                 period=qdef["period"],
-                is_claimed=False
+                is_claimed=False,
+                created_at=datetime.utcnow()
             ))
+        else:
+            check_and_reset_quest(q_item)
     await db.commit()
 
     stmt = select(TrainerQuest).where(TrainerQuest.user_id == user_id)

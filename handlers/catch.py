@@ -39,10 +39,13 @@ async def cmd_catch(message: Message, db: AsyncSession):
             await message.answer("⚠️ There are no active wild Pokémon here! Keep chatting to spawn one.")
         return
 
-    # 2. Fetch Pokémon details
-    poke_stmt = select(Pokemon).where(Pokemon.id == spawn.pokemon_id)
-    poke_res = await db.execute(poke_stmt)
-    pokemon = poke_res.scalar_one()
+    # 2. Fetch Pokémon details from instant in-memory cache
+    from utils.pokemon_cache import get_cached_pokemon_by_id
+    pokemon = get_cached_pokemon_by_id(spawn.pokemon_id)
+    if not pokemon:
+        poke_stmt = select(Pokemon).where(Pokemon.id == spawn.pokemon_id)
+        poke_res = await db.execute(poke_stmt)
+        pokemon = poke_res.scalar_one()
     pokemon_name = pokemon.name  # Save as plain string before any try/rollback
     pokemon_id = pokemon.id
     pokemon_rarity = pokemon.rarity

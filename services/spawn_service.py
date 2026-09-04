@@ -41,16 +41,11 @@ class SpawnService:
                 weights = [probs.get(r, RARITY_PROBABILITIES.get(r, 0)) for r in rarities]
                 selected_rarity = random.choices(rarities, weights=weights, k=1)[0]
 
-            # 2. Query Pokémon matching that rarity tier
-            stmt = select(Pokemon).where(Pokemon.rarity == selected_rarity)
-            res = await db.execute(stmt)
-            pokemon_list = res.scalars().all()
-
-            # Fallback in case DB seeding hasn't completed
+            # 2. Get Pokémon from in-memory cache
+            from utils.pokemon_cache import get_cached_pokemon_by_rarity, get_all_cached_pokemon
+            pokemon_list = get_cached_pokemon_by_rarity(selected_rarity)
             if not pokemon_list:
-                stmt = select(Pokemon)
-                res = await db.execute(stmt)
-                pokemon_list = res.scalars().all()
+                pokemon_list = get_all_cached_pokemon()
                 if not pokemon_list:
                     return False
 

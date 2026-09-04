@@ -227,6 +227,11 @@ async def main():
     await init_db()
     logger.info("Database initialized and seeded successfully.")
 
+    # Initialize sub-millisecond in-memory Pokemon Cache
+    from utils.pokemon_cache import init_pokemon_cache
+    async with SessionLocal() as db:
+        await init_pokemon_cache(db)
+
     # Retroactively calculate trainer levels for old players
     from utils.trainer_level import sync_retroactive_levels
     async with SessionLocal() as db:

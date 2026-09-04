@@ -46,8 +46,8 @@ class UserPokemon(Base):
     __tablename__ = "user_pokemon"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    pokemon_id = Column(Integer, ForeignKey("pokemon.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    pokemon_id = Column(Integer, ForeignKey("pokemon.id", ondelete="CASCADE"), nullable=False, index=True)
     nickname = Column(String(100), nullable=True)
     is_shiny = Column(Boolean, default=False, nullable=False)
     is_amv = Column(Boolean, default=False, nullable=False)
@@ -144,8 +144,8 @@ class Auction(Base):
     __tablename__ = "auctions"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    seller_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    pokemon_id = Column(Integer, ForeignKey("pokemon.id", ondelete="CASCADE"), nullable=False)
+    seller_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    pokemon_id = Column(Integer, ForeignKey("pokemon.id", ondelete="CASCADE"), nullable=False, index=True)
     nickname = Column(String(100), nullable=True)
     is_shiny = Column(Boolean, default=False, nullable=False)
     is_amv = Column(Boolean, default=False, nullable=False)
@@ -162,7 +162,7 @@ class Auction(Base):
     current_bid = Column(Integer, default=0, nullable=False)
     expires_at = Column(DateTime, nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)
-    status = Column(String(20), default="ACTIVE", nullable=False)  # "ACTIVE", "COMPLETED", "CANCELLED"
+    status = Column(String(20), default="ACTIVE", nullable=False, index=True)  # "ACTIVE", "COMPLETED", "CANCELLED"
     channel_message_id = Column(BigInteger, nullable=True)
     channel_chat_id = Column(BigInteger, nullable=True)
 
@@ -175,8 +175,8 @@ class AuctionBid(Base):
     __tablename__ = "auction_bids"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    auction_id = Column(BigInteger, ForeignKey("auctions.id", ondelete="CASCADE"), nullable=False)
-    bidder_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    auction_id = Column(BigInteger, ForeignKey("auctions.id", ondelete="CASCADE"), nullable=False, index=True)
+    bidder_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     amount = Column(Integer, nullable=False)
     bid_at = Column(DateTime, default=func.now(), nullable=False)
 

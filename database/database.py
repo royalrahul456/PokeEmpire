@@ -17,10 +17,14 @@ def safe_print(msg: str):
 if "postgresql" in DATABASE_URL or "cockroachdb" in DATABASE_URL:
     engine = create_async_engine(
         DATABASE_URL,
+        connect_args={
+            "statement_cache_size": 0,
+            "prepared_statement_cache_size": 0
+        },
         pool_size=20,
         max_overflow=30,
-        pool_recycle=1800,
-        pool_timeout=30,
+        pool_recycle=300,
+        pool_timeout=15,
         pool_pre_ping=True
     )
 else:

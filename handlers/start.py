@@ -820,14 +820,11 @@ def is_renaming(message: Message) -> bool:
 @router.message(Command("ping"))
 async def cmd_ping(message: Message, db: AsyncSession):
     import time
-    from datetime import datetime, timezone
     
-    start_time = time.time()
-    sent_message = await message.reply("🏓 <b>Pinging...</b>", parse_mode="HTML")
-    latency_ms = int((time.time() - start_time) * 1000)
-    transit_latency = int((datetime.now(timezone.utc) - message.date).total_seconds() * 1000)
+    t0 = time.time()
     
-    db_status = "Connected (CockroachDB)"
+    # 1. DB Latency (using warm active session)
+    db_status = "Connected"
     try:
         from sqlalchemy import text as sa_text
         db_start = time.time()
@@ -836,6 +833,11 @@ async def cmd_ping(message: Message, db: AsyncSession):
         db_status = f"🟢 Connected ({db_ms}ms)"
     except Exception:
         db_status = "🔴 Error"
+
+    t1 = time.time()
+    sent_message = await message.reply("🏓 <b>Pinging...</b>", parse_mode="HTML")
+    api_ms = int((time.time() - t1) * 1000)
+    transit_ms = max(1, int((time.time() - t0) * 1000) - api_ms)
 
     cpu_usage = "N/A"
     ram_usage = "N/A"
@@ -851,8 +853,8 @@ async def cmd_ping(message: Message, db: AsyncSession):
         f"⚡ <b>POKÉEMPIRE SYSTEM PING</b> ⚡\n"
         f"◈ ────────────────── ◈\n"
         f"🚀 <b>Release:</b> <code>v3.0 Mega Update</code>\n"
-        f"📡 <b>API Latency:</b> <code>{latency_ms}ms</code>\n"
-        f"⚡ <b>Transit Latency:</b> <code>{max(0, transit_latency)}ms</code>\n"
+        f"📡 <b>API Latency:</b> <code>{api_ms}ms</code>\n"
+        f"⚡ <b>Transit Latency:</b> <code>{transit_ms}ms</code>\n"
         f"💾 <b>Database:</b> {db_status}\n"
         f"⚙️ <b>CPU Usage:</b> <code>{cpu_usage}</code>\n"
         f"🧠 <b>RAM Usage:</b> <code>{ram_usage}</code>\n"

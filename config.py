@@ -104,11 +104,25 @@ AUCTION_CHANNEL = os.getenv("AUCTION_CHANNEL", "@PokeEmpireAuctions")
 
 # Telegram Custom Emoji IDs for Native Inline Buttons (configurable)
 CUSTOM_EMOJI_IDS = {
-    "add_to_group": os.getenv("EMOJI_ADD_TO_GROUP", "5382164415019768638"),
-    "updates": os.getenv("EMOJI_UPDATES", "5411199759740325999"),
-    "support": os.getenv("EMOJI_SUPPORT", "5203996991054432397"),
-    "help": os.getenv("EMOJI_HELP", "5436113877181941026"),
-    "stats": os.getenv("EMOJI_STATS", "5231200819986047254")
+    "add_to_group": os.getenv("EMOJI_ADD_TO_GROUP", "5372926953978341366"), # 👥 / ➕
+    "updates": os.getenv("EMOJI_UPDATES", "5789428375261023681"),          # 📢
+    "support": os.getenv("EMOJI_SUPPORT", "5377599075237502153"),          # 🎫 / 🎟️
+    "help": os.getenv("EMOJI_HELP", "5436113877181941026"),                # ❓
+    "stats": os.getenv("EMOJI_STATS", "5231200819986047254"),               # 📊
+    "profile": os.getenv("EMOJI_PROFILE", "5373012449597335010"),          # 👤
+    "pokedex": os.getenv("EMOJI_POKEDEX", "5188344996356448758"),          # 🏆
+    "quests": os.getenv("EMOJI_QUESTS", "5453991094435997597"),            # ⚔️
+    "guilds": os.getenv("EMOJI_GUILDS", "5449918202718985124"),            # 🏰
+    "bag": os.getenv("EMOJI_BAG", "5409234219496907243"),                  # 🎒
+    "leaderboard": os.getenv("EMOJI_LEADERBOARD", "5282950412784117735"),  # 📈
+    "battle": os.getenv("EMOJI_BATTLE", "5251203410396458957"),            # 🛡️
+    "trade": os.getenv("EMOJI_TRADE", "6122764622509380932"),              # 🔄
+    "redeem": os.getenv("EMOJI_REDEEM", "5203996991054432397"),            # 🎁
+    "shop": os.getenv("EMOJI_SHOP", "5312361253610475399"),                # 🛒
+    "games": os.getenv("EMOJI_GAMES", "5255765065096774716"),              # 🎰
+    "streak": os.getenv("EMOJI_STREAK", "5424972470023104089"),            # 🔥
+    "panel": os.getenv("EMOJI_PANEL", "5433758796289685818"),              # 👑
+    "tools": os.getenv("EMOJI_TOOLS", "5461047575379466857")               # 🛠️
 }
 
 # Native Telegram Button Color Styles ("primary" = blue, "success" = green, "danger" = red)
@@ -117,6 +131,20 @@ BUTTON_STYLES = {
     "updates": os.getenv("STYLE_UPDATES", "primary"),
     "support": os.getenv("STYLE_SUPPORT", "primary"),
     "help": os.getenv("STYLE_HELP", "danger"),
-    "stats": os.getenv("STYLE_STATS", "success")
+    "stats": os.getenv("STYLE_STATS", "success"),
+    "profile": "primary",
+    "pokedex": "success",
+    "quests": "danger",
+    "guilds": "primary",
+    "bag": "success",
+    "leaderboard": "primary",
+    "battle": "danger",
+    "trade": "primary",
+    "redeem": "success",
+    "shop": "primary",
+    "games": "primary",
+    "streak": "danger",
+    "panel": "danger",
+    "tools": "primary"
 }
 

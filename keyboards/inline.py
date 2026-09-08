@@ -60,38 +60,38 @@ def get_start_welcome_keyboard(bot_username: str) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 def get_dm_menu_keyboard() -> InlineKeyboardMarkup:
-    """Generates the primary Hub menu keyboard for DMs."""
+    """Generates the primary Hub menu keyboard for DMs with native custom emojis & color styles."""
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="👤 Profile", callback_data="dm_profile"),
-        InlineKeyboardButton(text="🏆 Pokédex", callback_data="dm_dex_1")
+        create_styled_button(text="Profile", key="profile", callback_data="dm_profile"),
+        create_styled_button(text="Pokédex", key="pokedex", callback_data="dm_dex_1")
     )
     builder.row(
-        InlineKeyboardButton(text="⚔️ Quests", callback_data="refresh_quests"),
-        InlineKeyboardButton(text="🏰 Guilds", callback_data="dm_guild_info")
+        create_styled_button(text="Quests", key="quests", callback_data="refresh_quests"),
+        create_styled_button(text="Guilds", key="guilds", callback_data="dm_guild_info")
     )
     builder.row(
-        InlineKeyboardButton(text="📜 Transactions", callback_data="dm_transactions"),
-        InlineKeyboardButton(text="🎒 My Bag", callback_data="dm_bag_1")
+        create_styled_button(text="Transactions", key="history", callback_data="dm_transactions"),
+        create_styled_button(text="My Bag", key="bag", callback_data="dm_bag_1")
     )
     builder.row(
-        InlineKeyboardButton(text="📊 Leaderboard", callback_data="dm_leaderboard"),
-        InlineKeyboardButton(text="🛡️ Battle", callback_data="dm_battle_menu")
+        create_styled_button(text="Leaderboard", key="leaderboard", callback_data="dm_leaderboard"),
+        create_styled_button(text="Battle Arena", key="battle", callback_data="dm_battle_menu")
     )
     builder.row(
-        InlineKeyboardButton(text="🔄 Trade", callback_data="dm_trade_info"),
-        InlineKeyboardButton(text="🎁 Redeem", callback_data="dm_redeem_info")
+        create_styled_button(text="Trade", key="trade", callback_data="dm_trade_info"),
+        create_styled_button(text="Redeem Code", key="redeem", callback_data="dm_redeem_info")
     )
     builder.row(
-        InlineKeyboardButton(text="🛒 Shop", callback_data="dm_shop"),
-        InlineKeyboardButton(text="🎮 Games Center", callback_data="dm_games")
+        create_styled_button(text="Shop", key="shop", callback_data="dm_shop"),
+        create_styled_button(text="Games Center", key="games", callback_data="dm_games")
     )
     builder.row(
-        InlineKeyboardButton(text="🔥 Streak", callback_data="dm_streak"),
-        InlineKeyboardButton(text="📈 Chat Rankings", callback_data="dm_rankings_info")
+        create_styled_button(text="Streak", key="streak", callback_data="dm_streak"),
+        create_styled_button(text="Chat Rankings", key="stats", callback_data="dm_rankings_info")
     )
     builder.row(
-        InlineKeyboardButton(text="❓ Guide", callback_data="dm_help")
+        create_styled_button(text="Help & Guide", key="help", callback_data="dm_help")
     )
     return builder.as_markup()
 

@@ -34,13 +34,19 @@ def _format_db_url(url: str) -> str:
         return url
     db_url = url
 
+    # Clean up any previously duplicated port fragments
+    while ":6543:6543" in db_url or ":6543:5432" in db_url or ":5432:6543" in db_url:
+        db_url = db_url.replace(":6543:6543", ":6543")
+        db_url = db_url.replace(":6543:5432", ":6543")
+        db_url = db_url.replace(":5432:6543", ":6543")
+
     # Auto-convert direct IPv6 host to IPv4 pooler host for cloud hosts like Render
     if "db.dlxlqrerxplqevvutgsn.supabase.co" in db_url:
-        db_url = db_url.replace("db.dlxlqrerxplqevvutgsn.supabase.co", "aws-0-ap-southeast-2.pooler.supabase.com:6543")
+        db_url = db_url.replace("db.dlxlqrerxplqevvutgsn.supabase.co", "aws-0-ap-southeast-2.pooler.supabase.com")
         db_url = db_url.replace("postgres:rahulmahadevpachpute", "postgres.dlxlqrerxplqevvutgsn:rahulmahadevpachpute")
-        db_url = db_url.replace(":5432", ":6543")
 
-    if "pooler.supabase.com" in db_url and ":5432" in db_url:
+    # Force port 6543 for Supabase pooler
+    if "pooler.supabase.com" in db_url:
         db_url = db_url.replace(":5432", ":6543")
 
     if "cockroachlabs" in db_url:

@@ -12,6 +12,8 @@ from utils.formatters import get_hp_bar, get_progress_bar, get_rarity_emoji, esc
 from utils.favorite import get_favorite_id, set_favorite_id
 from utils.settings import send_cover_media, get_custom_cover, get_custom_rarity_forms, get_all_custom_rarities
 
+from keyboards.inline import create_styled_button
+
 router = Router()
 
 FORM_INDEX_MAP = {
@@ -1326,7 +1328,7 @@ async def get_leaderboard_text(lb_type: str, db: AsyncSession) -> str:
                 select(User.username, User.nickname, func.count(UserPokemon.id).label("total_catches"))
                 .join(UserPokemon, UserPokemon.user_id == User.id)
                 .where(User.id != bot_id)
-                .group_by(User.id)
+                .group_by(User.id, User.username, User.nickname)
                 .order_by(desc(func.count(UserPokemon.id)))
                 .limit(10)
             )
@@ -1334,7 +1336,7 @@ async def get_leaderboard_text(lb_type: str, db: AsyncSession) -> str:
             catches_stmt = (
                 select(User.username, User.nickname, func.count(UserPokemon.id).label("total_catches"))
                 .join(UserPokemon, UserPokemon.user_id == User.id)
-                .group_by(User.id)
+                .group_by(User.id, User.username, User.nickname)
                 .order_by(desc(func.count(UserPokemon.id)))
                 .limit(10)
             )
@@ -1347,14 +1349,14 @@ async def get_leaderboard_text(lb_type: str, db: AsyncSession) -> str:
             for idx, row in enumerate(catches_data):
                 rank = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx + 1}."
                 display_name = f"@{html.escape(row.username)}" if row.username else f"{html.escape(row.nickname or 'Trainer')}"
-                text += f"{rank} {display_name}  -> {row.total_catches}\n"
+                text += f"{rank} {display_name}  -> {row.total_catches:,}\n"
             text += "</blockquote>"
         else:
             text += "• <i>No catches registered yet.</i>"
             
     elif lb_type == "streak":
         from utils.streak import get_top_streaks
-        top_users = await get_top_streaks(10)
+        top_users = await get_top_streaks(10, db)
         
         text = "🏆 <b>TOP 10 — Streaks</b>\n\n"
         if top_users:
@@ -1392,9 +1394,9 @@ async def get_leaderboard_text(lb_type: str, db: AsyncSession) -> str:
 def get_leaderboard_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="🏆 Pokémon", callback_data="lb_type_catches"),
-        InlineKeyboardButton(text="💰 Coins", callback_data="lb_type_coins"),
-        InlineKeyboardButton(text="🔥 Streak", callback_data="lb_type_streak")
+        create_styled_button(text="🏆 Pokémon", key="pokedex", style="success", callback_data="lb_type_catches"),
+        create_styled_button(text="💰 Coins", key="claim", style="primary", callback_data="lb_type_coins"),
+        create_styled_button(text="🔥 Streak", key="streak", style="danger", callback_data="lb_type_streak")
     )
     return builder.as_markup()
 
@@ -1425,12 +1427,12 @@ async def cb_leaderboard_type(callback: CallbackQuery, db: AsyncSession):
     
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="🏆 Pokémon", callback_data="lb_type_catches_dm" if is_dm else "lb_type_catches"),
-        InlineKeyboardButton(text="💰 Coins", callback_data="lb_type_coins_dm" if is_dm else "lb_type_coins"),
-        InlineKeyboardButton(text="🔥 Streak", callback_data="lb_type_streak_dm" if is_dm else "lb_type_streak")
+        create_styled_button(text="🏆 Pokémon", key="pokedex", style="success", callback_data="lb_type_catches_dm" if is_dm else "lb_type_catches"),
+        create_styled_button(text="💰 Coins", key="claim", style="primary", callback_data="lb_type_coins_dm" if is_dm else "lb_type_coins"),
+        create_styled_button(text="🔥 Streak", key="streak", style="danger", callback_data="lb_type_streak_dm" if is_dm else "lb_type_streak")
     )
     if is_dm:
-        builder.row(InlineKeyboardButton(text="🔙 Back to Hub Menu", callback_data="dm_home"))
+        builder.row(create_styled_button(text="Back to Hub Menu", key="back", style="primary", callback_data="dm_home"))
         
     try:
         await callback.message.edit_caption(

@@ -2040,11 +2040,11 @@ async def cb_dm_leaderboard(callback: CallbackQuery, db: AsyncSession):
     
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="🏆 Pokémon", callback_data="lb_type_catches_dm"),
-        InlineKeyboardButton(text="💰 Coins", callback_data="lb_type_coins_dm"),
-        InlineKeyboardButton(text="🔥 Streak", callback_data="lb_type_streak_dm")
+        create_styled_button(text="🏆 Pokémon", key="pokedex", style="success", callback_data="lb_type_catches_dm"),
+        create_styled_button(text="💰 Coins", key="claim", style="primary", callback_data="lb_type_coins_dm"),
+        create_styled_button(text="🔥 Streak", key="streak", style="danger", callback_data="lb_type_streak_dm")
     )
-    builder.row(InlineKeyboardButton(text="🔙 Back to Hub Menu", callback_data="dm_home"))
+    builder.row(create_styled_button(text="Back to Hub Menu", key="back", style="primary", callback_data="dm_home"))
     
     try:
         await callback.message.edit_caption(

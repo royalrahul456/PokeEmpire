@@ -9,6 +9,7 @@ import asyncio
 import html
 from database.models import GroupSetting, User, Pokemon, UserPokemon, ActiveSpawn
 from utils.formatters import get_progress_bar, get_rarity_emoji, escape_md
+from utils.settings import send_safe_media
 
 router = Router()
 
@@ -702,21 +703,15 @@ async def cmd_gift_pokemon(message: Message, db: AsyncSession):
         f"💝 Pokémon: {pokemon_display}</blockquote>"
     )
 
-    import os
-    from aiogram.types import FSInputFile
-    if isinstance(media_value, str) and os.path.exists(media_value):
-        media_value = FSInputFile(media_value)
-
-    try:
-        if media_type == "video":
-            await message.answer_video(video=media_value, caption=caption, parse_mode="HTML")
-        elif media_type == "animation":
-            await message.answer_animation(animation=media_value, caption=caption, parse_mode="HTML")
-        else:
-            await message.answer_photo(photo=media_value, caption=caption, parse_mode="HTML")
-    except Exception as e:
-        print(f"Error sending gifted pokemon media: {e}")
-        await message.answer(caption, parse_mode="HTML")
+    await send_safe_media(
+        bot=message.bot,
+        chat_id=message.chat.id,
+        media_type=media_type,
+        media_value=media_value,
+        caption=caption,
+        parse_mode="HTML",
+        message_to_reply=message
+    )
 
     # Send private DM to recipient
     dm_text = (

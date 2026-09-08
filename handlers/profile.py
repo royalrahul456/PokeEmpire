@@ -10,7 +10,7 @@ from sqlalchemy.orm import joinedload
 from database.models import User, UserPokemon, Pokemon
 from utils.formatters import get_hp_bar, get_progress_bar, get_rarity_emoji, escape_md
 from utils.favorite import get_favorite_id, set_favorite_id
-from utils.settings import send_cover_media, get_custom_cover, get_custom_rarity_forms, get_all_custom_rarities
+from utils.settings import send_cover_media, get_custom_cover, get_custom_rarity_forms, get_all_custom_rarities, send_safe_media
 
 from keyboards.inline import create_styled_button
 
@@ -223,33 +223,16 @@ async def get_player_cover_media(user_id: int, db: AsyncSession) -> tuple[str, s
 
 async def send_player_cover(chat_id: int, user_id: int, caption: str, reply_markup, bot, db: AsyncSession, message_to_reply=None):
     media_type, media_value = await get_player_cover_media(user_id, db)
-    
-    from aiogram.types import FSInputFile
-    if isinstance(media_value, str) and os.path.exists(media_value):
-        media_value = FSInputFile(media_value)
-        
-    try:
-        if message_to_reply:
-            if media_type == "video":
-                return await message_to_reply.answer_video(video=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
-            elif media_type == "animation":
-                return await message_to_reply.answer_animation(animation=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
-            else:
-                return await message_to_reply.answer_photo(photo=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
-        else:
-            if media_type == "video":
-                return await bot.send_video(chat_id, video=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
-            elif media_type == "animation":
-                return await bot.send_animation(chat_id, animation=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
-            else:
-                return await bot.send_photo(chat_id, photo=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
-    except Exception as e:
-        print(f"Error sending player cover media: {e}")
-        # Final fallback: text only
-        if message_to_reply:
-            return await message_to_reply.answer(caption, reply_markup=reply_markup, parse_mode="HTML")
-        else:
-            return await bot.send_message(chat_id, caption, reply_markup=reply_markup, parse_mode="HTML")
+    return await send_safe_media(
+        bot=bot,
+        chat_id=chat_id,
+        media_type=media_type,
+        media_value=media_value,
+        caption=caption,
+        reply_markup=reply_markup,
+        parse_mode="HTML",
+        message_to_reply=message_to_reply
+    )
 
 async def edit_player_cover_message(callback: CallbackQuery, user_id: int, caption: str, reply_markup, db: AsyncSession, parse_mode="HTML"):
     media_type, media_value = await get_player_cover_media(user_id, db)

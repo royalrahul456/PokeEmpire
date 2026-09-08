@@ -11,7 +11,7 @@ from sqlalchemy import select, func
 import config
 from database.models import User, Pokemon, UserPokemon, RedeemCode, RedeemClaim
 from utils.formatters import escape_md, get_progress_bar, get_rarity_emoji
-from utils.settings import get_custom_rarity_forms
+from utils.settings import get_custom_rarity_forms, send_safe_media
 
 router = Router()
 redeem_process_lock = asyncio.Lock()
@@ -517,21 +517,15 @@ async def cmd_gen(message: Message, db: AsyncSession):
                 media_type, media_value = parse_stored_media_value(pokemon.video_url)
                 
         # Send media
-        from aiogram.types import FSInputFile
-        if isinstance(media_value, str) and os.path.exists(media_value):
-            media_value = FSInputFile(media_value)
-            
-        sent_msg = None
-        try:
-            if media_type == "video":
-                sent_msg = await message.answer_video(video=media_value, caption=caption, parse_mode="HTML")
-            elif media_type == "animation":
-                sent_msg = await message.answer_animation(animation=media_value, caption=caption, parse_mode="HTML")
-            else:
-                sent_msg = await message.answer_photo(photo=media_value, caption=caption, parse_mode="HTML")
-        except Exception as e:
-            print(f"Error sending redeem code media: {e}")
-            sent_msg = await message.answer(caption, parse_mode="HTML")
+        sent_msg = await send_safe_media(
+            bot=message.bot,
+            chat_id=message.chat.id,
+            media_type=media_type,
+            media_value=media_value,
+            caption=caption,
+            parse_mode="HTML",
+            message_to_reply=message
+        )
             
         if sent_msg:
             try:

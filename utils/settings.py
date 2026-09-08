@@ -3,8 +3,10 @@ import json
 from sqlalchemy import select, update, delete
 from database.database import SessionLocal
 from database.models import GroupSetting, GlobalSetting
+from typing import Any, Optional
 from aiogram import Bot
-from aiogram.types import FSInputFile
+from aiogram.types import FSInputFile, Message
+from aiogram.exceptions import TelegramBadRequest
 
 # Settings & Media cache
 scribble_settings_cache = {}
@@ -190,6 +192,80 @@ async def delete_custom_cover(key: str):
         await db.execute(stmt)
         await db.commit()
 
+async def send_safe_media(
+    bot: Bot,
+    chat_id: int,
+    media_type: Optional[str],
+    media_value: Any,
+    caption: Optional[str] = None,
+    reply_markup: Any = None,
+    parse_mode: str = "HTML",
+    message_to_reply: Optional[Message] = None
+) -> Message:
+    """
+    Safely sends media (photo, video, animation) with automatic type fallback.
+    If a video file_id is stored but Telegram considers it a photo (or vice versa),
+    it retries with alternative media types before falling back to plain text.
+    """
+    if not media_value:
+        if message_to_reply:
+            return await message_to_reply.answer(text=caption or "", reply_markup=reply_markup, parse_mode=parse_mode)
+        return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=reply_markup, parse_mode=parse_mode)
+
+    if isinstance(media_value, str) and os.path.exists(media_value):
+        media_value = FSInputFile(media_value)
+
+    primary = (media_type or "photo").lower()
+    if primary == "video":
+        attempts = ["video", "photo", "animation"]
+    elif primary == "animation":
+        attempts = ["animation", "video", "photo"]
+    else:
+        attempts = ["photo", "video", "animation"]
+
+    last_error = None
+    for mtype in attempts:
+        try:
+            if message_to_reply:
+                if mtype == "video":
+                    return await message_to_reply.answer_video(video=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+                elif mtype == "animation":
+                    return await message_to_reply.answer_animation(animation=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+                else:
+                    return await message_to_reply.answer_photo(photo=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+            else:
+                if mtype == "video":
+                    return await bot.send_video(chat_id=chat_id, video=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+                elif mtype == "animation":
+                    return await bot.send_animation(chat_id=chat_id, animation=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+                else:
+                    return await bot.send_photo(chat_id=chat_id, photo=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+        except TelegramBadRequest as e:
+            err_msg = str(e).lower()
+            if any(p in err_msg for p in ["can't use file of type", "wrong file type", "failed to get http url", "wrong type", "invalid file"]):
+                print(f"⚠️ send_safe_media: {mtype} failed with '{e}'. Trying fallback media type...")
+                last_error = e
+                continue
+            last_error = e
+            print(f"⚠️ send_safe_media TelegramBadRequest on {mtype}: {e}")
+            break
+        except Exception as e:
+            last_error = e
+            print(f"⚠️ send_safe_media error on {mtype}: {e}")
+            continue
+
+    # Final fallback: plain text message
+    try:
+        if message_to_reply:
+            return await message_to_reply.answer(text=caption or "", reply_markup=reply_markup, parse_mode=parse_mode)
+        return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=reply_markup, parse_mode=parse_mode)
+    except Exception as e:
+        print(f"❌ send_safe_media text fallback failed: {e}")
+        if last_error:
+            raise last_error
+        raise e
+
+
 async def send_cover_media(chat_id: int, key: str, caption: str, reply_markup, bot: Bot, default_url=None, default_file=None, parse_mode="HTML"):
     """Sends the configured custom media (photo, video, or animation) or falls back to defaults."""
     media_type, media_value = get_custom_cover(key)
@@ -198,30 +274,20 @@ async def send_cover_media(chat_id: int, key: str, caption: str, reply_markup, b
         # Fallback to default
         if default_file and os.path.exists(default_file):
             media_type = "photo"
-            media_value = FSInputFile(default_file)
+            media_value = default_file
         elif default_url:
             media_type = "photo"
             media_value = default_url
-        else:
-            # Fallback text if no media
-            return await bot.send_message(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
 
-    # If it is a string representing a local path, wrap it in FSInputFile
-    if isinstance(media_value, str) and os.path.exists(media_value):
-        media_value = FSInputFile(media_value)
-
-    try:
-        if media_type == "photo":
-            return await bot.send_photo(chat_id, photo=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
-        elif media_type == "video":
-            return await bot.send_video(chat_id, video=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
-        elif media_type == "animation":
-            return await bot.send_animation(chat_id, animation=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
-        else:
-            return await bot.send_message(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
-    except Exception as e:
-        print(f"Error sending cover media: {e}. Falling back to default message...")
-        return await bot.send_message(chat_id, caption, reply_markup=reply_markup, parse_mode=parse_mode)
+    return await send_safe_media(
+        bot=bot,
+        chat_id=chat_id,
+        media_type=media_type,
+        media_value=media_value,
+        caption=caption,
+        reply_markup=reply_markup,
+        parse_mode=parse_mode
+    )
 
 
 async def get_all_custom_rarities(db) -> dict:

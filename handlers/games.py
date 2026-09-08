@@ -20,7 +20,8 @@ from utils.settings import (
     is_scribble_enabled, 
     set_scribble_status, 
     is_nameguess_enabled, 
-    set_nameguess_status
+    set_nameguess_status,
+    send_safe_media
 )
 from keyboards.inline import get_back_to_hub_keyboard, create_styled_button
 
@@ -192,20 +193,15 @@ async def cmd_claim(message: Message, db: AsyncSession):
         if selected_pokemon.image_url:
             media_type, media_value = parse_stored_media_value(selected_pokemon.image_url)
             
-    from aiogram.types import FSInputFile
-    if isinstance(media_value, str) and os.path.exists(media_value):
-        media_value = FSInputFile(media_value)
-        
-    try:
-        if media_type == "video":
-            await message.answer_video(video=media_value, caption=text, parse_mode="HTML")
-        elif media_type == "animation":
-            await message.answer_animation(animation=media_value, caption=text, parse_mode="HTML")
-        else:
-            await message.answer_photo(photo=media_value, caption=text, parse_mode="HTML")
-    except Exception as e:
-        print(f"Error sending claimed pokemon media: {e}")
-        await message.answer(text, parse_mode="HTML")
+    await send_safe_media(
+        bot=message.bot,
+        chat_id=message.chat.id,
+        media_type=media_type,
+        media_value=media_value,
+        caption=text,
+        parse_mode="HTML",
+        message_to_reply=message
+    )
 
 @router.message(Command("spin"))
 async def cmd_spin(message: Message, db: AsyncSession):

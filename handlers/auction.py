@@ -11,7 +11,7 @@ import time
 from datetime import datetime, timedelta
 from database.models import User, Pokemon, UserPokemon, Auction, AuctionBid
 from utils.formatters import get_rarity_emoji
-from utils.settings import get_custom_rarity_forms, get_all_custom_rarities
+from utils.settings import get_custom_rarity_forms, get_all_custom_rarities, send_safe_media
 from handlers.admin import get_single_form_media_value, parse_stored_media_value
 
 router = Router()
@@ -446,12 +446,14 @@ async def send_auction_settlement_channel_report(bot: Bot, db: AsyncSession, auc
             elif resolved_form == 1 and pokemon.video_url:
                 media_type, media_value = parse_stored_media_value(pokemon.video_url)
 
-        if media_type == "video":
-            await bot.send_video(chat_id=channel_id, video=media_value, caption=caption_text, parse_mode="HTML")
-        elif media_type == "animation":
-            await bot.send_animation(chat_id=channel_id, animation=media_value, caption=caption_text, parse_mode="HTML")
-        else:
-            await bot.send_photo(chat_id=channel_id, photo=media_value, caption=caption_text, parse_mode="HTML")
+        await send_safe_media(
+            bot=bot,
+            chat_id=channel_id,
+            media_type=media_type,
+            media_value=media_value,
+            caption=caption_text,
+            parse_mode="HTML"
+        )
 
     except Exception as report_err:
         print(f"⚠️ Failed to post settlement report to {config.AUCTION_CHANNEL}: {report_err}")
@@ -677,30 +679,15 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
     kb = get_auction_keyboard(auction.id, message.from_user.id)
 
     try:
-        if media_type == "video":
-            auc_msg = await message.bot.send_video(
-                chat_id=message.chat.id,
-                video=media_value,
-                caption=caption,
-                reply_markup=kb.as_markup(),
-                parse_mode="HTML"
-            )
-        elif media_type == "animation":
-            auc_msg = await message.bot.send_animation(
-                chat_id=message.chat.id,
-                animation=media_value,
-                caption=caption,
-                reply_markup=kb.as_markup(),
-                parse_mode="HTML"
-            )
-        else:
-            auc_msg = await message.bot.send_photo(
-                chat_id=message.chat.id,
-                photo=media_value,
-                caption=caption,
-                reply_markup=kb.as_markup(),
-                parse_mode="HTML"
-            )
+        auc_msg = await send_safe_media(
+            bot=message.bot,
+            chat_id=message.chat.id,
+            media_type=media_type,
+            media_value=media_value,
+            caption=caption,
+            reply_markup=kb.as_markup(),
+            parse_mode="HTML"
+        )
 
         auction.channel_message_id = auc_msg.message_id
         auction.channel_chat_id = message.chat.id
@@ -1113,30 +1100,15 @@ async def cmd_cancel_auction(message: Message, db: AsyncSession):
                 kb = get_auction_keyboard(next_auction.id, next_auction.seller_id)
                 
                 try:
-                    if media_type == "video":
-                        auc_msg = await message.bot.send_video(
-                            chat_id=next_auction.channel_chat_id,
-                            video=media_value,
-                            caption=caption,
-                            reply_markup=kb.as_markup(),
-                            parse_mode="HTML"
-                        )
-                    elif media_type == "animation":
-                        auc_msg = await message.bot.send_animation(
-                            chat_id=next_auction.channel_chat_id,
-                            animation=media_value,
-                            caption=caption,
-                            reply_markup=kb.as_markup(),
-                            parse_mode="HTML"
-                        )
-                    else:
-                        auc_msg = await message.bot.send_photo(
-                            chat_id=next_auction.channel_chat_id,
-                            photo=media_value,
-                            caption=caption,
-                            reply_markup=kb.as_markup(),
-                            parse_mode="HTML"
-                        )
+                    auc_msg = await send_safe_media(
+                        bot=message.bot,
+                        chat_id=next_auction.channel_chat_id,
+                        media_type=media_type,
+                        media_value=media_value,
+                        caption=caption,
+                        reply_markup=kb.as_markup(),
+                        parse_mode="HTML"
+                    )
                     
                     next_auction.channel_message_id = auc_msg.message_id
                     await db.commit()
@@ -1398,30 +1370,15 @@ async def auction_settlement_worker(bot: Bot):
                             kb = get_auction_keyboard(next_auction.id, next_auction.seller_id)
                             
                             try:
-                                if media_type == "video":
-                                    auc_msg = await bot.send_video(
-                                        chat_id=next_auction.channel_chat_id,
-                                        video=media_value,
-                                        caption=caption,
-                                        reply_markup=kb.as_markup(),
-                                        parse_mode="HTML"
-                                    )
-                                elif media_type == "animation":
-                                    auc_msg = await bot.send_animation(
-                                        chat_id=next_auction.channel_chat_id,
-                                        animation=media_value,
-                                        caption=caption,
-                                        reply_markup=kb.as_markup(),
-                                        parse_mode="HTML"
-                                    )
-                                else:
-                                    auc_msg = await bot.send_photo(
-                                        chat_id=next_auction.channel_chat_id,
-                                        photo=media_value,
-                                        caption=caption,
-                                        reply_markup=kb.as_markup(),
-                                        parse_mode="HTML"
-                                    )
+                                auc_msg = await send_safe_media(
+                                    bot=bot,
+                                    chat_id=next_auction.channel_chat_id,
+                                    media_type=media_type,
+                                    media_value=media_value,
+                                    caption=caption,
+                                    reply_markup=kb.as_markup(),
+                                    parse_mode="HTML"
+                                )
                                 
                                 next_auction.channel_message_id = auc_msg.message_id
                                 await db.commit()

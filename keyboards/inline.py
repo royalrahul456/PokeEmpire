@@ -16,45 +16,38 @@ def get_start_welcome_keyboard(bot_username: str) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 def get_dm_menu_keyboard() -> InlineKeyboardMarkup:
-    """Generates the primary Hub menu keyboard for DMs with vibrant color badges."""
+    """Generates the primary Hub menu keyboard for DMs."""
     builder = InlineKeyboardBuilder()
-    
-    # Optional Mini App button for full HTML/CSS colored UI
-    if config.WEBAPP_URL:
-        builder.row(
-            InlineKeyboardButton(text="⚡ Open PokeEmpire Mini App", web_app=WebAppInfo(url=config.WEBAPP_URL))
-        )
-        
     builder.row(
-        InlineKeyboardButton(text="🔵 Profile", callback_data="dm_profile"),
-        InlineKeyboardButton(text="🟡 Pokédex", callback_data="dm_dex_1")
+        InlineKeyboardButton(text="👤 Profile", callback_data="dm_profile"),
+        InlineKeyboardButton(text="🏆 Pokédex", callback_data="dm_dex_1")
     )
     builder.row(
-        InlineKeyboardButton(text="🔴 Quests", callback_data="refresh_quests"),
-        InlineKeyboardButton(text="🟣 Guilds", callback_data="dm_guild_info")
+        InlineKeyboardButton(text="⚔️ Quests", callback_data="refresh_quests"),
+        InlineKeyboardButton(text="🏰 Guilds", callback_data="dm_guild_info")
     )
     builder.row(
-        InlineKeyboardButton(text="🟢 History", callback_data="dm_transactions"),
+        InlineKeyboardButton(text="📜 Transactions", callback_data="dm_transactions"),
         InlineKeyboardButton(text="🎒 My Bag", callback_data="dm_bag_1")
     )
     builder.row(
-        InlineKeyboardButton(text="📈 Leaderboard", callback_data="dm_leaderboard"),
-        InlineKeyboardButton(text="⚔️ Battle Arena", callback_data="dm_battle_menu")
+        InlineKeyboardButton(text="📊 Leaderboard", callback_data="dm_leaderboard"),
+        InlineKeyboardButton(text="🛡️ Battle", callback_data="dm_battle_menu")
     )
     builder.row(
         InlineKeyboardButton(text="🔄 Trade", callback_data="dm_trade_info"),
         InlineKeyboardButton(text="🎁 Redeem", callback_data="dm_redeem_info")
     )
     builder.row(
-        InlineKeyboardButton(text="💎 Shop", callback_data="dm_shop"),
-        InlineKeyboardButton(text="🎰 Games Center", callback_data="dm_games")
+        InlineKeyboardButton(text="🛂 Shop", callback_data="dm_shop"),
+        InlineKeyboardButton(text="🎮 Games Center", callback_data="dm_games")
     )
     builder.row(
         InlineKeyboardButton(text="🔥 Streak", callback_data="dm_streak"),
-        InlineKeyboardButton(text="📊 Chat Rankings", callback_data="dm_rankings_info")
+        InlineKeyboardButton(text="📈 Chat Rankings", callback_data="dm_rankings_info")
     )
     builder.row(
-        InlineKeyboardButton(text="❓ Help & Guide", callback_data="dm_help")
+        InlineKeyboardButton(text="❓ Guide", callback_data="dm_help")
     )
     return builder.as_markup()
 

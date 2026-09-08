@@ -1,0 +1,218 @@
+[
+  {
+    "chat_id": -10099999,
+    "message_counter": 0,
+    "spawn_threshold": 52,
+    "enabled": true,
+    "scribble_enabled": true,
+    "nameguess_enabled": true
+  },
+  {
+    "chat_id": -1004422537257,
+    "message_counter": 0,
+    "spawn_threshold": 100,
+    "enabled": true,
+    "scribble_enabled": true,
+    "nameguess_enabled": true
+  },
+  {
+    "chat_id": -1004324168564,
+    "message_counter": 0,
+    "spawn_threshold": 100,
+    "enabled": true,
+    "scribble_enabled": true,
+    "nameguess_enabled": true
+  },
+  {
+    "chat_id": -1004441222762,
+    "message_counter": 49,
+    "spawn_threshold": 30,
+    "enabled": true,
+    "scribble_enabled": true,
+    "nameguess_enabled": true
+  },
+  {
+    "chat_id": -1003011159639,
+    "message_counter": 0,
+    "spawn_threshold": 84,
+    "enabled": true,
+    "scribble_enabled": true,
+    "nameguess_enabled": true
+  },
+  {
+    "chat_id": -5384589090,
+    "message_counter": 0,
+    "spawn_threshold": 30,
+    "enabled": true,
+    "scribble_enabled": true,
+    "nameguess_enabled": true
+  },
+  {
+    "chat_id": -1003786275835,
+    "message_counter": 26,
+    "spawn_threshold": 80,
+    "enabled": true,
+    "scribble_enabled": true,
+    "nameguess_enabled": true
+  },
+  {
+    "chat_id": -1003616974453,
+    "message_counter": 3,
+    "spawn_threshold": 30,
+    "enabled": true,
+    "scribble_enabled": true,
+    "nameguess_enabled": true
+  },
+  {
+    "chat_id": -1002372835016,
+    "message_counter": 4,
+    "spawn_threshold": 30,
+    "enabled": true,
+    "scribble_enabled": false,
+    "nameguess_enabled": false
+  },
+  {
+    "chat_id": -1003640183899,
+    "message_counter": 24,
+    "spawn_threshold": 50,
+    "enabled": true,
+    "scribble_enabled": true,
+    "nameguess_enabled": true
+  },
+  {
+    "chat_id": -1003514400301,
+    "message_counter": 7,
+    "spawn_threshold": 77,
+    "enabled": true,
+    "scribble_enabled": true,
+    "nameguess_enabled": true
+  },
+  {
+    "chat_id": -1002162564772,
+    "message_counter": 8,
+    "spawn_threshold": 30,
+    "enabled": true,
+    "scribble_enabled": true,
+    "nameguess_enabled": true
+  },
+  {
+    "chat_id": -5493629473,
+    "message_counter": 0,
+    "spawn_threshold": 83,
+    "enabled": true,
+    "scribble_enabled": true,
+    "nameguess_enabled": true
+  },
+  {
+    "chat_id": -1003992456092,
+    "message_counter": 2,
+    "spawn_threshold": 81,
+    "enabled": true,
+    "scribble_enabled": true,
+    "nameguess_enabled": true
+  },
+  {
+    "chat_id": -1004432401998,
+    "message_counter": 0,
+    "spawn_threshold": 99,
+    "enabled": true,
+    "scribble_enabled": true,
+    "nameguess_enabled": true
+  },
+  {
+    "chat_id": -1003770251287,
+    "message_counter": 15,
+    "spawn_threshold": 51,
+    "enabled": true,
+    "scribble_enabled": true,
+    "nameguess_enabled": true
+  },
+  {
+    "chat_id": -1004315506621,
+    "message_counter": 0,
+    "spawn_threshold": 64,
+    "enabled": true,
+    "scribble_enabled": true,
+    "nameguess_enabled": true
+  },
+  {
+    "chat_id": -1004440335800,
+    "message_counter": 0,
+    "spawn_threshold": 100,
+    "enabled": true,
+    "scribble_enabled": true,
+    "nameguess_enabled": true
+  },
+  {
+    "chat_id": -1004435322059,
+    "message_counter": 0,
+    "spawn_threshold": 67,
+    "enabled": true,
+    "scribble_enabled": true,
+    "nameguess_enabled": true
+  },
+  {
+    "chat_id": -1004413159680,
+    "message_counter": 0,
+    "spawn_threshold": 82,
+    "enabled": true,
+    "scribble_enabled": true,
+    "nameguess_enabled": true
+  },
+  {
+    "chat_id": -1004298881192,
+    "message_counter": 0,
+    "spawn_threshold": 30,
+    "enabled": true,
+    "scribble_enabled": true,
+    "nameguess_enabled": true
+  },
+  {
+    "chat_id": -1003954944217,
+    "message_counter": 0,
+    "spawn_threshold": 30,
+    "enabled": true,
+    "scribble_enabled": true,
+    "nameguess_enabled": true
+  },
+  {
+    "chat_id": -1003907148736,
+    "message_counter": 0,
+    "spawn_threshold": 58,
+    "enabled": true,
+    "scribble_enabled": true,
+    "nameguess_enabled": true
+  },
+  {
+    "chat_id": -1001408705184,
+    "message_counter": 0,
+    "spawn_threshold": 100,
+    "enabled": false,
+    "scribble_enabled": true,
+    "nameguess_enabled": true
+  },
+  {
+    "chat_id": -5480009778,
+    "message_counter": 0,
+    "spawn_threshold": 30,
+    "enabled": true,
+    "scribble_enabled": true,
+    "nameguess_enabled": true
+  },
+  {
+    "chat_id": -5309936019,
+    "message_counter": 0,
+    "spawn_threshold": 30,
+    "enabled": true,
+    "scribble_enabled": true,
+    "nameguess_enabled": true
+  },
+  {
+    "chat_id": -5489309038,
+    "message_counter": 0,
+    "spawn_threshold": 66,
+    "enabled": true,
+    "scribble_enabled": true,
+    "nameguess_enabled": true
+  }
+]

@@ -1,0 +1,1570 @@
+[
+  {
+    "id": 1,
+    "user_id": 8617551695,
+    "amount": 84,
+    "category": "CATCH",
+    "description": "Caught Ekans",
+    "created_at": "2026-09-02T12:45:13.939885"
+  },
+  {
+    "id": 2,
+    "user_id": 7636223602,
+    "amount": 115,
+    "category": "CATCH",
+    "description": "Caught Ekans",
+    "created_at": "2026-09-02T12:45:15.936440"
+  },
+  {
+    "id": 3,
+    "user_id": 8617551695,
+    "amount": 119,
+    "category": "CATCH",
+    "description": "Caught Cascoon",
+    "created_at": "2026-09-02T13:02:53.909031"
+  },
+  {
+    "id": 4,
+    "user_id": 6807555199,
+    "amount": 500,
+    "category": "LEVEL_UP",
+    "description": "Reached Trainer Level 2 bonus",
+    "created_at": "2026-09-02T13:17:25.846182"
+  },
+  {
+    "id": 5,
+    "user_id": 6807555199,
+    "amount": 122,
+    "category": "CATCH",
+    "description": "Caught Bonsly",
+    "created_at": "2026-09-02T13:17:25.846182"
+  },
+  {
+    "id": 6,
+    "user_id": 6807555199,
+    "amount": 107,
+    "category": "CATCH",
+    "description": "Caught Inkay",
+    "created_at": "2026-09-02T13:27:32.587716"
+  },
+  {
+    "id": 7,
+    "user_id": 6593485710,
+    "amount": 84,
+    "category": "CATCH",
+    "description": "Caught Fomantis",
+    "created_at": "2026-09-02T13:45:26.917022"
+  },
+  {
+    "id": 8,
+    "user_id": 8661514842,
+    "amount": 118,
+    "category": "CATCH",
+    "description": "Caught Darkrai",
+    "created_at": "2026-09-02T14:24:32.116987"
+  },
+  {
+    "id": 9,
+    "user_id": 8661514842,
+    "amount": 100,
+    "category": "CATCH",
+    "description": "Caught Pecharunt",
+    "created_at": "2026-09-02T14:34:04.155899"
+  },
+  {
+    "id": 10,
+    "user_id": 8617551695,
+    "amount": 86,
+    "category": "CATCH",
+    "description": "Caught Dugtrio",
+    "created_at": "2026-09-02T14:58:07.400144"
+  },
+  {
+    "id": 11,
+    "user_id": 8661514842,
+    "amount": 81,
+    "category": "CATCH",
+    "description": "Caught Armaldo",
+    "created_at": "2026-09-02T15:07:19.086030"
+  },
+  {
+    "id": 12,
+    "user_id": 8661514842,
+    "amount": 111,
+    "category": "CATCH",
+    "description": "Caught Skeledirge",
+    "created_at": "2026-09-02T15:18:06.576680"
+  },
+  {
+    "id": 13,
+    "user_id": 8661514842,
+    "amount": 98,
+    "category": "CATCH",
+    "description": "Caught Lanturn",
+    "created_at": "2026-09-02T15:40:05.526685"
+  },
+  {
+    "id": 14,
+    "user_id": 8661514842,
+    "amount": 80,
+    "category": "CATCH",
+    "description": "Caught Crobat",
+    "created_at": "2026-09-02T16:04:22.303985"
+  },
+  {
+    "id": 15,
+    "user_id": 7378944814,
+    "amount": 99,
+    "category": "CATCH",
+    "description": "Caught Celebi",
+    "created_at": "2026-09-02T16:07:22.724353"
+  },
+  {
+    "id": 16,
+    "user_id": 6807555199,
+    "amount": 83,
+    "category": "CATCH",
+    "description": "Caught Thundurus-Incarnate",
+    "created_at": "2026-09-02T17:01:44.855471"
+  },
+  {
+    "id": 17,
+    "user_id": 8617551695,
+    "amount": 118,
+    "category": "CATCH",
+    "description": "Caught Keldeo-Ordinary",
+    "created_at": "2026-09-02T18:05:45.435405"
+  },
+  {
+    "id": 18,
+    "user_id": 1761235945,
+    "amount": 93,
+    "category": "CATCH",
+    "description": "Caught Xerneas",
+    "created_at": "2026-09-02T19:00:00.692957"
+  },
+  {
+    "id": 19,
+    "user_id": 1610845482,
+    "amount": 82,
+    "category": "CATCH",
+    "description": "Caught Xerneas",
+    "created_at": "2026-09-02T19:00:03.000223"
+  },
+  {
+    "id": 20,
+    "user_id": 8617551695,
+    "amount": 81,
+    "category": "CATCH",
+    "description": "Caught Spheal",
+    "created_at": "2026-09-03T02:44:50.628595"
+  },
+  {
+    "id": 21,
+    "user_id": 6807555199,
+    "amount": 122,
+    "category": "CATCH",
+    "description": "Caught Turtonator",
+    "created_at": "2026-09-03T03:28:26.243669"
+  },
+  {
+    "id": 22,
+    "user_id": 6807555199,
+    "amount": 98,
+    "category": "CATCH",
+    "description": "Caught Mr-Rime",
+    "created_at": "2026-09-03T03:40:43.837110"
+  },
+  {
+    "id": 23,
+    "user_id": 8750329317,
+    "amount": 90,
+    "category": "CATCH",
+    "description": "Caught Landorus-Incarnate",
+    "created_at": "2026-09-03T05:10:55.408519"
+  },
+  {
+    "id": 24,
+    "user_id": 8661514842,
+    "amount": 106,
+    "category": "CATCH",
+    "description": "Caught Landorus-Incarnate",
+    "created_at": "2026-09-03T05:10:57.558623"
+  },
+  {
+    "id": 25,
+    "user_id": 8661514842,
+    "amount": 105,
+    "category": "CATCH",
+    "description": "Caught Centiskorch",
+    "created_at": "2026-09-03T05:34:23.147665"
+  },
+  {
+    "id": 26,
+    "user_id": 8750329317,
+    "amount": 81,
+    "category": "CATCH",
+    "description": "Caught Hitmonchan",
+    "created_at": "2026-09-03T07:26:22.892302"
+  },
+  {
+    "id": 27,
+    "user_id": 7868126225,
+    "amount": 91,
+    "category": "CATCH",
+    "description": "Caught Pancham",
+    "created_at": "2026-09-03T08:20:35.171609"
+  },
+  {
+    "id": 28,
+    "user_id": 6807555199,
+    "amount": 124,
+    "category": "CATCH",
+    "description": "Caught Vikavolt",
+    "created_at": "2026-09-03T10:24:11.417234"
+  },
+  {
+    "id": 29,
+    "user_id": 8617551695,
+    "amount": 104,
+    "category": "CATCH",
+    "description": "Caught Pawmot",
+    "created_at": "2026-09-03T10:32:11.768784"
+  },
+  {
+    "id": 30,
+    "user_id": 6807555199,
+    "amount": 108,
+    "category": "CATCH",
+    "description": "Caught Boldore",
+    "created_at": "2026-09-03T10:58:24.358056"
+  },
+  {
+    "id": 31,
+    "user_id": 8617551695,
+    "amount": 111,
+    "category": "CATCH",
+    "description": "Caught Arboliva",
+    "created_at": "2026-09-03T11:03:34.415169"
+  },
+  {
+    "id": 32,
+    "user_id": 6626891273,
+    "amount": 113,
+    "category": "CATCH",
+    "description": "Caught Wynaut",
+    "created_at": "2026-09-03T12:19:05.910699"
+  },
+  {
+    "id": 33,
+    "user_id": 8444133687,
+    "amount": 104,
+    "category": "CATCH",
+    "description": "Caught Torterra",
+    "created_at": "2026-09-03T14:59:54.912992"
+  },
+  {
+    "id": 34,
+    "user_id": 8617551695,
+    "amount": 116,
+    "category": "CATCH",
+    "description": "Caught Magneton",
+    "created_at": "2026-09-03T15:18:56.723124"
+  },
+  {
+    "id": 35,
+    "user_id": 8617551695,
+    "amount": 121,
+    "category": "CATCH",
+    "description": "Caught Breloom",
+    "created_at": "2026-09-03T15:21:18.383158"
+  },
+  {
+    "id": 36,
+    "user_id": 8617551695,
+    "amount": 102,
+    "category": "CATCH",
+    "description": "Caught Parasect",
+    "created_at": "2026-09-03T16:11:36.103698"
+  },
+  {
+    "id": 37,
+    "user_id": 6807555199,
+    "amount": 107,
+    "category": "CATCH",
+    "description": "Caught Octillery",
+    "created_at": "2026-09-03T16:28:05.623926"
+  },
+  {
+    "id": 38,
+    "user_id": 8750329317,
+    "amount": 118,
+    "category": "CATCH",
+    "description": "Caught Arceus",
+    "created_at": "2026-09-03T17:35:22.623039"
+  },
+  {
+    "id": 39,
+    "user_id": 6626891273,
+    "amount": 95,
+    "category": "CATCH",
+    "description": "Caught Yungoos",
+    "created_at": "2026-09-03T19:25:52.218435"
+  },
+  {
+    "id": 40,
+    "user_id": 6626891273,
+    "amount": 117,
+    "category": "CATCH",
+    "description": "Caught Buzzwole",
+    "created_at": "2026-09-03T19:35:57.587604"
+  },
+  {
+    "id": 41,
+    "user_id": 6626891273,
+    "amount": 110,
+    "category": "CATCH",
+    "description": "Caught Honedge",
+    "created_at": "2026-09-03T19:43:29.035321"
+  },
+  {
+    "id": 42,
+    "user_id": 6626891273,
+    "amount": 92,
+    "category": "CATCH",
+    "description": "Caught Poltchageist",
+    "created_at": "2026-09-03T19:55:38.695855"
+  },
+  {
+    "id": 43,
+    "user_id": 6626891273,
+    "amount": 109,
+    "category": "CATCH",
+    "description": "Caught Skiploom",
+    "created_at": "2026-09-03T20:03:19.416491"
+  },
+  {
+    "id": 44,
+    "user_id": 6626891273,
+    "amount": 87,
+    "category": "CATCH",
+    "description": "Caught Genesect",
+    "created_at": "2026-09-03T20:11:54.525915"
+  },
+  {
+    "id": 45,
+    "user_id": 6807555199,
+    "amount": 127,
+    "category": "CATCH",
+    "description": "Caught Tatsugiri-Curly",
+    "created_at": "2026-09-04T03:06:50.439001"
+  },
+  {
+    "id": 46,
+    "user_id": 8661514842,
+    "amount": 130,
+    "category": "CATCH",
+    "description": "Caught Incineroar",
+    "created_at": "2026-09-04T04:09:54.085422"
+  },
+  {
+    "id": 47,
+    "user_id": 8201775154,
+    "amount": 110,
+    "category": "CATCH",
+    "description": "Caught Zigzagoon",
+    "created_at": "2026-09-04T06:14:14.923454"
+  },
+  {
+    "id": 48,
+    "user_id": 8661514842,
+    "amount": 90,
+    "category": "CATCH",
+    "description": "Caught Mime-Jr",
+    "created_at": "2026-09-04T06:15:28.092745"
+  },
+  {
+    "id": 49,
+    "user_id": 6807555199,
+    "amount": 114,
+    "category": "CATCH",
+    "description": "Caught Zacian",
+    "created_at": "2026-09-04T06:52:56.731104"
+  },
+  {
+    "id": 50,
+    "user_id": 8661514842,
+    "amount": 124,
+    "category": "CATCH",
+    "description": "Caught Paras",
+    "created_at": "2026-09-04T07:30:59.773712"
+  },
+  {
+    "id": 51,
+    "user_id": 8661514842,
+    "amount": 111,
+    "category": "CATCH",
+    "description": "Caught Veluza",
+    "created_at": "2026-09-04T07:39:51.312027"
+  },
+  {
+    "id": 52,
+    "user_id": 8661514842,
+    "amount": 84,
+    "category": "CATCH",
+    "description": "Caught Capsakid",
+    "created_at": "2026-09-04T08:15:25.033525"
+  },
+  {
+    "id": 53,
+    "user_id": 6807555199,
+    "amount": 126,
+    "category": "CATCH",
+    "description": "Caught Lokix",
+    "created_at": "2026-09-04T11:19:52.311692"
+  },
+  {
+    "id": 54,
+    "user_id": 8661514842,
+    "amount": 111,
+    "category": "CATCH",
+    "description": "Caught Dewpider",
+    "created_at": "2026-09-04T11:38:17.678655"
+  },
+  {
+    "id": 55,
+    "user_id": 8661514842,
+    "amount": 119,
+    "category": "CATCH",
+    "description": "Caught Larvitar",
+    "created_at": "2026-09-04T11:44:55.175360"
+  },
+  {
+    "id": 56,
+    "user_id": 8661514842,
+    "amount": 130,
+    "category": "CATCH",
+    "description": "Caught Wormadam-Plant",
+    "created_at": "2026-09-04T12:15:06.595737"
+  },
+  {
+    "id": 57,
+    "user_id": 6807555199,
+    "amount": 115,
+    "category": "CATCH",
+    "description": "Caught Sizzlipede",
+    "created_at": "2026-09-04T12:32:39.298551"
+  },
+  {
+    "id": 58,
+    "user_id": 5017176373,
+    "amount": 94,
+    "category": "CATCH",
+    "description": "Caught Toxel",
+    "created_at": "2026-09-04T12:35:25.959949"
+  },
+  {
+    "id": 59,
+    "user_id": 6807555199,
+    "amount": 89,
+    "category": "CATCH",
+    "description": "Caught Mudsdale",
+    "created_at": "2026-09-04T12:43:46.227726"
+  },
+  {
+    "id": 60,
+    "user_id": 6807555199,
+    "amount": 89,
+    "category": "CATCH",
+    "description": "Caught Smoochum",
+    "created_at": "2026-09-04T12:49:51.383493"
+  },
+  {
+    "id": 61,
+    "user_id": 6807555199,
+    "amount": 111,
+    "category": "CATCH",
+    "description": "Caught Spectrier",
+    "created_at": "2026-09-04T12:57:04.530301"
+  },
+  {
+    "id": 62,
+    "user_id": 6807555199,
+    "amount": 93,
+    "category": "CATCH",
+    "description": "Caught Snorunt",
+    "created_at": "2026-09-04T13:02:56.738683"
+  },
+  {
+    "id": 63,
+    "user_id": 6807555199,
+    "amount": 3000,
+    "category": "LEVEL_UP",
+    "description": "Reached Trainer Level 12 bonus",
+    "created_at": "2026-09-04T13:09:11.712164"
+  },
+  {
+    "id": 64,
+    "user_id": 6807555199,
+    "amount": 96,
+    "category": "CATCH",
+    "description": "Caught Mabosstiff",
+    "created_at": "2026-09-04T13:09:11.712164"
+  },
+  {
+    "id": 65,
+    "user_id": 6807555199,
+    "amount": 102,
+    "category": "CATCH",
+    "description": "Caught Keldeo-Ordinary",
+    "created_at": "2026-09-04T13:16:09.336271"
+  },
+  {
+    "id": 66,
+    "user_id": 8661514842,
+    "amount": 100,
+    "category": "CATCH",
+    "description": "Caught Keldeo-Ordinary",
+    "created_at": "2026-09-04T13:16:11.451431"
+  },
+  {
+    "id": 67,
+    "user_id": 6807555199,
+    "amount": 123,
+    "category": "CATCH",
+    "description": "Caught Horsea",
+    "created_at": "2026-09-04T13:25:02.159026"
+  },
+  {
+    "id": 68,
+    "user_id": 6807555199,
+    "amount": 125,
+    "category": "CATCH",
+    "description": "Caught Guzzlord",
+    "created_at": "2026-09-04T13:58:55.351653"
+  },
+  {
+    "id": 69,
+    "user_id": 8661514842,
+    "amount": 93,
+    "category": "CATCH",
+    "description": "Caught Milcery",
+    "created_at": "2026-09-04T14:04:09.388276"
+  },
+  {
+    "id": 70,
+    "user_id": 8661514842,
+    "amount": 81,
+    "category": "CATCH",
+    "description": "Caught Gible",
+    "created_at": "2026-09-04T14:10:56.568318"
+  },
+  {
+    "id": 71,
+    "user_id": 8661514842,
+    "amount": 124,
+    "category": "CATCH",
+    "description": "Caught Meowscarada",
+    "created_at": "2026-09-04T14:26:55.537657"
+  },
+  {
+    "id": 72,
+    "user_id": 8444133687,
+    "amount": 91,
+    "category": "CATCH",
+    "description": "Caught Hoopa",
+    "created_at": "2026-09-04T15:06:33.259553"
+  },
+  {
+    "id": 73,
+    "user_id": 8617551695,
+    "amount": 113,
+    "category": "CATCH",
+    "description": "Caught Tyrantrum",
+    "created_at": "2026-09-04T15:15:56.540941"
+  },
+  {
+    "id": 74,
+    "user_id": 6626891273,
+    "amount": 80,
+    "category": "CATCH",
+    "description": "Caught Golduck",
+    "created_at": "2026-09-04T15:59:25.618553"
+  },
+  {
+    "id": 75,
+    "user_id": 1761235945,
+    "amount": 106,
+    "category": "CATCH",
+    "description": "Caught Emolga",
+    "created_at": "2026-09-04T16:56:31.801127"
+  },
+  {
+    "id": 76,
+    "user_id": 8617551695,
+    "amount": 116,
+    "category": "CATCH",
+    "description": "Caught Dartrix",
+    "created_at": "2026-09-04T17:05:01.715305"
+  },
+  {
+    "id": 77,
+    "user_id": 8750329317,
+    "amount": 80,
+    "category": "CATCH",
+    "description": "Caught Beheeyem",
+    "created_at": "2026-09-04T17:22:54.172023"
+  },
+  {
+    "id": 78,
+    "user_id": 1610845482,
+    "amount": 100,
+    "category": "CATCH",
+    "description": "Caught Drifloon",
+    "created_at": "2026-09-04T17:28:13.225870"
+  },
+  {
+    "id": 79,
+    "user_id": 8750329317,
+    "amount": 128,
+    "category": "CATCH",
+    "description": "Caught Clobbopus",
+    "created_at": "2026-09-04T18:18:22.027059"
+  },
+  {
+    "id": 80,
+    "user_id": 1761235945,
+    "amount": 500,
+    "category": "LEVEL_UP",
+    "description": "Reached Trainer Level 2 bonus",
+    "created_at": "2026-09-04T20:03:27.943557"
+  },
+  {
+    "id": 81,
+    "user_id": 1761235945,
+    "amount": 106,
+    "category": "CATCH",
+    "description": "Caught Emolga",
+    "created_at": "2026-09-04T20:03:27.943557"
+  },
+  {
+    "id": 82,
+    "user_id": 8750329317,
+    "amount": 90,
+    "category": "CATCH",
+    "description": "Caught Phione",
+    "created_at": "2026-09-05T02:49:37.642124"
+  },
+  {
+    "id": 83,
+    "user_id": 8617551695,
+    "amount": 123,
+    "category": "CATCH",
+    "description": "Caught Deoxys-Normal",
+    "created_at": "2026-09-05T04:17:54.883413"
+  },
+  {
+    "id": 84,
+    "user_id": 8750329317,
+    "amount": 100,
+    "category": "CATCH",
+    "description": "Caught Feraligatr",
+    "created_at": "2026-09-05T04:19:38.224110"
+  },
+  {
+    "id": 85,
+    "user_id": 8350909477,
+    "amount": 117,
+    "category": "CATCH",
+    "description": "Caught Zigzagoon",
+    "created_at": "2026-09-05T04:27:01.418245"
+  },
+  {
+    "id": 86,
+    "user_id": 8661514842,
+    "amount": 128,
+    "category": "CATCH",
+    "description": "Caught Oranguru",
+    "created_at": "2026-09-05T05:20:55.855726"
+  },
+  {
+    "id": 87,
+    "user_id": 8617551695,
+    "amount": 118,
+    "category": "CATCH",
+    "description": "Caught Helioptile",
+    "created_at": "2026-09-05T06:57:08.944281"
+  },
+  {
+    "id": 88,
+    "user_id": 8617551695,
+    "amount": 113,
+    "category": "CATCH",
+    "description": "Caught Regidrago",
+    "created_at": "2026-09-05T07:13:47.026395"
+  },
+  {
+    "id": 89,
+    "user_id": 8661514842,
+    "amount": 126,
+    "category": "CATCH",
+    "description": "Caught Shiftry",
+    "created_at": "2026-09-05T07:23:48.863347"
+  },
+  {
+    "id": 90,
+    "user_id": 8984041700,
+    "amount": 92,
+    "category": "CATCH",
+    "description": "Caught Meltan",
+    "created_at": "2026-09-05T08:00:08.659504"
+  },
+  {
+    "id": 91,
+    "user_id": 7378944814,
+    "amount": 109,
+    "category": "CATCH",
+    "description": "Caught Kyurem",
+    "created_at": "2026-09-05T09:20:09.562452"
+  },
+  {
+    "id": 92,
+    "user_id": 8661514842,
+    "amount": 110,
+    "category": "CATCH",
+    "description": "Caught Skeledirge",
+    "created_at": "2026-09-05T11:01:48.327563"
+  },
+  {
+    "id": 93,
+    "user_id": 8661514842,
+    "amount": 122,
+    "category": "CATCH",
+    "description": "Caught Roselia",
+    "created_at": "2026-09-05T11:21:37.457480"
+  },
+  {
+    "id": 94,
+    "user_id": 8617551695,
+    "amount": 82,
+    "category": "CATCH",
+    "description": "Caught Duraludon",
+    "created_at": "2026-09-05T11:44:35.734761"
+  },
+  {
+    "id": 95,
+    "user_id": 8661514842,
+    "amount": 92,
+    "category": "CATCH",
+    "description": "Caught Bunnelby",
+    "created_at": "2026-09-05T11:49:33.743721"
+  },
+  {
+    "id": 96,
+    "user_id": 8201775154,
+    "amount": 116,
+    "category": "CATCH",
+    "description": "Caught Barboach",
+    "created_at": "2026-09-05T11:53:24.314445"
+  },
+  {
+    "id": 97,
+    "user_id": 8201775154,
+    "amount": 92,
+    "category": "CATCH",
+    "description": "Caught Slaking",
+    "created_at": "2026-09-05T11:56:25.429116"
+  },
+  {
+    "id": 98,
+    "user_id": 8661514842,
+    "amount": 121,
+    "category": "CATCH",
+    "description": "Caught Slaking",
+    "created_at": "2026-09-05T11:56:26.458269"
+  },
+  {
+    "id": 99,
+    "user_id": 8444133687,
+    "amount": 110,
+    "category": "CATCH",
+    "description": "Caught Kartana",
+    "created_at": "2026-09-05T13:14:04.796729"
+  },
+  {
+    "id": 100,
+    "user_id": 7809585776,
+    "amount": 94,
+    "category": "CATCH",
+    "description": "Caught Lumineon",
+    "created_at": "2026-09-05T13:38:59.807690"
+  },
+  {
+    "id": 101,
+    "user_id": 8201775154,
+    "amount": 82,
+    "category": "CATCH",
+    "description": "Caught Tyranitar",
+    "created_at": "2026-09-05T13:57:08.899338"
+  },
+  {
+    "id": 102,
+    "user_id": 6626891273,
+    "amount": 84,
+    "category": "CATCH",
+    "description": "Caught Floette",
+    "created_at": "2026-09-05T14:11:45.782483"
+  },
+  {
+    "id": 103,
+    "user_id": 5017176373,
+    "amount": 92,
+    "category": "CATCH",
+    "description": "Caught Delibird",
+    "created_at": "2026-09-05T15:00:47.694487"
+  },
+  {
+    "id": 104,
+    "user_id": 910098484,
+    "amount": 92,
+    "category": "CATCH",
+    "description": "Caught Zeraora",
+    "created_at": "2026-09-05T15:01:28.916023"
+  },
+  {
+    "id": 105,
+    "user_id": 6748253762,
+    "amount": 114,
+    "category": "CATCH",
+    "description": "Caught Necrozma-Dusk",
+    "created_at": "2026-09-05T15:52:35.141817"
+  },
+  {
+    "id": 106,
+    "user_id": 5971544132,
+    "amount": 104,
+    "category": "CATCH",
+    "description": "Caught Musharna",
+    "created_at": "2026-09-05T16:06:30.835246"
+  },
+  {
+    "id": 107,
+    "user_id": 6807555199,
+    "amount": 92,
+    "category": "CATCH",
+    "description": "Caught Keldeo-Ordinary",
+    "created_at": "2026-09-05T16:32:17.589503"
+  },
+  {
+    "id": 108,
+    "user_id": 6807555199,
+    "amount": 3000,
+    "category": "LEVEL_UP",
+    "description": "Reached Trainer Level 12 bonus",
+    "created_at": "2026-09-05T16:45:15.111083"
+  },
+  {
+    "id": 109,
+    "user_id": 6807555199,
+    "amount": 108,
+    "category": "CATCH",
+    "description": "Caught Wugtrio",
+    "created_at": "2026-09-05T16:45:15.111083"
+  },
+  {
+    "id": 110,
+    "user_id": 8617551695,
+    "amount": 91,
+    "category": "CATCH",
+    "description": "Caught Victini",
+    "created_at": "2026-09-05T17:11:55.343882"
+  },
+  {
+    "id": 111,
+    "user_id": 8201775154,
+    "amount": 118,
+    "category": "CATCH",
+    "description": "Caught Victini",
+    "created_at": "2026-09-05T17:11:57.519179"
+  },
+  {
+    "id": 112,
+    "user_id": 8661514842,
+    "amount": 93,
+    "category": "CATCH",
+    "description": "Caught Psyduck",
+    "created_at": "2026-09-05T17:27:20.799842"
+  },
+  {
+    "id": 113,
+    "user_id": 8617551695,
+    "amount": 2750,
+    "category": "LEVEL_UP",
+    "description": "Reached Trainer Level 11 bonus",
+    "created_at": "2026-09-05T17:59:29.233563"
+  },
+  {
+    "id": 114,
+    "user_id": 8617551695,
+    "amount": 129,
+    "category": "CATCH",
+    "description": "Caught Skarmory",
+    "created_at": "2026-09-05T17:59:29.233563"
+  },
+  {
+    "id": 115,
+    "user_id": 6626891273,
+    "amount": 120,
+    "category": "CATCH",
+    "description": "Caught Diancie",
+    "created_at": "2026-09-05T18:11:37.028117"
+  },
+  {
+    "id": 116,
+    "user_id": 910098484,
+    "amount": 500,
+    "category": "LEVEL_UP",
+    "description": "Reached Trainer Level 2 bonus",
+    "created_at": "2026-09-05T18:22:41.844477"
+  },
+  {
+    "id": 117,
+    "user_id": 910098484,
+    "amount": 98,
+    "category": "CATCH",
+    "description": "Caught Zeraora",
+    "created_at": "2026-09-05T18:22:41.844477"
+  },
+  {
+    "id": 118,
+    "user_id": 8617551695,
+    "amount": 93,
+    "category": "CATCH",
+    "description": "Caught Stunfisk",
+    "created_at": "2026-09-05T18:51:11.604113"
+  },
+  {
+    "id": 119,
+    "user_id": 6024388247,
+    "amount": 89,
+    "category": "CATCH",
+    "description": "Caught Pidove",
+    "created_at": "2026-09-05T18:59:12.027821"
+  },
+  {
+    "id": 120,
+    "user_id": 8617551695,
+    "amount": 128,
+    "category": "CATCH",
+    "description": "Caught Luxio",
+    "created_at": "2026-09-05T19:21:36.147172"
+  },
+  {
+    "id": 121,
+    "user_id": 8696852276,
+    "amount": 122,
+    "category": "CATCH",
+    "description": "Caught Arceus",
+    "created_at": "2026-09-05T19:31:24.926199"
+  },
+  {
+    "id": 122,
+    "user_id": 1210251208,
+    "amount": 107,
+    "category": "CATCH",
+    "description": "Caught Annihilape",
+    "created_at": "2026-09-05T23:31:51.040833"
+  },
+  {
+    "id": 123,
+    "user_id": 6807555199,
+    "amount": 82,
+    "category": "CATCH",
+    "description": "Caught Lanturn",
+    "created_at": "2026-09-06T03:37:21.710305"
+  },
+  {
+    "id": 124,
+    "user_id": 5017176373,
+    "amount": 500,
+    "category": "LEVEL_UP",
+    "description": "Reached Trainer Level 2 bonus",
+    "created_at": "2026-09-06T04:53:38.509231"
+  },
+  {
+    "id": 125,
+    "user_id": 5017176373,
+    "amount": 130,
+    "category": "CATCH",
+    "description": "Caught Bewear",
+    "created_at": "2026-09-06T04:53:38.509231"
+  },
+  {
+    "id": 126,
+    "user_id": 8444133687,
+    "amount": 88,
+    "category": "CATCH",
+    "description": "Caught Meltan",
+    "created_at": "2026-09-06T05:31:29.841661"
+  },
+  {
+    "id": 127,
+    "user_id": 8617551695,
+    "amount": 106,
+    "category": "CATCH",
+    "description": "Caught Pecharunt",
+    "created_at": "2026-09-06T05:42:35.910517"
+  },
+  {
+    "id": 128,
+    "user_id": 6024388247,
+    "amount": 97,
+    "category": "CATCH",
+    "description": "Caught Jirachi",
+    "created_at": "2026-09-06T05:57:29.612714"
+  },
+  {
+    "id": 129,
+    "user_id": 8661514842,
+    "amount": 118,
+    "category": "CATCH",
+    "description": "Caught Volcarona",
+    "created_at": "2026-09-06T06:50:17.753203"
+  },
+  {
+    "id": 130,
+    "user_id": 8617551695,
+    "amount": 99,
+    "category": "CATCH",
+    "description": "Caught Seismitoad",
+    "created_at": "2026-09-06T08:39:46.270359"
+  },
+  {
+    "id": 131,
+    "user_id": 6748253762,
+    "amount": 85,
+    "category": "CATCH",
+    "description": "Caught Kyurem-Black",
+    "created_at": "2026-09-06T08:51:12.565653"
+  },
+  {
+    "id": 132,
+    "user_id": 1210251208,
+    "amount": 122,
+    "category": "CATCH",
+    "description": "Caught Squirtle",
+    "created_at": "2026-09-06T09:13:44.346054"
+  },
+  {
+    "id": 133,
+    "user_id": 8750329317,
+    "amount": 122,
+    "category": "CATCH",
+    "description": "Caught Brute-Bonnet",
+    "created_at": "2026-09-06T10:30:56.618549"
+  },
+  {
+    "id": 134,
+    "user_id": 6626891273,
+    "amount": 93,
+    "category": "CATCH",
+    "description": "Caught Slaking",
+    "created_at": "2026-09-06T11:25:28.280013"
+  },
+  {
+    "id": 135,
+    "user_id": 6626891273,
+    "amount": 99,
+    "category": "CATCH",
+    "description": "Caught Houndstone",
+    "created_at": "2026-09-06T11:32:16.261955"
+  },
+  {
+    "id": 136,
+    "user_id": 6807555199,
+    "amount": 86,
+    "category": "CATCH",
+    "description": "Caught Tapu-Koko",
+    "created_at": "2026-09-06T13:19:31.368100"
+  },
+  {
+    "id": 137,
+    "user_id": 8810531451,
+    "amount": 115,
+    "category": "CATCH",
+    "description": "Caught Turtonator",
+    "created_at": "2026-09-06T15:54:25.345212"
+  },
+  {
+    "id": 138,
+    "user_id": 6593485710,
+    "amount": 127,
+    "category": "CATCH",
+    "description": "Caught Vikavolt",
+    "created_at": "2026-09-06T16:15:17.177908"
+  },
+  {
+    "id": 139,
+    "user_id": 7236318925,
+    "amount": 122,
+    "category": "CATCH",
+    "description": "Caught Rhyhorn",
+    "created_at": "2026-09-06T16:23:14.855679"
+  },
+  {
+    "id": 140,
+    "user_id": 6807555199,
+    "amount": 111,
+    "category": "CATCH",
+    "description": "Caught Spheal",
+    "created_at": "2026-09-06T17:00:20.277722"
+  },
+  {
+    "id": 141,
+    "user_id": 6807555199,
+    "amount": 86,
+    "category": "CATCH",
+    "description": "Caught Cyndaquil",
+    "created_at": "2026-09-06T17:08:05.683455"
+  },
+  {
+    "id": 142,
+    "user_id": 8444133687,
+    "amount": 84,
+    "category": "CATCH",
+    "description": "Caught Regidrago",
+    "created_at": "2026-09-06T17:13:26.511233"
+  },
+  {
+    "id": 143,
+    "user_id": 6807555199,
+    "amount": 96,
+    "category": "CATCH",
+    "description": "Caught Larvesta",
+    "created_at": "2026-09-06T17:21:49.399631"
+  },
+  {
+    "id": 144,
+    "user_id": 5684048136,
+    "amount": 94,
+    "category": "CATCH",
+    "description": "Caught Cascoon",
+    "created_at": "2026-09-06T18:38:32.968179"
+  },
+  {
+    "id": 145,
+    "user_id": 5228565940,
+    "amount": 107,
+    "category": "CATCH",
+    "description": "Caught Charcadet",
+    "created_at": "2026-09-06T18:59:43.362716"
+  },
+  {
+    "id": 146,
+    "user_id": 7868126225,
+    "amount": 89,
+    "category": "CATCH",
+    "description": "Caught Charcadet",
+    "created_at": "2026-09-06T18:59:45.366132"
+  },
+  {
+    "id": 147,
+    "user_id": 1610845482,
+    "amount": 105,
+    "category": "CATCH",
+    "description": "Caught Emolga",
+    "created_at": "2026-09-06T19:02:42.332923"
+  },
+  {
+    "id": 148,
+    "user_id": 6593485710,
+    "amount": 119,
+    "category": "CATCH",
+    "description": "Caught Hydreigon",
+    "created_at": "2026-09-07T01:27:36.420075"
+  },
+  {
+    "id": 149,
+    "user_id": 6593485710,
+    "amount": 86,
+    "category": "CATCH",
+    "description": "Caught Arceus",
+    "created_at": "2026-09-07T01:28:00.836351"
+  },
+  {
+    "id": 150,
+    "user_id": 6593485710,
+    "amount": 93,
+    "category": "CATCH",
+    "description": "Caught Diancie",
+    "created_at": "2026-09-07T01:28:16.344685"
+  },
+  {
+    "id": 151,
+    "user_id": 6807555199,
+    "amount": 109,
+    "category": "CATCH",
+    "description": "Caught Wobbuffet",
+    "created_at": "2026-09-07T03:04:18.275348"
+  },
+  {
+    "id": 152,
+    "user_id": 8661514842,
+    "amount": 129,
+    "category": "CATCH",
+    "description": "Caught Aggron",
+    "created_at": "2026-09-07T04:05:16.937803"
+  },
+  {
+    "id": 153,
+    "user_id": 6807555199,
+    "amount": 97,
+    "category": "CATCH",
+    "description": "Caught Emboar",
+    "created_at": "2026-09-07T04:30:05.575567"
+  },
+  {
+    "id": 154,
+    "user_id": 6626891273,
+    "amount": 120,
+    "category": "CATCH",
+    "description": "Caught Drifloon",
+    "created_at": "2026-09-07T04:46:07.533027"
+  },
+  {
+    "id": 155,
+    "user_id": 7868126225,
+    "amount": 750,
+    "category": "LEVEL_UP",
+    "description": "Reached Trainer Level 3 bonus",
+    "created_at": "2026-09-07T05:36:10.819486"
+  },
+  {
+    "id": 156,
+    "user_id": 7868126225,
+    "amount": 111,
+    "category": "CATCH",
+    "description": "Caught Stantler",
+    "created_at": "2026-09-07T05:36:10.819486"
+  },
+  {
+    "id": 157,
+    "user_id": 6807555199,
+    "amount": 115,
+    "category": "CATCH",
+    "description": "Caught Nidoran-F",
+    "created_at": "2026-09-07T07:23:41.551558"
+  },
+  {
+    "id": 158,
+    "user_id": 8750329317,
+    "amount": 88,
+    "category": "CATCH",
+    "description": "Caught Buzzwole",
+    "created_at": "2026-09-07T09:31:29.397243"
+  },
+  {
+    "id": 159,
+    "user_id": 8201775154,
+    "amount": 108,
+    "category": "CATCH",
+    "description": "Caught Buzzwole",
+    "created_at": "2026-09-07T09:31:33.097412"
+  },
+  {
+    "id": 160,
+    "user_id": 8750329317,
+    "amount": 82,
+    "category": "CATCH",
+    "description": "Caught Kyurem-White",
+    "created_at": "2026-09-07T09:36:18.862419"
+  },
+  {
+    "id": 161,
+    "user_id": 8984041700,
+    "amount": 99,
+    "category": "CATCH",
+    "description": "Caught Nickit",
+    "created_at": "2026-09-07T11:14:07.967916"
+  },
+  {
+    "id": 162,
+    "user_id": 6748253762,
+    "amount": 128,
+    "category": "CATCH",
+    "description": "Caught Fennekin",
+    "created_at": "2026-09-07T11:37:38.983972"
+  },
+  {
+    "id": 163,
+    "user_id": 6748253762,
+    "amount": 91,
+    "category": "CATCH",
+    "description": "Caught Binacle",
+    "created_at": "2026-09-07T14:37:55.517201"
+  },
+  {
+    "id": 164,
+    "user_id": 6807555199,
+    "amount": 83,
+    "category": "CATCH",
+    "description": "Caught Zigzagoon",
+    "created_at": "2026-09-07T16:39:41.099296"
+  },
+  {
+    "id": 165,
+    "user_id": 8444133687,
+    "amount": 83,
+    "category": "CATCH",
+    "description": "Caught Slither-Wing",
+    "created_at": "2026-09-07T16:40:32.692022"
+  },
+  {
+    "id": 166,
+    "user_id": 8750329317,
+    "amount": 88,
+    "category": "CATCH",
+    "description": "Caught Dragonite",
+    "created_at": "2026-09-07T16:53:51.126769"
+  },
+  {
+    "id": 167,
+    "user_id": 6807555199,
+    "amount": 125,
+    "category": "CATCH",
+    "description": "Caught Chien-Pao",
+    "created_at": "2026-09-07T16:54:22.334461"
+  },
+  {
+    "id": 168,
+    "user_id": 6807555199,
+    "amount": 128,
+    "category": "CATCH",
+    "description": "Caught Rufflet",
+    "created_at": "2026-09-07T17:53:06.575716"
+  },
+  {
+    "id": 169,
+    "user_id": 8617551695,
+    "amount": 130,
+    "category": "CATCH",
+    "description": "Caught Diancie",
+    "created_at": "2026-09-07T18:01:12.534449"
+  },
+  {
+    "id": 170,
+    "user_id": 6807555199,
+    "amount": 81,
+    "category": "CATCH",
+    "description": "Caught Moltres",
+    "created_at": "2026-09-08T03:08:00.756909"
+  },
+  {
+    "id": 171,
+    "user_id": 8984041700,
+    "amount": 122,
+    "category": "CATCH",
+    "description": "Caught Zapdos",
+    "created_at": "2026-09-08T05:01:07.451335"
+  },
+  {
+    "id": 172,
+    "user_id": 8661514842,
+    "amount": 106,
+    "category": "CATCH",
+    "description": "Caught Noctowl",
+    "created_at": "2026-09-08T05:16:23.132289"
+  },
+  {
+    "id": 173,
+    "user_id": 8617551695,
+    "amount": 126,
+    "category": "CATCH",
+    "description": "Caught Combee",
+    "created_at": "2026-09-08T06:13:37.574130"
+  },
+  {
+    "id": 174,
+    "user_id": 8617551695,
+    "amount": 93,
+    "category": "CATCH",
+    "description": "Caught Skarmory",
+    "created_at": "2026-09-08T06:16:47.441012"
+  },
+  {
+    "id": 175,
+    "user_id": 8617551695,
+    "amount": 115,
+    "category": "CATCH",
+    "description": "Caught Turtonator",
+    "created_at": "2026-09-08T06:17:44.025004"
+  },
+  {
+    "id": 176,
+    "user_id": 8984041700,
+    "amount": 124,
+    "category": "CATCH",
+    "description": "Caught Diancie",
+    "created_at": "2026-09-08T06:23:48.876845"
+  },
+  {
+    "id": 177,
+    "user_id": 6807555199,
+    "amount": 105,
+    "category": "CATCH",
+    "description": "Caught Lillipup",
+    "created_at": "2026-09-08T06:56:46.820616"
+  },
+  {
+    "id": 178,
+    "user_id": 1610845482,
+    "amount": 107,
+    "category": "CATCH",
+    "description": "Caught Helioptile",
+    "created_at": "2026-09-08T08:06:57.356008"
+  },
+  {
+    "id": 179,
+    "user_id": 6593485710,
+    "amount": 94,
+    "category": "CATCH",
+    "description": "Caught Fuecoco",
+    "created_at": "2026-09-08T08:57:30.345059"
+  },
+  {
+    "id": 180,
+    "user_id": 6593485710,
+    "amount": 114,
+    "category": "CATCH",
+    "description": "Caught Corphish",
+    "created_at": "2026-09-08T08:58:07.780521"
+  },
+  {
+    "id": 181,
+    "user_id": 6593485710,
+    "amount": 89,
+    "category": "CATCH",
+    "description": "Caught Cinderace",
+    "created_at": "2026-09-08T08:58:53.168940"
+  },
+  {
+    "id": 182,
+    "user_id": 8201775154,
+    "amount": 81,
+    "category": "CATCH",
+    "description": "Caught Kingdra",
+    "created_at": "2026-09-08T09:17:36.977741"
+  },
+  {
+    "id": 183,
+    "user_id": 6807555199,
+    "amount": 118,
+    "category": "CATCH",
+    "description": "Caught Burmy",
+    "created_at": "2026-09-08T09:18:05.228697"
+  },
+  {
+    "id": 184,
+    "user_id": 6807555199,
+    "amount": 109,
+    "category": "CATCH",
+    "description": "Caught Rapidash",
+    "created_at": "2026-09-08T09:20:33.972230"
+  },
+  {
+    "id": 185,
+    "user_id": 8201775154,
+    "amount": 121,
+    "category": "CATCH",
+    "description": "Caught Treecko",
+    "created_at": "2026-09-08T09:25:01.900006"
+  },
+  {
+    "id": 186,
+    "user_id": 8750329317,
+    "amount": 110,
+    "category": "CATCH",
+    "description": "Caught Shedinja",
+    "created_at": "2026-09-08T09:44:25.080844"
+  },
+  {
+    "id": 187,
+    "user_id": 8617551695,
+    "amount": 500,
+    "category": "QUEST_REWARD",
+    "description": "Completed Quest: 🎣 Catch 3 Wild Pokémon",
+    "created_at": "2026-09-08T10:20:39.339799"
+  },
+  {
+    "id": 188,
+    "user_id": 6807555199,
+    "amount": 99,
+    "category": "CATCH",
+    "description": "Caught Phantump",
+    "created_at": "2026-09-08T10:22:19.825600"
+  },
+  {
+    "id": 189,
+    "user_id": 6807555199,
+    "amount": 87,
+    "category": "CATCH",
+    "description": "Caught Gulpin",
+    "created_at": "2026-09-08T10:35:19.052298"
+  },
+  {
+    "id": 190,
+    "user_id": 6807555199,
+    "amount": 118,
+    "category": "CATCH",
+    "description": "Caught Thundurus-Incarnate",
+    "created_at": "2026-09-08T11:09:18.992476"
+  },
+  {
+    "id": 191,
+    "user_id": 6999196227,
+    "amount": 106,
+    "category": "CATCH",
+    "description": "Caught Machoke",
+    "created_at": "2026-09-08T11:24:11.135742"
+  },
+  {
+    "id": 192,
+    "user_id": 6748253762,
+    "amount": 91,
+    "category": "CATCH",
+    "description": "Caught Excadrill",
+    "created_at": "2026-09-08T11:31:14.806795"
+  },
+  {
+    "id": 193,
+    "user_id": 6807555199,
+    "amount": 118,
+    "category": "CATCH",
+    "description": "Caught Dedenne",
+    "created_at": "2026-09-08T11:46:44.655771"
+  },
+  {
+    "id": 194,
+    "user_id": 8661514842,
+    "amount": 98,
+    "category": "CATCH",
+    "description": "Caught Relicanth",
+    "created_at": "2026-09-08T12:07:26.604953"
+  },
+  {
+    "id": 195,
+    "user_id": 6626891273,
+    "amount": 120,
+    "category": "CATCH",
+    "description": "Caught Bellibolt",
+    "created_at": "2026-09-08T12:13:59.361511"
+  },
+  {
+    "id": 196,
+    "user_id": 7236318925,
+    "amount": 119,
+    "category": "CATCH",
+    "description": "Caught Poipole",
+    "created_at": "2026-09-08T12:35:34.338589"
+  }
+]

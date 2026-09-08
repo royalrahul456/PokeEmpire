@@ -1,0 +1,18 @@
+[
+  {
+    "id": 1,
+    "user_id": 6593485710,
+    "chat_id": -1004441222762,
+    "content": "Hmm but rehne do wahi",
+    "status": "PENDING",
+    "created_at": "2026-09-08T06:43:13.071979"
+  },
+  {
+    "id": 2,
+    "user_id": 8617551695,
+    "chat_id": -1004441222762,
+    "content": "/report@PokeEmpireBot",
+    "status": "PENDING",
+    "created_at": "2026-09-08T06:43:33.273650"
+  }
+]

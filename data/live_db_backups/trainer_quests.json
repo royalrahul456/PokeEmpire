@@ -1,0 +1,732 @@
+[
+  {
+    "id": 2,
+    "user_id": 7636223602,
+    "quest_key": "daily_catch",
+    "progress": 1,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-02T12:45:15.936440"
+  },
+  {
+    "id": 4,
+    "user_id": 7636223602,
+    "quest_key": "weekly_catch",
+    "progress": 1,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-02T12:45:18.926214"
+  },
+  {
+    "id": 63,
+    "user_id": 7136411926,
+    "quest_key": "daily_chat",
+    "progress": 0,
+    "target": 20,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-08T10:23:40.237045"
+  },
+  {
+    "id": 33,
+    "user_id": 7809585776,
+    "quest_key": "daily_catch",
+    "progress": 1,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-05T13:39:01.342151"
+  },
+  {
+    "id": 34,
+    "user_id": 7809585776,
+    "quest_key": "weekly_catch",
+    "progress": 1,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-05T13:39:02.759166"
+  },
+  {
+    "id": 3,
+    "user_id": 8617551695,
+    "quest_key": "weekly_catch",
+    "progress": 4,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-07T18:01:15.300204"
+  },
+  {
+    "id": 31,
+    "user_id": 8984041700,
+    "quest_key": "daily_catch",
+    "progress": 2,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-08T05:01:08.859510"
+  },
+  {
+    "id": 32,
+    "user_id": 8984041700,
+    "quest_key": "weekly_catch",
+    "progress": 3,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-07T11:14:10.756419"
+  },
+  {
+    "id": 64,
+    "user_id": 7136411926,
+    "quest_key": "daily_game",
+    "progress": 0,
+    "target": 1,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-08T10:23:41.140671"
+  },
+  {
+    "id": 65,
+    "user_id": 7136411926,
+    "quest_key": "weekly_catch",
+    "progress": 0,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-08T10:23:42.045818"
+  },
+  {
+    "id": 39,
+    "user_id": 5971544132,
+    "quest_key": "daily_catch",
+    "progress": 1,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-05T16:06:32.222109"
+  },
+  {
+    "id": 40,
+    "user_id": 5971544132,
+    "quest_key": "weekly_catch",
+    "progress": 1,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-05T16:06:33.531777"
+  },
+  {
+    "id": 15,
+    "user_id": 1610845482,
+    "quest_key": "daily_catch",
+    "progress": 1,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-08T08:06:59.025930"
+  },
+  {
+    "id": 16,
+    "user_id": 1610845482,
+    "quest_key": "weekly_catch",
+    "progress": 1,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-08T08:07:00.374304"
+  },
+  {
+    "id": 51,
+    "user_id": 5684048136,
+    "quest_key": "daily_catch",
+    "progress": 1,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-06T18:38:34.395745"
+  },
+  {
+    "id": 52,
+    "user_id": 5684048136,
+    "quest_key": "weekly_catch",
+    "progress": 1,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-06T18:38:35.687580"
+  },
+  {
+    "id": 53,
+    "user_id": 5228565940,
+    "quest_key": "daily_catch",
+    "progress": 1,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-06T18:59:44.777720"
+  },
+  {
+    "id": 54,
+    "user_id": 5228565940,
+    "quest_key": "weekly_catch",
+    "progress": 1,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-06T18:59:46.069842"
+  },
+  {
+    "id": 66,
+    "user_id": 7136411926,
+    "quest_key": "weekly_auction",
+    "progress": 0,
+    "target": 2,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-08T10:23:42.951471"
+  },
+  {
+    "id": 67,
+    "user_id": 8750329317,
+    "quest_key": "daily_chat",
+    "progress": 0,
+    "target": 20,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-08T10:24:19.362649"
+  },
+  {
+    "id": 68,
+    "user_id": 8750329317,
+    "quest_key": "daily_game",
+    "progress": 0,
+    "target": 1,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-08T10:24:20.335874"
+  },
+  {
+    "id": 69,
+    "user_id": 8750329317,
+    "quest_key": "weekly_auction",
+    "progress": 0,
+    "target": 2,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-08T10:24:21.689349"
+  },
+  {
+    "id": 35,
+    "user_id": 910098484,
+    "quest_key": "daily_catch",
+    "progress": 2,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-05T15:01:30.435477"
+  },
+  {
+    "id": 36,
+    "user_id": 910098484,
+    "quest_key": "weekly_catch",
+    "progress": 2,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-05T15:01:31.826748"
+  },
+  {
+    "id": 70,
+    "user_id": 6593485710,
+    "quest_key": "daily_chat",
+    "progress": 0,
+    "target": 20,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-08T10:25:53.767899"
+  },
+  {
+    "id": 71,
+    "user_id": 6593485710,
+    "quest_key": "daily_game",
+    "progress": 0,
+    "target": 1,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-08T10:25:54.606291"
+  },
+  {
+    "id": 23,
+    "user_id": 8444133687,
+    "quest_key": "daily_catch",
+    "progress": 1,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-07T16:40:34.203244"
+  },
+  {
+    "id": 43,
+    "user_id": 8696852276,
+    "quest_key": "daily_catch",
+    "progress": 1,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-05T19:31:26.499527"
+  },
+  {
+    "id": 44,
+    "user_id": 8696852276,
+    "quest_key": "weekly_catch",
+    "progress": 1,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-05T19:31:27.858800"
+  },
+  {
+    "id": 13,
+    "user_id": 1761235945,
+    "quest_key": "daily_catch",
+    "progress": 2,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-04T16:56:33.254019"
+  },
+  {
+    "id": 14,
+    "user_id": 1761235945,
+    "quest_key": "weekly_catch",
+    "progress": 3,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-02T19:00:03.665215"
+  },
+  {
+    "id": 24,
+    "user_id": 8444133687,
+    "quest_key": "weekly_catch",
+    "progress": 1,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-07T16:40:35.536552"
+  },
+  {
+    "id": 27,
+    "user_id": 5017176373,
+    "quest_key": "daily_catch",
+    "progress": 1,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-06T04:53:39.946311"
+  },
+  {
+    "id": 28,
+    "user_id": 5017176373,
+    "quest_key": "weekly_catch",
+    "progress": 3,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-04T12:35:28.561143"
+  },
+  {
+    "id": 72,
+    "user_id": 6593485710,
+    "quest_key": "weekly_auction",
+    "progress": 0,
+    "target": 2,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-08T10:25:55.864432"
+  },
+  {
+    "id": 55,
+    "user_id": 6807555199,
+    "quest_key": "daily_chat",
+    "progress": 0,
+    "target": 20,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-08T10:28:55.289706"
+  },
+  {
+    "id": 29,
+    "user_id": 8350909477,
+    "quest_key": "daily_catch",
+    "progress": 1,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-05T04:27:02.796784"
+  },
+  {
+    "id": 7,
+    "user_id": 6593485710,
+    "quest_key": "daily_catch",
+    "progress": 3,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-08T08:57:31.778084"
+  },
+  {
+    "id": 30,
+    "user_id": 8350909477,
+    "quest_key": "weekly_catch",
+    "progress": 1,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-05T04:27:04.082136"
+  },
+  {
+    "id": 8,
+    "user_id": 6593485710,
+    "quest_key": "weekly_catch",
+    "progress": 6,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-07T01:27:39.138758"
+  },
+  {
+    "id": 56,
+    "user_id": 6807555199,
+    "quest_key": "daily_game",
+    "progress": 0,
+    "target": 1,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-08T10:28:56.608732"
+  },
+  {
+    "id": 41,
+    "user_id": 6024388247,
+    "quest_key": "daily_catch",
+    "progress": 1,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-06T05:57:31.135454"
+  },
+  {
+    "id": 42,
+    "user_id": 6024388247,
+    "quest_key": "weekly_catch",
+    "progress": 2,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-05T18:59:14.671398"
+  },
+  {
+    "id": 73,
+    "user_id": 6999196227,
+    "quest_key": "daily_catch",
+    "progress": 1,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-08T11:24:12.572063"
+  },
+  {
+    "id": 5,
+    "user_id": 6807555199,
+    "quest_key": "daily_catch",
+    "progress": 3,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-08T03:08:02.182573"
+  },
+  {
+    "id": 74,
+    "user_id": 6999196227,
+    "quest_key": "weekly_catch",
+    "progress": 1,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-08T11:24:13.874188"
+  },
+  {
+    "id": 11,
+    "user_id": 7378944814,
+    "quest_key": "daily_catch",
+    "progress": 1,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-05T09:20:11.111189"
+  },
+  {
+    "id": 12,
+    "user_id": 7378944814,
+    "quest_key": "weekly_catch",
+    "progress": 2,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-02T16:07:25.553270"
+  },
+  {
+    "id": 37,
+    "user_id": 6748253762,
+    "quest_key": "daily_catch",
+    "progress": 1,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-08T11:31:16.259617"
+  },
+  {
+    "id": 38,
+    "user_id": 6748253762,
+    "quest_key": "weekly_catch",
+    "progress": 3,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-07T11:37:41.686821"
+  },
+  {
+    "id": 45,
+    "user_id": 1210251208,
+    "quest_key": "daily_catch",
+    "progress": 1,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-06T09:13:45.785856"
+  },
+  {
+    "id": 57,
+    "user_id": 6807555199,
+    "quest_key": "weekly_auction",
+    "progress": 0,
+    "target": 2,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-07T03:16:35.053574"
+  },
+  {
+    "id": 25,
+    "user_id": 8201775154,
+    "quest_key": "daily_catch",
+    "progress": 2,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-08T09:17:38.384947"
+  },
+  {
+    "id": 46,
+    "user_id": 1210251208,
+    "quest_key": "weekly_catch",
+    "progress": 2,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-05T23:31:55.492036"
+  },
+  {
+    "id": 6,
+    "user_id": 6807555199,
+    "quest_key": "weekly_catch",
+    "progress": 14,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-07T03:04:21.022731"
+  },
+  {
+    "id": 9,
+    "user_id": 8661514842,
+    "quest_key": "daily_catch",
+    "progress": 2,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-08T05:16:24.537988"
+  },
+  {
+    "id": 26,
+    "user_id": 8201775154,
+    "quest_key": "weekly_catch",
+    "progress": 3,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-07T09:31:35.908383"
+  },
+  {
+    "id": 10,
+    "user_id": 8661514842,
+    "quest_key": "weekly_catch",
+    "progress": 3,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-07T04:05:19.751441"
+  },
+  {
+    "id": 17,
+    "user_id": 8750329317,
+    "quest_key": "daily_catch",
+    "progress": 1,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-08T09:44:26.498616"
+  },
+  {
+    "id": 47,
+    "user_id": 8810531451,
+    "quest_key": "daily_catch",
+    "progress": 1,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-06T15:54:26.748544"
+  },
+  {
+    "id": 48,
+    "user_id": 8810531451,
+    "quest_key": "weekly_catch",
+    "progress": 1,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-06T15:54:28.054289"
+  },
+  {
+    "id": 18,
+    "user_id": 8750329317,
+    "quest_key": "weekly_catch",
+    "progress": 4,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-07T09:31:32.054478"
+  },
+  {
+    "id": 19,
+    "user_id": 7868126225,
+    "quest_key": "daily_catch",
+    "progress": 1,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-07T05:36:12.280676"
+  },
+  {
+    "id": 20,
+    "user_id": 7868126225,
+    "quest_key": "weekly_catch",
+    "progress": 1,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-07T05:36:13.652619"
+  },
+  {
+    "id": 58,
+    "user_id": 8617551695,
+    "quest_key": "daily_chat",
+    "progress": 0,
+    "target": 20,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-08T10:20:29.726464"
+  },
+  {
+    "id": 59,
+    "user_id": 8617551695,
+    "quest_key": "daily_game",
+    "progress": 0,
+    "target": 1,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-08T10:20:30.605066"
+  },
+  {
+    "id": 60,
+    "user_id": 8617551695,
+    "quest_key": "weekly_auction",
+    "progress": 0,
+    "target": 2,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-08T10:20:31.922835"
+  },
+  {
+    "id": 1,
+    "user_id": 8617551695,
+    "quest_key": "daily_catch",
+    "progress": 3,
+    "target": 3,
+    "is_claimed": true,
+    "period": "daily",
+    "created_at": "2026-09-08T06:13:38.959140"
+  },
+  {
+    "id": 21,
+    "user_id": 6626891273,
+    "quest_key": "daily_catch",
+    "progress": 1,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-08T12:14:00.737752"
+  },
+  {
+    "id": 22,
+    "user_id": 6626891273,
+    "quest_key": "weekly_catch",
+    "progress": 2,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-07T04:46:11.813135"
+  },
+  {
+    "id": 49,
+    "user_id": 7236318925,
+    "quest_key": "daily_catch",
+    "progress": 1,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-08T12:35:35.781644"
+  },
+  {
+    "id": 62,
+    "user_id": 7136411926,
+    "quest_key": "daily_catch",
+    "progress": 0,
+    "target": 3,
+    "is_claimed": false,
+    "period": "daily",
+    "created_at": "2026-09-08T10:23:39.333543"
+  },
+  {
+    "id": 50,
+    "user_id": 7236318925,
+    "quest_key": "weekly_catch",
+    "progress": 1,
+    "target": 20,
+    "is_claimed": false,
+    "period": "weekly",
+    "created_at": "2026-09-08T12:35:37.095639"
+  }
+]

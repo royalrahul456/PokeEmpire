@@ -1,0 +1,29 @@
+[
+  {
+    "id": 1204271034023837698,
+    "name": "Elite Fours",
+    "tag": "ELI",
+    "owner_id": 8750329317,
+    "treasury": 2000100,
+    "level": 41,
+    "created_at": "2026-08-24T15:19:13.111022"
+  },
+  {
+    "id": 1204271133847879682,
+    "name": "Ice Kingdom ❄️",
+    "tag": "ICE",
+    "owner_id": 8661514842,
+    "treasury": 1000,
+    "level": 1,
+    "created_at": "2026-08-24T15:19:43.512260"
+  },
+  {
+    "id": 1204272858022871042,
+    "name": "Bulba Squad 🌿",
+    "tag": "BUL",
+    "owner_id": 8444133687,
+    "treasury": 3000501,
+    "level": 61,
+    "created_at": "2026-08-24T15:28:29.571205"
+  }
+]

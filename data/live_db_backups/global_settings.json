@@ -1,0 +1,210 @@
+[
+  {
+    "key": "cover_xo",
+    "value": "{\"type\": \"video\", \"value\": \"BAACAgQAAxkBAAID82o2yHi7g_NYNxpGPimlZpuDiDtsAAJ5CgAC7sO8UfmP-PNAl3eFPAQ\"}"
+  },
+  {
+    "key": "legendary_only_groups",
+    "value": "false"
+  },
+  {
+    "key": "cover_pokedex",
+    "value": "{\"type\": \"video\", \"value\": \"BAACAgQAAxkBAAIEqWo3YQo6GBho32KSr4kJYyIAAfvECgACjAoAAt7BvVFZEZS0LKbySzwE\"}"
+  },
+  {
+    "key": "cover_start",
+    "value": "{\"type\": \"video\", \"value\": \"BAACAgQAAxkBAAIEs2o3Ybx4Bj_WR5iTcLLv74E2KnIKAAKvCwACCC69Ub4T_pqbUJFZPAQ\"}"
+  },
+  {
+    "key": "group_rarity_probabilities",
+    "value": "{\"Common\": 40, \"Rare\": 40, \"Epic\": 2, \"Legendary\": 9, \"Mythical\": 9}"
+  },
+  {
+    "key": "0",
+    "value": "on"
+  },
+  {
+    "key": "1",
+    "value": "{\"type\": \"video\", \"value\": \"BAACAgUAAxkBAAIYoWo-GjZD_wkDndliQVxFNZEavnMNAAJPHQACmATxVfuJu_PQpyQJPAQ\"}"
+  },
+  {
+    "key": "2",
+    "value": "{\"type\": \"video\", \"value\": \"BAACAgQAAxkBAAIEqWo3YQo6GBho32KSr4kJYyIAAfvECgACjAoAAt7BvVFZEZS0LKbySzwE\"}"
+  },
+  {
+    "key": "user_fav_8062906788",
+    "value": "700.1"
+  },
+  {
+    "key": "3",
+    "value": "{\"type\": \"video\", \"value\": \"BAACAgQAAxkBAAIEs2o3Ybx4Bj_WR5iTcLLv74E2KnIKAAKvCwACCC69Ub4T_pqbUJFZPAQ\"}"
+  },
+  {
+    "key": "4",
+    "value": "{\"type\": \"video\", \"value\": \"BAACAgQAAxkBAAID82o2yHi7g_NYNxpGPimlZpuDiDtsAAJ5CgAC7sO8UfmP-PNAl3eFPAQ\"}"
+  },
+  {
+    "key": "5",
+    "value": "{\"Shiny\": \"\\u2728\", \"Galar\": \"\\u2744\\ufe0f\", \"Mega\": \"\\ud83c\\udf40\"}"
+  },
+  {
+    "key": "6",
+    "value": "11,13,14"
+  },
+  {
+    "key": "7",
+    "value": "6593485710,6574489816,6999196227,8062906788"
+  },
+  {
+    "key": "8",
+    "value": "8444133687,8661514842"
+  },
+  {
+    "key": "9",
+    "value": "{\"Common\": 70, \"Rare\": 20, \"Epic\": 7, \"Legendary\": 2, \"Mythical\": 1}"
+  },
+  {
+    "key": "10",
+    "value": "false"
+  },
+  {
+    "key": "11",
+    "value": "false"
+  },
+  {
+    "key": "12",
+    "value": "493.1"
+  },
+  {
+    "key": "13",
+    "value": "251"
+  },
+  {
+    "key": "14",
+    "value": "893"
+  },
+  {
+    "key": "15",
+    "value": "700.1"
+  },
+  {
+    "key": "16",
+    "value": "151"
+  },
+  {
+    "key": "17",
+    "value": "10188"
+  },
+  {
+    "key": "user_fav_7858986652",
+    "value": "6.1"
+  },
+  {
+    "key": "18",
+    "value": "250.1"
+  },
+  {
+    "key": "cover_leaderboard",
+    "value": "{\"type\": \"video\", \"value\": \"BAACAgUAAxkBAAIYoWo-GjZD_wkDndliQVxFNZEavnMNAAJPHQACmATxVfuJu_PQpyQJPAQ\"}"
+  },
+  {
+    "key": "19",
+    "value": "1500.1"
+  },
+  {
+    "key": "20",
+    "value": "6.1"
+  },
+  {
+    "key": "21",
+    "value": "969"
+  },
+  {
+    "key": "22",
+    "value": "700.1"
+  },
+  {
+    "key": "23",
+    "value": "382.1"
+  },
+  {
+    "key": "24",
+    "value": "384.1"
+  },
+  {
+    "key": "25",
+    "value": "251.6"
+  },
+  {
+    "key": "26",
+    "value": "10194.1"
+  },
+  {
+    "key": "user_fav_6593485710",
+    "value": "719.1"
+  },
+  {
+    "key": "27",
+    "value": "700.1"
+  },
+  {
+    "key": "user_fav_8750329317",
+    "value": "700.1"
+  },
+  {
+    "key": "database_chart_message_ids",
+    "value": "11,13,14"
+  },
+  {
+    "key": "custom_rarities",
+    "value": "{\"Shiny\": \"\\u2728\", \"Galar\": \"\\u2744\\ufe0f\", \"Mega\": \"\\ud83c\\udf40\"}"
+  },
+  {
+    "key": "user_fav_8444133687",
+    "value": "384.1"
+  },
+  {
+    "key": "user_fav_6748253762",
+    "value": "807"
+  },
+  {
+    "key": "user_fav_7809585776",
+    "value": "719.1"
+  },
+  {
+    "key": "user_fav_8661514842",
+    "value": "791.1"
+  },
+  {
+    "key": "user_fav_7868126225",
+    "value": "969"
+  },
+  {
+    "key": "user_fav_5971544132",
+    "value": "494.1"
+  },
+  {
+    "key": "dynamic_uploader_ids",
+    "value": "6593485710,8444133687,8661514842"
+  },
+  {
+    "key": "dynamic_admin_ids",
+    "value": "6593485710,6574489816,6999196227,8062906788,8984041700,8750329317"
+  },
+  {
+    "key": "user_fav_8617551695",
+    "value": "151.6"
+  },
+  {
+    "key": "user_fav_6024388247",
+    "value": "384"
+  },
+  {
+    "key": "user_fav_6807555199",
+    "value": "162.1"
+  },
+  {
+    "key": "auctions_enabled",
+    "value": "on"
+  }
+]

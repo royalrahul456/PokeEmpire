@@ -16,9 +16,18 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://royalrahul456.github.io/PokeEmpire/webapp/")
 
+# Default Supabase PostgreSQL URL
+SUPABASE_DB_URL = "postgresql://postgres:rahulmahadevpachpute@db.dlxlqrerxplqevvutgsn.supabase.co:5432/postgres"
+
 # Check if we are running in Render with persistent volume mount
 PERSISTENT_VOLUME = "/app/data_volume"
-_raw_db_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///pokeempire.db")
+_env_db = os.getenv("DATABASE_URL", "")
+
+# Auto-migrate away from expired CockroachDB/Neon URLs or empty DATABASE_URL to Supabase
+if not _env_db or "cockroachlabs" in _env_db or "neon.tech" in _env_db or _env_db == "sqlite+aiosqlite:///pokeempire.db":
+    _raw_db_url = SUPABASE_DB_URL
+else:
+    _raw_db_url = _env_db
 
 def _format_db_url(url: str) -> str:
     if url.startswith("sqlite+aiosqlite:///"):
@@ -29,6 +38,8 @@ def _format_db_url(url: str) -> str:
         db_url = db_url.replace("postgresql+asyncpg://", "cockroachdb+asyncpg://", 1)
     elif db_url.startswith("postgresql://"):
         db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    elif db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
 
     if "sslmode=" in db_url:
         db_url = db_url.replace("sslmode=require", "ssl=require")

@@ -43,12 +43,13 @@ def get_join_keyboard() -> InlineKeyboardMarkup:
     """
     Generates inline keyboard markup with link to the official group chat and a Verify button.
     """
+    from keyboards.inline import create_styled_button
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="👥 Join Group Chat", url="https://t.me/pokeempireunion")
+            create_styled_button(text="👥 Join Group Chat", key="support", url="https://t.me/pokeempireunion")
         ],
         [
-            InlineKeyboardButton(text="🔄 Verify Membership", callback_data="verify_membership")
+            create_styled_button(text="🔄 Verify Membership", key="refresh", callback_data="verify_membership")
         ]
     ])
     return keyboard

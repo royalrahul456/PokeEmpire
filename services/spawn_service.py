@@ -74,8 +74,10 @@ class SpawnService:
                 f"👉 <i>Type <code>/catch &lt;name&gt;</code> to catch it!</i>"
             )
 
+            from keyboards.inline import create_styled_button
+
             hint_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🔍 Hint (2,000 coins)", callback_data="spawn_hint")]
+                [create_styled_button(text="🔍 Hint (2,000 coins)", key="hint", callback_data="spawn_hint")]
             ])
 
             message_id = None

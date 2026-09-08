@@ -3,19 +3,29 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from typing import List, Any
 import config
 
-def create_styled_button(text: str, key: str, url: str = None, callback_data: str = None) -> InlineKeyboardButton:
+def create_styled_button(
+    text: str,
+    key: str = None,
+    url: str = None,
+    callback_data: str = None,
+    style: str = None,
+    icon_custom_emoji_id: str = None,
+    web_app: WebAppInfo = None
+) -> InlineKeyboardButton:
     """Helper to construct InlineKeyboardButton with native custom emoji icon and color style."""
-    emoji_id = getattr(config, "CUSTOM_EMOJI_IDS", {}).get(key)
-    style = getattr(config, "BUTTON_STYLES", {}).get(key)
+    emoji_id = icon_custom_emoji_id or (getattr(config, "CUSTOM_EMOJI_IDS", {}).get(key) if key else None)
+    btn_style = style or (getattr(config, "BUTTON_STYLES", {}).get(key) if key else None)
     kwargs = {"text": text}
     if url:
         kwargs["url"] = url
     if callback_data:
         kwargs["callback_data"] = callback_data
+    if web_app:
+        kwargs["web_app"] = web_app
     if emoji_id:
         kwargs["icon_custom_emoji_id"] = emoji_id
-    if style:
-        kwargs["style"] = style
+    if btn_style:
+        kwargs["style"] = btn_style
     return InlineKeyboardButton(**kwargs)
 
 def get_start_welcome_keyboard(bot_username: str) -> InlineKeyboardMarkup:
@@ -102,9 +112,9 @@ def get_bag_pagination_keyboard(page: int, max_page: int) -> InlineKeyboardMarku
     # Prev/Next row
     nav_buttons = []
     if page > 1:
-        nav_buttons.append(InlineKeyboardButton(text="◀️ Prev", callback_data=f"dm_bag_{page-1}"))
+        nav_buttons.append(create_styled_button(text="◀️ Prev", key="prev", callback_data=f"dm_bag_{page-1}"))
     if page < max_page:
-        nav_buttons.append(InlineKeyboardButton(text="Next ➡️", callback_data=f"dm_bag_{page+1}"))
+        nav_buttons.append(create_styled_button(text="Next ➡️", key="next", callback_data=f"dm_bag_{page+1}"))
     if nav_buttons:
         builder.row(*nav_buttons)
 
@@ -118,9 +128,9 @@ def get_dex_pagination_keyboard(page: int, max_page: int) -> InlineKeyboardMarku
     # Prev/Next row
     nav_buttons = []
     if page > 1:
-        nav_buttons.append(InlineKeyboardButton(text="◀️ Prev", callback_data=f"dm_dex_{page-1}"))
+        nav_buttons.append(create_styled_button(text="◀️ Prev", key="prev", callback_data=f"dm_dex_{page-1}"))
     if page < max_page:
-        nav_buttons.append(InlineKeyboardButton(text="Next ➡️", callback_data=f"dm_dex_{page+1}"))
+        nav_buttons.append(create_styled_button(text="Next ➡️", key="next", callback_data=f"dm_dex_{page+1}"))
     if nav_buttons:
         builder.row(*nav_buttons)
 

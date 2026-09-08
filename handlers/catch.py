@@ -83,9 +83,9 @@ async def cmd_catch(message: Message, db: AsyncSession):
             is_member = False
 
         if not is_member:
-            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            from keyboards.inline import create_styled_button
             kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🌲 Join PokéEmpire Union", url="https://t.me/pokeempireunion")]
+                [create_styled_button(text="🌲 Join PokéEmpire Union", key="support", url="https://t.me/pokeempireunion")]
             ])
             await message.answer(
                 "❌ **Catch Denied! First-Time Player Registration Required** 🌲\n\n"
@@ -237,8 +237,9 @@ async def cmd_catch(message: Message, db: AsyncSession):
             f"⏱️ <b>TIME:</b> {time_taken}s</blockquote>"
         )
         
+        from keyboards.inline import create_styled_button
         kb_builder = InlineKeyboardBuilder()
-        kb_builder.button(text="📖 View Pokedex", callback_data=f"pd_page_{user_id}_1_All")
+        kb_builder.add(create_styled_button(text="📖 View Pokedex", key="pokedex", callback_data=f"pd_page_{user_id}_1_All"))
         
         await message.reply(msg2_text, reply_markup=kb_builder.as_markup(), parse_mode="HTML")
 

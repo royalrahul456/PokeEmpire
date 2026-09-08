@@ -10,6 +10,8 @@ from sqlalchemy import select
 from database.models import User
 import config
 
+from keyboards.inline import create_styled_button
+
 router = Router()
 
 # In-memory store for active Mines games
@@ -68,8 +70,10 @@ def get_mines_keyboard(user_id: int, game: dict) -> InlineKeyboardMarkup:
     if not ended and len(revealed) > 0:
         curr_mult = calculate_multiplier(game["mines_count"], len(revealed))
         win_amt = int(game["bet"] * curr_mult)
-        builder.row(InlineKeyboardButton(
+        builder.row(create_styled_button(
             text=f"💰 Cashout ({curr_mult}x -> {win_amt}c)",
+            key="claim",
+            style="success",
             callback_data=f"mines_cash_{user_id}"
         ))
         
@@ -83,7 +87,7 @@ async def cmd_mines(message: Message, db: AsyncSession):
     if message.chat.type in ["group", "supergroup"]:
         if not message.chat.username or message.chat.username.lower() != "pokeempireunion":
             builder = InlineKeyboardBuilder()
-            builder.row(InlineKeyboardButton(text="🔗 Join Official GC", url="https://t.me/pokeempireunion"))
+            builder.row(create_styled_button(text="🔗 Join Official GC", key="support", url="https://t.me/pokeempireunion"))
             await message.answer(
                 "⚠️ <b>Mines game is only available in our official group chat!</b>\n\n"
                 "Join us there to play!",

@@ -11,7 +11,7 @@ from sqlalchemy import select
 import html
 from database.models import User
 from database.database import SessionLocal
-from utils.settings import send_cover_media
+from keyboards.inline import create_styled_button
 
 router = Router()
 
@@ -264,8 +264,8 @@ async def cmd_xo(message: Message, db: AsyncSession):
         # Send challenge invitation
         builder = InlineKeyboardBuilder()
         builder.row(
-            InlineKeyboardButton(text="✅ Accept", callback_data=f"xo_pvp_accept_{user_id}_{target_user.id}_{bet}"),
-            InlineKeyboardButton(text="❌ Decline", callback_data=f"xo_pvp_decline_{user_id}_{target_user.id}")
+            create_styled_button(text="✅ Accept", key="confirm", style="success", callback_data=f"xo_pvp_accept_{user_id}_{target_user.id}_{bet}"),
+            create_styled_button(text="❌ Decline", key="cancel", style="danger", callback_data=f"xo_pvp_decline_{user_id}_{target_user.id}")
         )
         
         text = (
@@ -298,14 +298,14 @@ async def cmd_xo(message: Message, db: AsyncSession):
     
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="🟢 Easy (+150)", callback_data=f"xo_ai_start_easy_{user_id}"),
-        InlineKeyboardButton(text="🟡 Medium (+1,500)", callback_data=f"xo_ai_start_medium_{user_id}")
+        create_styled_button(text="🟢 Easy (+150)", key="games", style="success", callback_data=f"xo_ai_start_easy_{user_id}"),
+        create_styled_button(text="🟡 Medium (+1,500)", key="games", style="primary", callback_data=f"xo_ai_start_medium_{user_id}")
     )
     builder.row(
-        InlineKeyboardButton(text="🔴 Hard (+20M 💀)", callback_data=f"xo_ai_start_hard_{user_id}")
+        create_styled_button(text="🔴 Hard (+20M 💀)", key="games", style="danger", callback_data=f"xo_ai_start_hard_{user_id}")
     )
     builder.row(
-        InlineKeyboardButton(text="👥 PvP Mode Info", callback_data=f"xo_pvp_info_{user_id}")
+        create_styled_button(text="👥 PvP Mode Info", key="info", style="primary", callback_data=f"xo_pvp_info_{user_id}")
     )
     
     await send_cover_media(
@@ -325,8 +325,7 @@ async def cb_xo_pvp_info(callback: CallbackQuery):
         return
         
     text = (
-        f"👥 <b>Tic Tac Toe PvP</b> 👥\n"
-        f"───────────────\n"
+        f"👥 <b>PvP Mode Guide</b>\n\n"
         f"Challenge another trainer to a 3x3 game of Tic Tac Toe with coins at stake!\n\n"
         f"👉 <b>How to challenge</b>:\n"
         f"• <code>/xo &lt;bet&gt; @username</code>\n"
@@ -334,7 +333,7 @@ async def cb_xo_pvp_info(callback: CallbackQuery):
         f"⚠️ <i>Bets can range from 10 to 10,000 coins. Both players must have enough coins.</i>"
     )
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="🔙 Back to Menu", callback_data=f"xo_menu_back_{user_id}"))
+    builder.row(create_styled_button(text="🔙 Back to Menu", key="back", style="primary", callback_data=f"xo_menu_back_{user_id}"))
     await edit_xo_message(callback, text, builder.as_markup())
     await callback.answer()
 
@@ -355,14 +354,14 @@ async def cb_xo_menu_back(callback: CallbackQuery):
     )
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="🟢 Easy (+150)", callback_data=f"xo_ai_start_easy_{user_id}"),
-        InlineKeyboardButton(text="🟡 Medium (+1,500)", callback_data=f"xo_ai_start_medium_{user_id}")
+        create_styled_button(text="🟢 Easy (+150)", key="games", style="success", callback_data=f"xo_ai_start_easy_{user_id}"),
+        create_styled_button(text="🟡 Medium (+1,500)", key="games", style="primary", callback_data=f"xo_ai_start_medium_{user_id}")
     )
     builder.row(
-        InlineKeyboardButton(text="🔴 Hard (+20M 💀)", callback_data=f"xo_ai_start_hard_{user_id}")
+        create_styled_button(text="🔴 Hard (+20M 💀)", key="games", style="danger", callback_data=f"xo_ai_start_hard_{user_id}")
     )
     builder.row(
-        InlineKeyboardButton(text="👥 PvP Mode Info", callback_data=f"xo_pvp_info_{user_id}")
+        create_styled_button(text="👥 PvP Mode Info", key="info", style="primary", callback_data=f"xo_pvp_info_{user_id}")
     )
     await edit_xo_message(callback, caption, builder.as_markup())
     await callback.answer()

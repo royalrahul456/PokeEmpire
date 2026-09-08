@@ -22,7 +22,7 @@ from utils.settings import (
     is_nameguess_enabled, 
     set_nameguess_status
 )
-from keyboards.inline import get_back_to_hub_keyboard
+from keyboards.inline import get_back_to_hub_keyboard, create_styled_button
 
 router = Router()
 
@@ -607,8 +607,8 @@ async def start_auto_scribble_game(chat_id: int, bot: Bot, db: AsyncSession):
         # Add inline buttons
         builder = InlineKeyboardBuilder()
         builder.row(
-            InlineKeyboardButton(text="🔍 Hint", callback_data="scribble_hint"),
-            InlineKeyboardButton(text="🚫 Stop Game", callback_data="scribble_stop")
+            create_styled_button(text="🔍 Hint", key="hint", callback_data="scribble_hint"),
+            create_styled_button(text="🚫 Stop Game", key="cancel", style="danger", callback_data="scribble_stop")
         )
         
         sent_msg = await bot.send_message(
@@ -670,8 +670,8 @@ async def start_auto_nameguess_game(chat_id: int, bot: Bot, db: AsyncSession):
         # Add inline buttons
         builder = InlineKeyboardBuilder()
         builder.row(
-            InlineKeyboardButton(text="🔍 Hint", callback_data="nameguess_hint"),
-            InlineKeyboardButton(text="🚫 Stop Game", callback_data="nameguess_stop")
+            create_styled_button(text="🔍 Hint", key="hint", callback_data="nameguess_hint"),
+            create_styled_button(text="🚫 Stop Game", key="cancel", style="danger", callback_data="nameguess_stop")
         )
         
         sent_msg = await bot.send_photo(
@@ -1066,7 +1066,7 @@ async def cmd_scribble(message: Message, db: AsyncSession):
     if message.chat.type in ["group", "supergroup"]:
         if not message.chat.username or message.chat.username.lower() != "pokeempireunion":
             builder = InlineKeyboardBuilder()
-            builder.row(InlineKeyboardButton(text="🔗 Join Official GC", url="https://t.me/pokeempireunion"))
+            builder.row(create_styled_button(text="🔗 Join Official GC", key="support", url="https://t.me/pokeempireunion"))
             await message.answer(
                 "⚠️ <b>Scribble and Nameguess games are only available in our official group chat!</b>\n\n"
                 "Join us there to play and win coins!",
@@ -1118,8 +1118,8 @@ async def cmd_scribble(message: Message, db: AsyncSession):
     # Add inline buttons
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="🔍 Hint", callback_data="scribble_hint"),
-        InlineKeyboardButton(text="🚫 Stop Game", callback_data="scribble_stop")
+        create_styled_button(text="🔍 Hint", key="hint", callback_data="scribble_hint"),
+        create_styled_button(text="🚫 Stop Game", key="cancel", style="danger", callback_data="scribble_stop")
     )
 
     sent_msg = await message.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")

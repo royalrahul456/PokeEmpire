@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database.models import User, TrainerQuest
 from utils.trainer_level import add_trainer_xp, log_transaction
 
+from keyboards.inline import create_styled_button
+
 router = Router()
 
 QUEST_DEFINITIONS = {
@@ -149,8 +151,10 @@ async def build_quests_payload(user_id: int, db: AsyncSession):
         lines.append(f"   <i>Reward:</i> 💰 {qdef['reward_coins']:,} coins | ⚡ {qdef['reward_xp']} XP\n")
 
         if not claimed and prog >= target:
-            builder.row(InlineKeyboardButton(
+            builder.row(create_styled_button(
                 text=f"🎁 Claim {qdef['title'][:18]}...",
+                key="claim",
+                style="success",
                 callback_data=f"claim_quest_{qk}"
             ))
 
@@ -164,7 +168,7 @@ async def build_quests_payload(user_id: int, db: AsyncSession):
         f"💡 Complete bounties to earn Coins & Trainer EXP!"
     )
 
-    builder.row(InlineKeyboardButton(text="🔄 Refresh Quests", callback_data="refresh_quests"))
+    builder.row(create_styled_button(text="🔄 Refresh Quests", key="refresh", callback_data="refresh_quests"))
     return text, builder.as_markup()
 
 @router.message(Command("quests", "bounties", "quest"))

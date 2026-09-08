@@ -47,12 +47,27 @@ async def check_auction_channel_membership(bot: Bot, user_id: int) -> bool:
 
 
 def get_channel_join_keyboard() -> InlineKeyboardMarkup:
+    from keyboards.inline import create_styled_button
     channel_url = "https://t.me/PokeEmpireAuctions"
     if config.AUCTION_CHANNEL and config.AUCTION_CHANNEL.startswith("@"):
         channel_url = f"https://t.me/{config.AUCTION_CHANNEL[1:]}"
     return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="📢 Join @PokeEmpireAuctions", url=channel_url)
+        create_styled_button(text="📢 Join @PokeEmpireAuctions", key="updates", url=channel_url)
     ]])
+    
+
+def get_auction_keyboard(auction_id: int, owner_id: int) -> InlineKeyboardBuilder:
+    from keyboards.inline import create_styled_button
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        create_styled_button(text="💵 +1,000", key="auction", callback_data=f"auc_bid_{auction_id}_1000"),
+        create_styled_button(text="💵 +5,000", key="auction", callback_data=f"auc_bid_{auction_id}_5000")
+    )
+    builder.row(
+        create_styled_button(text="💵 +10,000", key="auction", callback_data=f"auc_bid_{auction_id}_10000"),
+        create_styled_button(text="💬 Custom Bid", key="auction", style="success", callback_data=f"auc_custom_{auction_id}")
+    )
+    return builder
 
 
 def parse_duration(duration_str: str) -> int:
@@ -184,19 +199,6 @@ async def get_auction_card(db: AsyncSession, auction: Auction) -> tuple[str, str
             media_type, media_value = parse_stored_media_value(pokemon.video_url)
 
     return caption, media_type, media_value
-
-
-def get_auction_keyboard(auction_id: int, owner_id: int) -> InlineKeyboardBuilder:
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="💵 +1,000", callback_data=f"auc_bid_{auction_id}_1000"),
-        InlineKeyboardButton(text="💵 +5,000", callback_data=f"auc_bid_{auction_id}_5000")
-    )
-    builder.row(
-        InlineKeyboardButton(text="💵 +10,000", callback_data=f"auc_bid_{auction_id}_10000"),
-        InlineKeyboardButton(text="💬 Custom Bid", callback_data=f"auc_custom_{auction_id}")
-    )
-    return builder
 
 
 async def process_auction_bid(db: AsyncSession, bot: Bot, auction: Auction, bidder_user: User, bid_amount: int) -> tuple[bool, str]:

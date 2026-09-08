@@ -9,6 +9,8 @@ import config
 from database.models import User, Pokemon, UserPokemon
 from utils.formatters import get_rarity_emoji, escape_md
 
+from keyboards.inline import create_styled_button
+
 router = Router()
 
 @router.message(Command("pay"))
@@ -266,8 +268,8 @@ async def cmd_trade(message: Message, db: AsyncSession):
     callback_decline = f"t_dec_{sender_id}_{target_id}_{my_pokedex_id}_{their_pid_str}"
 
     builder.row(
-        InlineKeyboardButton(text="✅ Accept", callback_data=callback_accept),
-        InlineKeyboardButton(text="❌ Decline", callback_data=callback_decline)
+        create_styled_button(text="✅ Accept", key="confirm", style="success", callback_data=callback_accept),
+        create_styled_button(text="❌ Decline", key="cancel", style="danger", callback_data=callback_decline)
     )
 
     await message.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")

@@ -140,7 +140,18 @@ CUSTOM_EMOJI_IDS = {
     "streak": os.getenv("EMOJI_STREAK", "5424972470023104089"),            # 🔥
     "panel": os.getenv("EMOJI_PANEL", "5433758796289685818"),              # 👑
     "tools": os.getenv("EMOJI_TOOLS", "5461047575379466857"),              # 🛠️
-    "back": os.getenv("EMOJI_BACK", "5400169738263352182")                 # 🔙
+    "back": os.getenv("EMOJI_BACK", "5400169738263352182"),                 # 🔙
+    "catch": os.getenv("EMOJI_CATCH", "5188344996356448758"),              # ⚾ / 🏆
+    "auction": os.getenv("EMOJI_AUCTION", "5203996991054432397"),          # 🔨
+    "confirm": os.getenv("EMOJI_CONFIRM", "5424972470023104089"),          # ✅
+    "cancel": os.getenv("EMOJI_CANCEL", "5400169738263352182"),            # ❌
+    "refresh": os.getenv("EMOJI_REFRESH", "5461047575379466857"),          # 🔄
+    "claim": os.getenv("EMOJI_CLAIM", "5203996991054432397"),              # 🎁
+    "prev": os.getenv("EMOJI_PREV", "5400169738263352182"),                # ◀️
+    "next": os.getenv("EMOJI_NEXT", "5400169738263352182"),                # ▶️
+    "hint": os.getenv("EMOJI_HINT", "5436113877181941026"),                # 🔍
+    "buy": os.getenv("EMOJI_BUY", "5312361253610475399"),                  # 🛒
+    "info": os.getenv("EMOJI_INFO", "5436113877181941026"),                # ℹ️
 }
 
 # Native Telegram Button Color Styles ("primary" = blue, "success" = green, "danger" = red)
@@ -164,6 +175,17 @@ BUTTON_STYLES = {
     "streak": "danger",
     "panel": "danger",
     "tools": "primary",
-    "back": "primary"
+    "back": "primary",
+    "catch": "success",
+    "auction": "primary",
+    "confirm": "success",
+    "cancel": "danger",
+    "refresh": "primary",
+    "claim": "success",
+    "prev": "primary",
+    "next": "primary",
+    "hint": "primary",
+    "buy": "success",
+    "info": "primary",
 }
 

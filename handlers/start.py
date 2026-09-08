@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, distinct, case
 from database.models import User, Pokemon, UserPokemon, ActiveSpawn, GroupSetting
 from keyboards.inline import (
+    create_styled_button,
     get_dm_menu_keyboard, 
     get_bag_pagination_keyboard, 
     get_back_to_hub_keyboard, 
@@ -122,15 +123,15 @@ async def cmd_gc_settings(message: Message, db: AsyncSession):
     
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="🔔 Toggle Spawns", callback_data=f"adm_toggle_spawns_{message.chat.id}"),
-        InlineKeyboardButton(text="📈 Adjust Spawns", callback_data=f"adm_adjust_threshold_{message.chat.id}")
+        create_styled_button(text="🔔 Toggle Spawns", key="tools", callback_data=f"adm_toggle_spawns_{message.chat.id}"),
+        create_styled_button(text="📈 Adjust Spawns", key="tools", callback_data=f"adm_adjust_threshold_{message.chat.id}")
     )
     builder.row(
-        InlineKeyboardButton(text="✏️ Toggle Scribble", callback_data=f"adm_toggle_scribble_{message.chat.id}"),
-        InlineKeyboardButton(text="🖼️ Toggle Nameguess", callback_data=f"adm_toggle_nameguess_{message.chat.id}")
+        create_styled_button(text="✏️ Toggle Scribble", key="tools", callback_data=f"adm_toggle_scribble_{message.chat.id}"),
+        create_styled_button(text="🖼️ Toggle Nameguess", key="tools", callback_data=f"adm_toggle_nameguess_{message.chat.id}")
     )
     me = await message.bot.get_me()
-    builder.row(InlineKeyboardButton(text="💬 Open Private DMs", url=f"https://t.me/{me.username}?start=help"))
+    builder.row(create_styled_button(text="💬 Open Private DMs", key="support", url=f"https://t.me/{me.username}?start=help"))
     
     await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
@@ -569,8 +570,8 @@ async def cmd_events_calendar(message: Message):
     else:
         builder = InlineKeyboardBuilder()
         builder.row(
-            InlineKeyboardButton(text="👥 Official Union", url="https://t.me/pokeempireunion"),
-            InlineKeyboardButton(text="📢 Updates Channel", url="https://t.me/pokeempireupdates")
+            create_styled_button(text="👥 Official Union", key="support", url="https://t.me/pokeempireunion"),
+            create_styled_button(text="📢 Updates Channel", key="updates", url="https://t.me/pokeempireupdates")
         )
         kb = builder.as_markup()
     await message.answer(SEPTEMBER_EVENT_CALENDAR_TEXT, reply_markup=kb, parse_mode="HTML")
@@ -884,11 +885,11 @@ async def cb_battle_action(callback: CallbackQuery, db: AsyncSession):
 
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="⚔️ Attack", callback_data=f"bat_atk_{up_id}_{page}"),
-        InlineKeyboardButton(text="🛡️ Defend", callback_data=f"bat_def_{up_id}_{page}")
+        create_styled_button(text="⚔️ Attack", key="battle", style="danger", callback_data=f"bat_atk_{up_id}_{page}"),
+        create_styled_button(text="🛡️ Defend", key="battle", style="primary", callback_data=f"bat_def_{up_id}_{page}")
     )
     builder.row(
-        InlineKeyboardButton(text="🏃 Run", callback_data=f"bat_run_{up_id}_{page}")
+        create_styled_button(text="🏃 Run", key="back", style="primary", callback_data=f"bat_run_{up_id}_{page}")
     )
 
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
@@ -1039,16 +1040,16 @@ async def cb_owner_tools(callback: CallbackQuery):
     )
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="🖼️ Set Start Cover", callback_data="owner_setcover_start"),
-        InlineKeyboardButton(text="🎮 Set XO Cover", callback_data="owner_setcover_xo")
+        create_styled_button(text="🖼️ Set Start Cover", key="tools", callback_data="owner_setcover_start"),
+        create_styled_button(text="🎮 Set XO Cover", key="tools", callback_data="owner_setcover_xo")
     )
     builder.row(
-        InlineKeyboardButton(text="📖 Set Pokédex Cover", callback_data="owner_setcover_pokedex"),
-        InlineKeyboardButton(text="📊 Spawn Rates", callback_data="owner_spawnchance")
+        create_styled_button(text="📖 Set Pokédex Cover", key="tools", callback_data="owner_setcover_pokedex"),
+        create_styled_button(text="📊 Spawn Rates", key="stats", callback_data="owner_spawnchance")
     )
     builder.row(
-        InlineKeyboardButton(text="📋 View Media IDs", callback_data="owner_medialist"),
-        InlineKeyboardButton(text="🔙 Back to Menu", callback_data="dm_home")
+        create_styled_button(text="📋 View Media IDs", key="tools", callback_data="owner_medialist"),
+        create_styled_button(text="🔙 Back to Menu", key="back", callback_data="dm_home")
     )
     await callback.message.edit_caption(caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
     await callback.answer()

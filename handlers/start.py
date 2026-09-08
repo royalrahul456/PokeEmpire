@@ -496,7 +496,8 @@ async def cb_dm_help(callback: CallbackQuery):
         f"• <code>/toggle_spawns</code> — Enable/Disable spawns in this group (Admins only)</blockquote>\n\n"
         f"🎮 <b>Interactive Hub</b>: Use the buttons here to explore your trainer collection instantly!"
     )
-    try:
+    
+       try:
         await callback.message.edit_caption(caption=help_text, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
     except Exception:
         try:
@@ -505,7 +506,7 @@ async def cb_dm_help(callback: CallbackQuery):
             pass
     await callback.answer()
 
-    SEPTEMBER_EVENT_CALENDAR_TEXT = (
+SEPTEMBER_EVENT_CALENDAR_TEXT = (
     "╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮\n"
     "🦚✨ <b>POKEEMPIRE</b> ✨🦚\n"
     "📅 <b>SEPTEMBER EVENT CALENDAR</b>\n"

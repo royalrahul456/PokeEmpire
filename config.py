@@ -122,7 +122,8 @@ CUSTOM_EMOJI_IDS = {
     "games": os.getenv("EMOJI_GAMES", "5255765065096774716"),              # 🎰
     "streak": os.getenv("EMOJI_STREAK", "5424972470023104089"),            # 🔥
     "panel": os.getenv("EMOJI_PANEL", "5433758796289685818"),              # 👑
-    "tools": os.getenv("EMOJI_TOOLS", "5461047575379466857")               # 🛠️
+    "tools": os.getenv("EMOJI_TOOLS", "5461047575379466857"),              # 🛠️
+    "back": os.getenv("EMOJI_BACK", "5400169738263352182")                 # 🔙
 }
 
 # Native Telegram Button Color Styles ("primary" = blue, "success" = green, "danger" = red)
@@ -145,6 +146,7 @@ BUTTON_STYLES = {
     "games": "primary",
     "streak": "danger",
     "panel": "danger",
-    "tools": "primary"
+    "tools": "primary",
+    "back": "primary"
 }
 

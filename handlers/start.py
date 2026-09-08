@@ -497,7 +497,7 @@ async def cb_dm_help(callback: CallbackQuery):
         f"🎮 <b>Interactive Hub</b>: Use the buttons here to explore your trainer collection instantly!"
     )
     
-       try:
+    try:
         await callback.message.edit_caption(caption=help_text, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
     except Exception:
         try:

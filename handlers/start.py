@@ -511,7 +511,7 @@ async def cb_dm_help(callback: CallbackQuery):
     "📅 <b>SEPTEMBER EVENT CALENDAR</b>\n"
     "╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n"
     "🔥 <b>8 SEP — 30 SEP</b> 🔥\n"
-    "A month packed with <b>LEGENDARY SPAWNS</b>, <b>QUIZZES</b> & <b>REDEEM RUSHES!</b> ⚡️\n\n"
+    "A month packed with <b>LEGENDARY SPAWNS</b>, <b>QUIZZES</b> &amp; <b>REDEEM RUSHES!</b> ⚡️\n\n"
     "╭───────────────╮\n"
     "⚡️ <b>LEGENDARY SPAWN BOOST</b>\n"
     "╰───────────────╯\n"
@@ -537,7 +537,7 @@ async def cb_dm_help(callback: CallbackQuery):
     "╭───────────────╮\n"
     "🛍 <b>EXCHANGE STORE</b>\n"
     "╰───────────────╯\n"
-    "💎 Special items & rewards\n"
+    "💎 Special items &amp; rewards\n"
     "🎟 Exchange your event rewards for valuable items!\n\n"
     "╭───────────────╮\n"
     "📋 <b>TASK EVENT</b>\n"
@@ -563,7 +563,16 @@ async def cb_dm_help(callback: CallbackQuery):
 
 @router.message(Command("events", "calendar", "event", "september"))
 async def cmd_events_calendar(message: Message):
-    await message.answer(SEPTEMBER_EVENT_CALENDAR_TEXT, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
+    if message.chat.type == "private":
+        kb = get_back_to_hub_keyboard()
+    else:
+        builder = InlineKeyboardBuilder()
+        builder.row(
+            InlineKeyboardButton(text="👥 Official Union", url="https://t.me/pokeempireunion"),
+            InlineKeyboardButton(text="📢 Updates Channel", url="https://t.me/pokeempireupdates")
+        )
+        kb = builder.as_markup()
+    await message.answer(SEPTEMBER_EVENT_CALENDAR_TEXT, reply_markup=kb, parse_mode="HTML")
 
 @router.callback_query(F.data == "dm_events")
 async def cb_dm_events(callback: CallbackQuery):

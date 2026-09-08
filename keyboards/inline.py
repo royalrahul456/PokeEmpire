@@ -6,12 +6,15 @@ import config
 def get_start_welcome_keyboard(bot_username: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="👑 Owner", url="https://t.me/TheDarkKratosX"),
-        InlineKeyboardButton(text="👥 Official Group", url="https://t.me/pokeempireunion")
+        InlineKeyboardButton(text="➕ Add to Group", url=f"https://t.me/{bot_username}?startgroup=true")
     )
     builder.row(
-        InlineKeyboardButton(text="📢 Updates Channel", url="https://t.me/pokeempireupdates"),
-        InlineKeyboardButton(text="➕ Add to your Group", url=f"https://t.me/{bot_username}?startgroup=true")
+        InlineKeyboardButton(text="🌍 Updates", url="https://t.me/pokeempireupdates"),
+        InlineKeyboardButton(text="🛟 Support", url="https://t.me/pokeempireunion")
+    )
+    builder.row(
+        InlineKeyboardButton(text="❓ Help", callback_data="dm_help"),
+        InlineKeyboardButton(text="📊 Stats", callback_data="dm_rankings_info")
     )
     return builder.as_markup()
 
@@ -39,7 +42,7 @@ def get_dm_menu_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="🎁 Redeem", callback_data="dm_redeem_info")
     )
     builder.row(
-        InlineKeyboardButton(text="🛂 Shop", callback_data="dm_shop"),
+        InlineKeyboardButton(text="🛒 Shop", callback_data="dm_shop"),
         InlineKeyboardButton(text="🎮 Games Center", callback_data="dm_games")
     )
     builder.row(
@@ -109,7 +112,7 @@ def get_admin_menu_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="🎁 Redeem", callback_data="dm_redeem_info")
     )
     builder.row(
-        InlineKeyboardButton(text="🛂 Shop", callback_data="dm_shop"),
+        InlineKeyboardButton(text="🛒 Shop", callback_data="dm_shop"),
         InlineKeyboardButton(text="🎮 Games Center", callback_data="dm_games")
     )
     builder.row(

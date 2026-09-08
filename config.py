@@ -16,14 +16,14 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://royalrahul456.github.io/PokeEmpire/webapp/")
 
-# Default Supabase PostgreSQL URL
-SUPABASE_DB_URL = "postgresql://postgres:rahulmahadevpachpute@db.dlxlqrerxplqevvutgsn.supabase.co:5432/postgres"
+# Default Supabase IPv4 Pooler PostgreSQL URL (resolves Render's IPv6 Network Unreachable error)
+SUPABASE_DB_URL = "postgresql://postgres.dlxlqrerxplqevvutgsn:rahulmahadevpachpute@aws-0-ap-southeast-2.pooler.supabase.com:5432/postgres"
 
 # Check if we are running in Render with persistent volume mount
 PERSISTENT_VOLUME = "/app/data_volume"
 _env_db = os.getenv("DATABASE_URL", "")
 
-# Auto-migrate away from expired CockroachDB/Neon URLs or empty DATABASE_URL to Supabase
+# Auto-migrate away from expired CockroachDB/Neon URLs or empty DATABASE_URL to Supabase IPv4 Pooler
 if not _env_db or "cockroachlabs" in _env_db or "neon.tech" in _env_db or _env_db == "sqlite+aiosqlite:///pokeempire.db":
     _raw_db_url = SUPABASE_DB_URL
 else:
@@ -33,6 +33,12 @@ def _format_db_url(url: str) -> str:
     if url.startswith("sqlite+aiosqlite:///"):
         return url
     db_url = url
+
+    # Auto-convert direct IPv6 host to IPv4 pooler host for cloud hosts like Render
+    if "db.dlxlqrerxplqevvutgsn.supabase.co" in db_url:
+        db_url = db_url.replace("db.dlxlqrerxplqevvutgsn.supabase.co", "aws-0-ap-southeast-2.pooler.supabase.com")
+        db_url = db_url.replace("postgres:rahulmahadevpachpute", "postgres.dlxlqrerxplqevvutgsn:rahulmahadevpachpute")
+
     if "cockroachlabs" in db_url:
         db_url = db_url.replace("postgresql://", "cockroachdb+asyncpg://", 1)
         db_url = db_url.replace("postgresql+asyncpg://", "cockroachdb+asyncpg://", 1)

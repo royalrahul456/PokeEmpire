@@ -153,6 +153,10 @@ def get_uploader_menu_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="❓ Guide", callback_data="dm_help")
     )
     builder.row(
+        InlineKeyboardButton(text="📅 Event Calendar", callback_data="dm_events"),
+        InlineKeyboardButton(text="❓ Guide", callback_data="dm_help")
+    )
+    builder.row(
         InlineKeyboardButton(text="📋 View Media IDs", callback_data="owner_medialist")
     )
     return builder.as_markup()

@@ -36,11 +36,19 @@ class SpawnService:
                 selected_rarity = rarity
             else:
                 # 1. Roll rarity tier
-                probs = settings.get("group_rarity_probabilities", RARITY_PROBABILITIES)
+                from datetime import datetime
+                now = datetime.utcnow()
+                probs = dict(settings.get("group_rarity_probabilities", RARITY_PROBABILITIES))
+                # September Event Boost (8-28 Sep: +20% Legendary; 29-30 Sep: +80% Mega Boost)
+                if now.month == 9:
+                    if 8 <= now.day <= 28:
+                        probs["Legendary"] = probs.get("Legendary", 2) * 1.2
+                    elif 29 <= now.day <= 30:
+                        probs["Legendary"] = probs.get("Legendary", 2) * 1.8
                 rarities = list(probs.keys())
                 weights = [probs.get(r, RARITY_PROBABILITIES.get(r, 0)) for r in rarities]
                 selected_rarity = random.choices(rarities, weights=weights, k=1)[0]
-
+                
             # 2. Get Pokémon from in-memory cache
             from utils.pokemon_cache import get_cached_pokemon_by_rarity, get_all_cached_pokemon
             pokemon_list = get_cached_pokemon_by_rarity(selected_rarity)

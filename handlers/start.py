@@ -505,6 +505,76 @@ async def cb_dm_help(callback: CallbackQuery):
             pass
     await callback.answer()
 
+    SEPTEMBER_EVENT_CALENDAR_TEXT = (
+    "╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮\n"
+    "🦚✨ <b>POKEEMPIRE</b> ✨🦚\n"
+    "📅 <b>SEPTEMBER EVENT CALENDAR</b>\n"
+    "╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n"
+    "🔥 <b>8 SEP — 30 SEP</b> 🔥\n"
+    "A month packed with <b>LEGENDARY SPAWNS</b>, <b>QUIZZES</b> & <b>REDEEM RUSHES!</b> ⚡️\n\n"
+    "╭───────────────╮\n"
+    "⚡️ <b>LEGENDARY SPAWN BOOST</b>\n"
+    "╰───────────────╯\n"
+    "📅 <b>8 Sep — 28 Sep</b>\n"
+    "✨ <b>+20% Legendary Spawn Chance</b>\n"
+    "🔥 <b>29 Sep — 30 Sep</b>\n"
+    "💥 <b>+80% Legendary Spawn Chance</b>\n"
+    "⚡️ <i>MEGA BOOST DAYS!</i>\n\n"
+    "╭───────────────╮\n"
+    "🧠 <b>EVERY SATURDAY — QUIZ</b>\n"
+    "╰───────────────╯\n"
+    "🎯 Test your Pokémon knowledge\n"
+    "🏆 Win exciting rewards\n"
+    "🧠 Be quick — only the fastest answers count!\n"
+    "📅 <b>12 Sep • 19 Sep • 26 Sep</b>\n\n"
+    "╭───────────────╮\n"
+    "🎁 <b>EVERY SUNDAY — REDEEM RUSH</b>\n"
+    "╰───────────────╯\n"
+    "⚡️ Fastest players grab the codes!\n"
+    "🎁 Redeem Drops will also appear randomly across various bot channels.\n"
+    "👀 Stay active — you never know when a drop will happen!\n"
+    "📅 <b>13 Sep • 20 Sep • 27 Sep</b>\n\n"
+    "╭───────────────╮\n"
+    "🛍 <b>EXCHANGE STORE</b>\n"
+    "╰───────────────╯\n"
+    "💎 Special items & rewards\n"
+    "🎟 Exchange your event rewards for valuable items!\n\n"
+    "╭───────────────╮\n"
+    "📋 <b>TASK EVENT</b>\n"
+    "╰───────────────╯\n"
+    "🎯 Complete tasks\n"
+    "🎁 Earn rewards\n"
+    "🔥 Keep playing throughout the month!\n\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    "⚡️ <b>8–28 SEP</b> ➔ +20% LEGENDARY SPAWN\n"
+    "🔥 <b>29–30 SEP</b> ➔ +80% LEGENDARY SPAWN\n"
+    "🧠 <b>SATURDAY</b> ➔ QUIZ\n"
+    "🎁 <b>SUNDAY</b> ➔ REDEEM RUSH\n"
+    "📢 <b>RANDOM</b> ➔ REDEEM DROPS\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    "🚨 <b>STAY ACTIVE. STAY READY.</b>\n"
+    "👑 <b>THE LEGENDS ARE WAITING.</b>\n\n"
+    "🦚 <b>POKEEMPIRE</b>\n"
+    "<i>Catch • Battle • Collect • Dominate</i>\n\n"
+    "Regards,\n"
+    "<a href='https://t.me/ThaDarkKratosX'>@ThaDarkKratosX</a>\n"
+    "PokeEmpire Team 🦚"
+)
+
+@router.message(Command("events", "calendar", "event", "september"))
+async def cmd_events_calendar(message: Message):
+    await message.answer(SEPTEMBER_EVENT_CALENDAR_TEXT, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
+
+@router.callback_query(F.data == "dm_events")
+async def cb_dm_events(callback: CallbackQuery):
+    try:
+        await callback.message.edit_caption(caption=SEPTEMBER_EVENT_CALENDAR_TEXT, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
+    except Exception:
+        try:
+            await callback.message.edit_text(SEPTEMBER_EVENT_CALENDAR_TEXT, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
+        except Exception:
+            pass
+    await callback.answer()
 
 @router.callback_query(F.data == "dm_rankings_info")
 async def cb_dm_rankings_info(callback: CallbackQuery):

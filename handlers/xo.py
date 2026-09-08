@@ -368,98 +368,106 @@ async def cb_xo_menu_back(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("xo_ai_start_"))
 async def cb_xo_ai_start(callback: CallbackQuery):
-    parts = callback.data.split("_")
-    # Structure: xo_ai_start_<difficulty>_<user_id>
-    difficulty = parts[3]
-    user_id = int(parts[4])
-    
-    if callback.from_user.id != user_id:
-        await callback.answer("❌ This is not your menu! Use /xo to start your own.", show_alert=True)
-        return
+    try:
+        parts = callback.data.rsplit("_", 2)
+        # Structure: xo_ai_start_<difficulty>_<user_id>
+        difficulty = parts[1]
+        user_id = int(parts[2])
         
-    chat_id = callback.message.chat.id
-    game_key = f"{chat_id}_{callback.message.message_id}"
-    
-    # Initialize game
-    active_xo_games[f"xo_ai_{game_key}"] = {
-        "type": "ai",
-        "board": [""] * 9,
-        "difficulty": difficulty,
-        "player_x": user_id,
-        "player_x_name": callback.from_user.first_name,
-        "turn": "X",
-        "created_at": time.time()
-    }
-    
-    text = (
-        f"🎲 <b>Tic Tac Toe (AI - {difficulty.title()})</b> 🎲\n"
-        f"───────────────\n"
-        f"Trainer: ❌ <b>{html.escape(callback.from_user.first_name)}</b>\n"
-        f"Opponent: 🔵 <b>AI</b>\n\n"
-        f"🟢 It's your turn! Click an empty square below:"
-    )
-    
-    # Replace menu with the active board
-    await edit_xo_message(callback, text, get_xo_keyboard(game_key, [""] * 9, is_pvp=False))
-    await callback.answer()
+        if callback.from_user.id != user_id:
+            await callback.answer("❌ This is not your menu! Use /xo to start your own.", show_alert=True)
+            return
+            
+        chat_id = callback.message.chat.id
+        game_key = f"{chat_id}_{callback.message.message_id}"
+        
+        # Initialize game
+        active_xo_games[f"xo_ai_{game_key}"] = {
+            "type": "ai",
+            "board": [""] * 9,
+            "difficulty": difficulty,
+            "player_x": user_id,
+            "player_x_name": callback.from_user.first_name,
+            "turn": "X",
+            "created_at": time.time()
+        }
+        
+        text = (
+            f"🎲 <b>Tic Tac Toe (AI - {difficulty.title()})</b> 🎲\n"
+            f"───────────────\n"
+            f"Trainer: ❌ <b>{html.escape(callback.from_user.first_name)}</b>\n"
+            f"Opponent: 🔵 <b>AI</b>\n\n"
+            f"🟢 It's your turn! Click an empty square below:"
+        )
+        
+        # Replace menu with the active board
+        await edit_xo_message(callback, text, get_xo_keyboard(game_key, [""] * 9, is_pvp=False))
+        await callback.answer()
+    except Exception as e:
+        print(f"Error in cb_xo_ai_start: {e}")
+        await callback.answer("⚠️ An error occurred while starting the game.", show_alert=True)
 
 @router.callback_query(F.data.startswith("xo_ai_play_"))
 async def cb_xo_ai_play(callback: CallbackQuery, db: AsyncSession):
-    parts = callback.data.split("_")
-    # Structure: xo_ai_play_<chat_id>_<message_id>_<cell_index>
-    chat_id = int(parts[3])
-    msg_id = int(parts[4])
-    cell_idx = int(parts[5])
-    
-    game_key = f"{chat_id}_{msg_id}"
-    game_id = f"xo_ai_{game_key}"
-    
-    if game_id not in active_xo_games:
-        await callback.answer("⚠️ Game has expired or already ended.", show_alert=True)
-        return
+    try:
+        parts = callback.data.rsplit("_", 3)
+        # Structure: xo_ai_play_<chat_id>_<message_id>_<cell_index>
+        chat_id = int(parts[1])
+        msg_id = int(parts[2])
+        cell_idx = int(parts[3])
         
-    game = active_xo_games[game_id]
-    
-    # Ensure only the player who started this game can click
-    if callback.from_user.id != game["player_x"]:
-        await callback.answer("❌ This is not your game!", show_alert=True)
-        return
+        game_key = f"{chat_id}_{msg_id}"
+        game_id = f"xo_ai_{game_key}"
         
-    board = game["board"]
-    if board[cell_idx] != "":
-        await callback.answer("⚠️ That space is already taken!", show_alert=True)
-        return
+        if game_id not in active_xo_games:
+            await callback.answer("⚠️ Game has expired or already ended.", show_alert=True)
+            return
+            
+        game = active_xo_games[game_id]
         
-    # Apply player move
-    board[cell_idx] = "X"
-    
-    # Check if player won
-    winner = check_winner(board)
-    if winner:
-        await handle_ai_game_over(callback, game_id, winner, db)
-        return
+        # Ensure only the player who started this game can click
+        if callback.from_user.id != game["player_x"]:
+            await callback.answer("❌ This is not your game!", show_alert=True)
+            return
+            
+        board = game["board"]
+        if board[cell_idx] != "":
+            await callback.answer("⚠️ That space is already taken!", show_alert=True)
+            return
+            
+        # Apply player move
+        board[cell_idx] = "X"
         
-    # AI makes its move
-    ai_move = make_ai_move(board, game["difficulty"], game["player_x"])
-    if ai_move != -1:
-        board[ai_move] = "O"
-        
-    # Check if AI won
-    winner = check_winner(board)
-    if winner:
-        await handle_ai_game_over(callback, game_id, winner, db)
-        return
-        
-    # Continue game
-    text = (
-        f"🎲 <b>Tic Tac Toe (AI - {game['difficulty'].title()})</b> 🎲\n"
-        f"───────────────\n"
-        f"Trainer: ❌ <b>{html.escape(game['player_x_name'])}</b>\n"
-        f"Opponent: 🔵 <b>AI</b>\n\n"
-        f"🟢 Your turn! Click an empty square:"
-    )
-    await edit_xo_message(callback, text, get_xo_keyboard(game_key, board, is_pvp=False))
-    await callback.answer()
+        # Check if player won
+        winner = check_winner(board)
+        if winner:
+            await handle_ai_game_over(callback, game_id, winner, db)
+            return
+            
+        # AI makes its move
+        ai_move = make_ai_move(board, game["difficulty"], game["player_x"])
+        if ai_move != -1:
+            board[ai_move] = "O"
+            
+        # Check if AI won
+        winner = check_winner(board)
+        if winner:
+            await handle_ai_game_over(callback, game_id, winner, db)
+            return
+            
+        # Continue game
+        text = (
+            f"🎲 <b>Tic Tac Toe (AI - {game['difficulty'].title()})</b> 🎲\n"
+            f"───────────────\n"
+            f"Trainer: ❌ <b>{html.escape(game['player_x_name'])}</b>\n"
+            f"Opponent: 🔵 <b>AI</b>\n\n"
+            f"🟢 Your turn! Click an empty square:"
+        )
+        await edit_xo_message(callback, text, get_xo_keyboard(game_key, board, is_pvp=False))
+        await callback.answer()
+    except Exception as e:
+        print(f"Error in cb_xo_ai_play: {e}")
+        await callback.answer("⚠️ An error occurred.", show_alert=True)
 
 @router.callback_query(F.data == "xo_ended")
 async def cb_xo_ended(callback: CallbackQuery):
@@ -529,144 +537,155 @@ async def handle_ai_game_over(callback: CallbackQuery, game_id: str, winner: str
 
 @router.callback_query(F.data.startswith("xo_pvp_decline_"))
 async def cb_xo_pvp_decline(callback: CallbackQuery):
-    parts = callback.data.split("_")
-    challenger_id = int(parts[3])
-    target_id = int(parts[4])
-    
-    if callback.from_user.id != target_id:
-        await callback.answer("❌ This challenge was not sent to you!", show_alert=True)
-        return
+    try:
+        parts = callback.data.rsplit("_", 2)
+        challenger_id = int(parts[1])
+        target_id = int(parts[2])
         
-    await edit_xo_message(callback, "❌ Challenge declined.", None)
-    await callback.answer()
-    asyncio.create_task(delete_message_after(callback.message, 10))
+        if callback.from_user.id != target_id:
+            await callback.answer("❌ This challenge was not sent to you!", show_alert=True)
+            return
+            
+        await edit_xo_message(callback, "❌ Challenge declined.", None)
+        await callback.answer()
+        asyncio.create_task(delete_message_after(callback.message, 10))
+    except Exception as e:
+        print(f"Error in cb_xo_pvp_decline: {e}")
+        await callback.answer("⚠️ An error occurred.", show_alert=True)
 
 @router.callback_query(F.data.startswith("xo_pvp_accept_"))
 async def cb_xo_pvp_accept(callback: CallbackQuery, db: AsyncSession):
-    parts = callback.data.split("_")
-    challenger_id = int(parts[3])
-    target_id = int(parts[4])
-    bet = int(parts[5])
-    
-    chat_id = callback.message.chat.id
-    msg_id = callback.message.message_id
-    
-    if callback.from_user.id != target_id:
-        await callback.answer("❌ This challenge was not sent to you!", show_alert=True)
-        return
+    try:
+        parts = callback.data.rsplit("_", 3)
+        challenger_id = int(parts[1])
+        target_id = int(parts[2])
+        bet = int(parts[3])
+        
+        chat_id = callback.message.chat.id
+        msg_id = callback.message.message_id
+        
+        if callback.from_user.id != target_id:
+            await callback.answer("❌ This challenge was not sent to you!", show_alert=True)
+            return
 
-    # Check challenger balance
-    stmt = select(User).where(User.id == challenger_id)
-    res = await db.execute(stmt)
-    challenger = res.scalar_one_or_none()
-    
-    if not challenger or challenger.coins < bet:
-        await callback.answer("❌ Challenger no longer has enough coins!", show_alert=True)
-        await edit_xo_message(callback, "❌ Match cancelled due to insufficient funds of challenger.", None)
-        return
+        # Check challenger balance
+        stmt = select(User).where(User.id == challenger_id)
+        res = await db.execute(stmt)
+        challenger = res.scalar_one_or_none()
+        
+        if not challenger or challenger.coins < bet:
+            await callback.answer("❌ Challenger no longer has enough coins!", show_alert=True)
+            await edit_xo_message(callback, "❌ Match cancelled due to insufficient funds of challenger.", None)
+            return
 
-    # Check opponent balance
-    stmt = select(User).where(User.id == target_id)
-    res = await db.execute(stmt)
-    opponent = res.scalar_one_or_none()
-    
-    if not opponent or opponent.coins < bet:
-        await callback.answer("❌ You do not have enough coins to accept this challenge!", show_alert=True)
-        return
+        # Check opponent balance
+        stmt = select(User).where(User.id == target_id)
+        res = await db.execute(stmt)
+        opponent = res.scalar_one_or_none()
+        
+        if not opponent or opponent.coins < bet:
+            await callback.answer("❌ You do not have enough coins to accept this challenge!", show_alert=True)
+            return
 
-    challenger_name = challenger.nickname or "Challenger"
-    opponent_name = opponent.nickname or "Opponent"
+        challenger_name = challenger.nickname or "Challenger"
+        opponent_name = opponent.nickname or "Opponent"
 
-    # Deduct bets
-    challenger.coins -= bet
-    opponent.coins -= bet
-    await db.commit()
+        # Deduct bets
+        challenger.coins -= bet
+        opponent.coins -= bet
+        await db.commit()
 
-    game_key = f"{chat_id}_{msg_id}"
-    game_id = f"xo_pvp_{game_key}"
-    
-    # Initialize PvP game
-    active_xo_games[game_id] = {
-        "type": "pvp",
-        "board": [""] * 9,
-        "player_x": challenger_id,
-        "player_x_name": challenger_name,
-        "player_o": target_id,
-        "player_o_name": opponent_name,
-        "turn": "X",
-        "bet": bet,
-        "created_at": time.time()
-    }
-    
-    text = (
-        f"🎲 <b>Tic Tac Toe PvP</b> 🎲\n"
-        f"───────────────\n"
-        f"❌ <b>{html.escape(challenger_name)}</b> vs 🔵 <b>{html.escape(opponent_name)}</b>\n"
-        f"💰 Bet: 💰 <b>{bet} coins</b> each\n\n"
-        f"🟢 It's <a href='tg://user?id={challenger_id}'>{html.escape(challenger_name)}</a>'s turn! (❌)"
-    )
-    
-    # Directly edit the cover message caption & keyboard
-    await edit_xo_message(callback, text, get_xo_keyboard(game_key, [""] * 9, is_pvp=True))
-    
-    await callback.answer("Challenge accepted!")
+        game_key = f"{chat_id}_{msg_id}"
+        game_id = f"xo_pvp_{game_key}"
+        
+        # Initialize PvP game
+        active_xo_games[game_id] = {
+            "type": "pvp",
+            "board": [""] * 9,
+            "player_x": challenger_id,
+            "player_x_name": challenger_name,
+            "player_o": target_id,
+            "player_o_name": opponent_name,
+            "turn": "X",
+            "bet": bet,
+            "created_at": time.time()
+        }
+        
+        text = (
+            f"🎲 <b>Tic Tac Toe PvP</b> 🎲\n"
+            f"───────────────\n"
+            f"❌ <b>{html.escape(challenger_name)}</b> vs 🔵 <b>{html.escape(opponent_name)}</b>\n"
+            f"💰 Bet: 💰 <b>{bet} coins</b> each\n\n"
+            f"🟢 It's <a href='tg://user?id={challenger_id}'>{html.escape(challenger_name)}</a>'s turn! (❌)"
+        )
+        
+        # Directly edit the cover message caption & keyboard
+        await edit_xo_message(callback, text, get_xo_keyboard(game_key, [""] * 9, is_pvp=True))
+        await callback.answer("Challenge accepted!")
+    except Exception as e:
+        print(f"Error in cb_xo_pvp_accept: {e}")
+        await callback.answer("⚠️ An error occurred while accepting challenge.", show_alert=True)
 
 @router.callback_query(F.data.startswith("xo_pvp_play_"))
 async def cb_xo_pvp_play(callback: CallbackQuery, db: AsyncSession):
-    parts = callback.data.split("_")
-    # Structure: xo_pvp_play_<chat_id>_<message_id>_<cell_index>
-    chat_id = int(parts[3])
-    msg_id = int(parts[4])
-    cell_idx = int(parts[5])
-    
-    game_key = f"{chat_id}_{msg_id}"
-    game_id = f"xo_pvp_{game_key}"
-    
-    if game_id not in active_xo_games:
-        await callback.answer("⚠️ Game has expired or already ended.", show_alert=True)
-        return
+    try:
+        parts = callback.data.rsplit("_", 3)
+        # Structure: xo_pvp_play_<chat_id>_<message_id>_<cell_index>
+        chat_id = int(parts[1])
+        msg_id = int(parts[2])
+        cell_idx = int(parts[3])
         
-    game = active_xo_games[game_id]
-    user_id = callback.from_user.id
-    
-    # Verify turns
-    current_symbol = game["turn"]
-    current_player_id = game["player_x"] if current_symbol == "X" else game["player_o"]
-    
-    if user_id != current_player_id:
-        await callback.answer("❌ It's not your turn!", show_alert=True)
-        return
+        game_key = f"{chat_id}_{msg_id}"
+        game_id = f"xo_pvp_{game_key}"
         
-    board = game["board"]
-    if board[cell_idx] != "":
-        await callback.answer("⚠️ That space is already taken!", show_alert=True)
-        return
+        if game_id not in active_xo_games:
+            await callback.answer("⚠️ Game has expired or already ended.", show_alert=True)
+            return
+            
+        game = active_xo_games[game_id]
+        user_id = callback.from_user.id
         
-    # Apply move
-    board[cell_idx] = current_symbol
-    
-    # Check for winner
-    winner = check_winner(board)
-    if winner:
-        await handle_pvp_game_over(callback, game_id, winner, db)
-        return
+        # Verify turns
+        current_symbol = game["turn"]
+        current_player_id = game["player_x"] if current_symbol == "X" else game["player_o"]
         
-    # Toggle turn
-    next_symbol = "O" if current_symbol == "X" else "X"
-    game["turn"] = next_symbol
-    next_player_id = game["player_x"] if next_symbol == "X" else game["player_o"]
-    next_player_name = game["player_x_name"] if next_symbol == "X" else game["player_o_name"]
-    
-    text = (
-        f"🎲 <b>Tic Tac Toe PvP</b> 🎲\n"
-        f"───────────────\n"
-        f"❌ <b>{html.escape(game['player_x_name'])}</b> vs 🔵 <b>{html.escape(game['player_o_name'])}</b>\n"
-        f"💰 Bet: 💰 <b>{game['bet']} coins</b> each\n\n"
-        f"🟢 It's <a href='tg://user?id={next_player_id}'>{html.escape(next_player_name)}</a>'s turn! ({'❌' if next_symbol == 'X' else '🔵'})"
-    )
-    
-    await edit_xo_message(callback, text, get_xo_keyboard(game_key, board, is_pvp=True))
-    await callback.answer()
+        if user_id != current_player_id:
+            await callback.answer("❌ It's not your turn!", show_alert=True)
+            return
+            
+        board = game["board"]
+        if board[cell_idx] != "":
+            await callback.answer("⚠️ That space is already taken!", show_alert=True)
+            return
+            
+        # Apply move
+        board[cell_idx] = current_symbol
+        
+        # Check for winner
+        winner = check_winner(board)
+        if winner:
+            await handle_pvp_game_over(callback, game_id, winner, db)
+            return
+            
+        # Toggle turn
+        next_symbol = "O" if current_symbol == "X" else "X"
+        game["turn"] = next_symbol
+        next_player_id = game["player_x"] if next_symbol == "X" else game["player_o"]
+        next_player_name = game["player_x_name"] if next_symbol == "X" else game["player_o_name"]
+        
+        text = (
+            f"🎲 <b>Tic Tac Toe PvP</b> 🎲\n"
+            f"───────────────\n"
+            f"❌ <b>{html.escape(game['player_x_name'])}</b> vs 🔵 <b>{html.escape(game['player_o_name'])}</b>\n"
+            f"💰 Bet: 💰 <b>{game['bet']} coins</b> each\n\n"
+            f"🟢 It's <a href='tg://user?id={next_player_id}'>{html.escape(next_player_name)}</a>'s turn! ({'❌' if next_symbol == 'X' else '🔵'})"
+        )
+        
+        await edit_xo_message(callback, text, get_xo_keyboard(game_key, board, is_pvp=True))
+        await callback.answer()
+    except Exception as e:
+        print(f"Error in cb_xo_pvp_play: {e}")
+        await callback.answer("⚠️ An error occurred.", show_alert=True)
 
 async def handle_pvp_game_over(callback: CallbackQuery, game_id: str, winner: str, db: AsyncSession):
     game = active_xo_games.pop(game_id, None)
@@ -677,7 +696,7 @@ async def handle_pvp_game_over(callback: CallbackQuery, game_id: str, winner: st
     bet = game["bet"]
     chat_id = callback.message.chat.id
     
-    final_kb = get_xo_keyboard(f"{chat_id}_{callback.message.message_id}", board, is_pvp=True)
+    final_kb = get_xo_keyboard(f"{chat_id}_{callback.message.message_id}", board, is_pvp=True, disabled=True)
     
     if winner == "draw":
         # Draw: Refund both
@@ -728,7 +747,7 @@ async def handle_pvp_game_over(callback: CallbackQuery, game_id: str, winner: st
             f"{coins_str}"
         )
         
-    await callback.message.edit_caption(caption=text, reply_markup=final_kb, parse_mode="HTML")
+    await edit_xo_message(callback, text, final_kb)
     await callback.answer("Match Over!")
     # Auto delete board message after 60s
     asyncio.create_task(delete_message_after(callback.message, 60))

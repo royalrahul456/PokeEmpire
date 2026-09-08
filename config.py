@@ -102,3 +102,21 @@ UPDATES_CHANNEL = os.getenv("UPDATES_CHANNEL", "@pokeempireupdates")
 DATABASE_CHANNEL = os.getenv("DATABASE_CHANNEL", "@pokeempiredatabase")
 AUCTION_CHANNEL = os.getenv("AUCTION_CHANNEL", "@PokeEmpireAuctions")
 
+# Telegram Custom Emoji IDs for Native Inline Buttons (configurable)
+CUSTOM_EMOJI_IDS = {
+    "add_to_group": os.getenv("EMOJI_ADD_TO_GROUP", "5382164415019768638"),
+    "updates": os.getenv("EMOJI_UPDATES", "5411199759740325999"),
+    "support": os.getenv("EMOJI_SUPPORT", "5203996991054432397"),
+    "help": os.getenv("EMOJI_HELP", "5436113877181941026"),
+    "stats": os.getenv("EMOJI_STATS", "5231200819986047254")
+}
+
+# Native Telegram Button Color Styles ("primary" = blue, "success" = green, "danger" = red)
+BUTTON_STYLES = {
+    "add_to_group": os.getenv("STYLE_ADD_TO_GROUP", "primary"),
+    "updates": os.getenv("STYLE_UPDATES", "primary"),
+    "support": os.getenv("STYLE_SUPPORT", "primary"),
+    "help": os.getenv("STYLE_HELP", "danger"),
+    "stats": os.getenv("STYLE_STATS", "success")
+}
+

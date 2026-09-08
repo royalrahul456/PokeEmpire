@@ -22,11 +22,11 @@ if "postgresql" in DATABASE_URL or "cockroachdb" in DATABASE_URL:
             "prepared_statement_cache_size": 0,
             "command_timeout": 10
         },
-        pool_size=25,
-        max_overflow=35,
-        pool_recycle=120,
-        pool_timeout=10,
-        pool_pre_ping=False
+        pool_size=5,
+        max_overflow=10,
+        pool_recycle=300,
+        pool_timeout=30,
+        pool_pre_ping=True
     )
 else:
     engine = create_async_engine(
@@ -218,7 +218,7 @@ async def init_db():
             await session.commit()
 
     # Fix PostgreSQL sequences that may be out of sync after migration from CockroachDB / SQLite
-    if "postgresql" in DATABASE_URL or "cockroachdb" in DATABASE_URL:
+    if ("postgresql" in str(engine.url) or "cockroachdb" in str(engine.url)) and "sqlite" not in str(engine.url):
         async with engine.begin() as conn:
             try:
                 await conn.execute(text("ALTER SEQUENCE IF EXISTS user_pokemon_id_seq AS BIGINT MAXVALUE 9223372036854775807"))

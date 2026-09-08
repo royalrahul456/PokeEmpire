@@ -16,8 +16,8 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://royalrahul456.github.io/PokeEmpire/webapp/")
 
-# Default Supabase IPv4 Pooler PostgreSQL URL (resolves Render's IPv6 Network Unreachable error)
-SUPABASE_DB_URL = "postgresql://postgres.dlxlqrerxplqevvutgsn:rahulmahadevpachpute@aws-0-ap-southeast-2.pooler.supabase.com:5432/postgres"
+# Default Supabase IPv4 Pooler PostgreSQL URL (Transaction Mode on port 6543 for unlimited connections)
+SUPABASE_DB_URL = "postgresql://postgres.dlxlqrerxplqevvutgsn:rahulmahadevpachpute@aws-0-ap-southeast-2.pooler.supabase.com:6543/postgres"
 
 # Check if we are running in Render with persistent volume mount
 PERSISTENT_VOLUME = "/app/data_volume"
@@ -36,8 +36,12 @@ def _format_db_url(url: str) -> str:
 
     # Auto-convert direct IPv6 host to IPv4 pooler host for cloud hosts like Render
     if "db.dlxlqrerxplqevvutgsn.supabase.co" in db_url:
-        db_url = db_url.replace("db.dlxlqrerxplqevvutgsn.supabase.co", "aws-0-ap-southeast-2.pooler.supabase.com")
+        db_url = db_url.replace("db.dlxlqrerxplqevvutgsn.supabase.co", "aws-0-ap-southeast-2.pooler.supabase.com:6543")
         db_url = db_url.replace("postgres:rahulmahadevpachpute", "postgres.dlxlqrerxplqevvutgsn:rahulmahadevpachpute")
+        db_url = db_url.replace(":5432", ":6543")
+
+    if "pooler.supabase.com" in db_url and ":5432" in db_url:
+        db_url = db_url.replace(":5432", ":6543")
 
     if "cockroachlabs" in db_url:
         db_url = db_url.replace("postgresql://", "cockroachdb+asyncpg://", 1)

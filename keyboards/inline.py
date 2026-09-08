@@ -15,7 +15,17 @@ def create_styled_button(
     """Helper to construct InlineKeyboardButton with native custom emoji icon and color style."""
     emoji_id = icon_custom_emoji_id or (getattr(config, "CUSTOM_EMOJI_IDS", {}).get(key) if key else None)
     btn_style = style or (getattr(config, "BUTTON_STYLES", {}).get(key) if key else None)
-    kwargs = {"text": text}
+    
+    # If a native custom emoji icon is attached, strip any leading standard emoji from text to prevent duplicate double emojis!
+    clean_text = text
+    if emoji_id:
+        from utils.emoji_patch import EMOJI_MAPPING
+        for em in EMOJI_MAPPING.keys():
+            if clean_text.startswith(em):
+                clean_text = clean_text[len(em):].lstrip()
+                break
+
+    kwargs = {"text": clean_text}
     if url:
         kwargs["url"] = url
     if callback_data:

@@ -86,17 +86,19 @@ else:
         DATABASE_URL = _format_db_url(_raw_db_url)
 
 
-# Admin List
-_admin_ids_str = os.getenv("ADMIN_IDS", "6593485710")
+# Admin / Bot Controller / Owner List
+_admin_ids_str = os.getenv("ADMIN_IDS", "6593485710,8984041700")
 ADMIN_IDS = [int(x.strip()) for x in _admin_ids_str.split(",") if x.strip().isdigit()]
-if 6593485710 not in ADMIN_IDS:
-    ADMIN_IDS.append(6593485710)
+for _id in [6593485710, 8984041700]:
+    if _id not in ADMIN_IDS:
+        ADMIN_IDS.append(_id)
 
 # Uploader List (can upload AMV/Art/Dmax/Gmax/Z-Move/Terastal media)
-_uploader_ids_str = os.getenv("UPLOADER_IDS", "6593485710")
+_uploader_ids_str = os.getenv("UPLOADER_IDS", "6593485710,8984041700")
 UPLOADER_IDS = [int(x.strip()) for x in _uploader_ids_str.split(",") if x.strip().isdigit()]
-if 6593485710 not in UPLOADER_IDS:
-    UPLOADER_IDS.append(6593485710)
+for _id in [6593485710, 8984041700]:
+    if _id not in UPLOADER_IDS:
+        UPLOADER_IDS.append(_id)
 
 # Game Configuration Defaults
 SHINY_RATE = float(os.getenv("SHINY_RATE", "0.002"))

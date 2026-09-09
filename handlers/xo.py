@@ -12,6 +12,7 @@ import html
 from database.models import User
 from database.database import SessionLocal
 from keyboards.inline import create_styled_button
+from utils.settings import send_cover_media
 
 router = Router()
 

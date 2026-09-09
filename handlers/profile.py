@@ -2515,7 +2515,7 @@ async def cmd_gift(message: Message, db: AsyncSession):
 
 @router.message(Command("transactions", "tx", "history"))
 async def build_transactions_payload(user_id: int, page: int, db: AsyncSession, is_dm: bool = False):
-    from database.models import TransactionHistory
+    from database.models import TransactionHistory, User
     
     # 1. Calculate lifetime total received (+), total paid/spent (-), and total transaction count
     totals_stmt = select(
@@ -2526,6 +2526,25 @@ async def build_transactions_payload(user_id: int, page: int, db: AsyncSession, 
     totals_res = await db.execute(totals_stmt)
     total_received, total_paid_neg, total_count = totals_res.one()
     total_paid = abs(total_paid_neg)
+
+    # Auto-seed initial balance if user has coins from before transaction logging
+    if total_count == 0:
+        user_stmt = select(User).where(User.id == user_id)
+        user_res = await db.execute(user_stmt)
+        user = user_res.scalar_one_or_none()
+        if user and user.coins > 0:
+            init_tx = TransactionHistory(
+                user_id=user_id,
+                amount=user.coins,
+                category="Initial Balance",
+                description="Trainer coin balance"
+            )
+            db.add(init_tx)
+            await db.commit()
+
+            totals_res = await db.execute(totals_stmt)
+            total_received, total_paid_neg, total_count = totals_res.one()
+            total_paid = abs(total_paid_neg)
 
     if total_count == 0:
         text = (
@@ -2583,7 +2602,6 @@ async def build_transactions_payload(user_id: int, page: int, db: AsyncSession, 
 
     markup = get_tx_pagination_keyboard(user_id=user_id, page=page, max_page=max_page, is_dm=is_dm)
     return text, markup
-
 
 @router.message(Command("transactions", "tx", "history"))
 async def cmd_transactions(message: Message, db: AsyncSession):

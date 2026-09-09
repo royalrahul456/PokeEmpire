@@ -117,10 +117,14 @@ async def cmd_pay(message: Message, db: AsyncSession):
         await message.answer(f"❌ Transaction failed. You don't have enough coins! (Balance: `💰 {sender_user.coins} coins`)")
         return
 
-    # Transfer coins
+        # Transfer coins
     sender_user.coins -= amount
     target_user.coins += amount
+    from utils.trainer_level import log_transaction
+    await log_transaction(sender_user.id, -amount, "Transfer", f"Transferred to {target_user.nickname or 'Trainer'}", db)
+    await log_transaction(target_user.id, amount, "Transfer", f"Received from {sender_user.nickname or 'Trainer'}", db)
     await db.commit()
+    
 
     text = (
         f"💸 **COINS TRANSFERRED** 💸\n"

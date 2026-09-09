@@ -12,7 +12,7 @@ from utils.formatters import get_hp_bar, get_progress_bar, get_rarity_emoji, esc
 from utils.favorite import get_favorite_id, set_favorite_id
 from utils.settings import send_cover_media, get_custom_cover, get_custom_rarity_forms, get_all_custom_rarities, send_safe_media
 
-from keyboards.inline import create_styled_button
+from keyboards.inline import create_styled_button, get_tx_pagination_keyboard
 
 router = Router()
 
@@ -2514,76 +2514,123 @@ async def cmd_gift(message: Message, db: AsyncSession):
 
 
 @router.message(Command("transactions", "tx", "history"))
-async def cmd_transactions(message: Message, db: AsyncSession):
-    user_id = message.from_user.id
+async def build_transactions_payload(user_id: int, page: int, db: AsyncSession, is_dm: bool = False):
     from database.models import TransactionHistory
-    stmt = select(TransactionHistory).where(TransactionHistory.user_id == user_id).order_by(TransactionHistory.created_at.desc()).limit(10)
-    res = await db.execute(stmt)
-    txs = res.scalars().all()
+    
+    # 1. Calculate lifetime total received (+), total paid/spent (-), and total transaction count
+    totals_stmt = select(
+        func.coalesce(func.sum(case((TransactionHistory.amount > 0, TransactionHistory.amount), else_=0)), 0),
+        func.coalesce(func.sum(case((TransactionHistory.amount < 0, TransactionHistory.amount), else_=0)), 0),
+        func.count(TransactionHistory.id)
+    ).where(TransactionHistory.user_id == user_id)
+    totals_res = await db.execute(totals_stmt)
+    total_received, total_paid_neg, total_count = totals_res.one()
+    total_paid = abs(total_paid_neg)
 
-    if not txs:
+    if total_count == 0:
         text = (
             f"⚡ <b>TRANSACTION HISTORY</b> ⚡\n"
+            f"◈ ────────────────── ◈\n"
+            f"📥 <b>Total Received:</b> 🟢 <code>+0 coins</code>\n"
+            f"📤 <b>Total Paid:</b> 🔴 <code>-0 coins</code>\n"
             f"◈ ────────────────── ◈\n"
             f"<i>No transaction records found yet.</i>\n"
             f"◈ ────────────────── ◈"
         )
-        await message.answer(text, parse_mode="HTML")
-        return
+        markup = get_tx_pagination_keyboard(user_id=user_id, page=1, max_page=1, is_dm=is_dm)
+        return text, markup
+
+    PAGE_SIZE = 8
+    max_page = max(1, (total_count + PAGE_SIZE - 1) // PAGE_SIZE)
+    page = max(1, min(page, max_page))
+    offset = (page - 1) * PAGE_SIZE
+
+    stmt = select(TransactionHistory).where(
+        TransactionHistory.user_id == user_id
+    ).order_by(TransactionHistory.created_at.desc()).offset(offset).limit(PAGE_SIZE)
+    res = await db.execute(stmt)
+    txs = res.scalars().all()
 
     rows = []
     for tx in txs:
-        sign = "+" if tx.amount >= 0 else ""
-        icon = "🟢" if tx.amount >= 0 else "🔴"
-        dt_str = tx.created_at.strftime("%Y-%m-%d %H:%M") if tx.created_at else ""
-        rows.append(f"✦ {icon} <code>{sign}{tx.amount:,} coins</code> — <b>{html.escape(tx.category)}</b>\n   <i>{html.escape(tx.description)}</i> ({dt_str})")
+        dt_str = tx.created_at.strftime("%b %d, %Y %H:%M") if tx.created_at else "Recently"
+        cat = html.escape(tx.category or "Transaction")
+        desc = html.escape(tx.description or "")
+        
+        if tx.amount >= 0:
+            rows.append(
+                f"✦ 📥 <b>Received:</b> 🟢 <code>+{tx.amount:,} coins</code> (<b>{cat}</b>)\n"
+                f"   ↳ <i>{desc}</i> • <code>{dt_str}</code>"
+            )
+        else:
+            rows.append(
+                f"✦ 📤 <b>Paid:</b> 🔴 <code>-{abs(tx.amount):,} coins</code> (<b>{cat}</b>)\n"
+                f"   ↳ <i>{desc}</i> • <code>{dt_str}</code>"
+            )
 
     tx_body = "\n\n".join(rows)
     text = (
         f"⚡ <b>TRANSACTION HISTORY</b> ⚡\n"
         f"◈ ────────────────── ◈\n"
-        f"{tx_body}\n"
+        f"📥 <b>Total Received:</b> 🟢 <code>+{total_received:,} coins</code>\n"
+        f"📤 <b>Total Paid:</b> 🔴 <code>-{total_paid:,} coins</code>\n"
+        f"📊 <b>Total Transactions:</b> <code>{total_count:,}</code>\n"
+        f"◈ ────────────────── ◈\n\n"
+        f"{tx_body}\n\n"
         f"◈ ────────────────── ◈\n"
-        f"👉 <i>Showing your last 10 coin transactions</i>"
+        f"📑 <b>Page:</b> <code>{page}/{max_page}</code>"
     )
-    await message.answer(text, parse_mode="HTML")
+
+    markup = get_tx_pagination_keyboard(user_id=user_id, page=page, max_page=max_page, is_dm=is_dm)
+    return text, markup
+
+
+@router.message(Command("transactions", "tx", "history"))
+async def cmd_transactions(message: Message, db: AsyncSession):
+    user_id = message.from_user.id
+    is_dm = (message.chat.type == "private")
+    text, markup = await build_transactions_payload(user_id=user_id, page=1, db=db, is_dm=is_dm)
+    await message.answer(text, reply_markup=markup, parse_mode="HTML")
+
 
 @router.callback_query(F.data == "dm_transactions")
 async def cb_dm_transactions(callback: CallbackQuery, db: AsyncSession):
     user_id = callback.from_user.id
-    from database.models import TransactionHistory
-    stmt = select(TransactionHistory).where(TransactionHistory.user_id == user_id).order_by(TransactionHistory.created_at.desc()).limit(10)
-    res = await db.execute(stmt)
-    txs = res.scalars().all()
-
-    if not txs:
-        text = (
-            f"⚡ <b>TRANSACTION HISTORY</b> ⚡\n"
-            f"◈ ────────────────── ◈\n"
-            f"<i>No transaction records found yet.</i>\n"
-            f"◈ ────────────────── ◈"
-        )
-        await callback.message.edit_text(text, parse_mode="HTML")
-        await callback.answer()
-        return
-
-    rows = []
-    for tx in txs:
-        sign = "+" if tx.amount >= 0 else ""
-        icon = "🟢" if tx.amount >= 0 else "🔴"
-        dt_str = tx.created_at.strftime("%Y-%m-%d %H:%M") if tx.created_at else ""
-        rows.append(f"✦ {icon} <code>{sign}{tx.amount:,} coins</code> — <b>{html.escape(tx.category)}</b>\n   <i>{html.escape(tx.description)}</i> ({dt_str})")
-
-    tx_body = "\n\n".join(rows)
-    text = (
-        f"⚡ <b>TRANSACTION HISTORY</b> ⚡\n"
-        f"◈ ────────────────── ◈\n"
-        f"{tx_body}\n"
-        f"◈ ────────────────── ◈\n"
-        f"👉 <i>Showing your last 10 coin transactions</i>"
-    )
-    await callback.message.edit_text(text, parse_mode="HTML")
+    text, markup = await build_transactions_payload(user_id=user_id, page=1, db=db, is_dm=True)
+    try:
+        await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
     await callback.answer()
 
+
+@router.callback_query(F.data.startswith("tx_page_"))
+async def cb_tx_page(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_")
+    # Format: tx_page_{user_id}_{page}
+    if len(parts) >= 4:
+        target_user_id = int(parts[2])
+        page = int(parts[3])
+    else:
+        target_user_id = callback.from_user.id
+        page = int(parts[2])
+
+    if callback.from_user.id != target_user_id:
+        await callback.answer("❌ You can only navigate your own transaction history!", show_alert=True)
+        return
+
+    is_dm = (callback.message.chat.type == "private") if callback.message and callback.message.chat else True
+    text, markup = await build_transactions_payload(user_id=target_user_id, page=page, db=db, is_dm=is_dm)
+    
+    try:
+        await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+    except Exception:
+        pass
+    await callback.answer()
+
+
+@router.callback_query(F.data == "tx_noop")
+async def cb_tx_noop(callback: CallbackQuery):
+    await callback.answer()
 
 

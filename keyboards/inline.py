@@ -32,11 +32,24 @@ def create_styled_button(
         kwargs["callback_data"] = callback_data
     if web_app:
         kwargs["web_app"] = web_app
-    if emoji_id:
-        kwargs["icon_custom_emoji_id"] = emoji_id
-    if btn_style:
-        kwargs["style"] = btn_style
-    return InlineKeyboardButton(**kwargs)
+
+    try:
+        styled_kwargs = dict(kwargs)
+        if emoji_id:
+            styled_kwargs["icon_custom_emoji_id"] = emoji_id
+        if btn_style:
+            styled_kwargs["style"] = btn_style
+        return InlineKeyboardButton(**styled_kwargs)
+        
+    except Exception:
+        fallback_kwargs = {"text": text}
+        if url:
+            fallback_kwargs["url"] = url
+        if callback_data:
+            fallback_kwargs["callback_data"] = callback_data
+        if web_app:
+            fallback_kwargs["web_app"] = web_app
+        return InlineKeyboardButton(**fallback_kwargs)
 
 def get_start_welcome_keyboard(bot_username: str) -> InlineKeyboardMarkup:
     """Generates primary start welcome keyboard with native Telegram Custom Emoji icons and Button Color Styles."""
@@ -151,6 +164,31 @@ def get_back_to_hub_keyboard() -> InlineKeyboardMarkup:
     """Simple back navigation button."""
     builder = InlineKeyboardBuilder()
     builder.row(create_styled_button(text="Back to Hub Menu", key="back", callback_data="dm_home"))
+    return builder.as_markup()
+
+def get_tx_pagination_keyboard(user_id: int, page: int, max_page: int, is_dm: bool = False) -> InlineKeyboardMarkup:
+    """Generates navigation buttons for browsing Transaction History."""
+    builder = InlineKeyboardBuilder()
+    nav_buttons = []
+    if page > 1:
+        nav_buttons.append(create_styled_button(text="◀️ Prev", key="prev", callback_data=f"tx_page_{user_id}_{page-1}"))
+    else:
+        nav_buttons.append(create_styled_button(text="⏹️", callback_data="tx_noop"))
+
+    nav_buttons.append(create_styled_button(text=f"📄 {page}/{max_page}", callback_data="tx_noop"))
+
+    if page < max_page:
+        nav_buttons.append(create_styled_button(text="Next ➡️", key="next", callback_data=f"tx_page_{user_id}_{page+1}"))
+    else:
+        nav_buttons.append(create_styled_button(text="⏹️", callback_data="tx_noop"))
+
+    if max_page > 1:
+        builder.row(*nav_buttons)
+
+    if is_dm:
+        builder.row(create_styled_button(text="Back to Hub Menu", key="back", callback_data="dm_home"))
+    else:
+        builder.row(create_styled_button(text="👤 My Profile", key="profile", callback_data="dm_profile"))
     return builder.as_markup()
 
 def get_admin_menu_keyboard() -> InlineKeyboardMarkup:

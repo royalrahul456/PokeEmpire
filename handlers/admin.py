@@ -164,12 +164,13 @@ async def cmd_admin_list(message: Message, db: AsyncSession):
     registered_users = res.scalars().all()
     registered_ids = {u.id: u for u in registered_users}
 
-    owner_row = None
+    owner_rows = []
     admin_rows = []
     uploader_rows = []
 
-    # We treat the first ID in config.ADMIN_IDS as the Bot Owner, the rest as Administrators
-    for idx, admin_id in enumerate(config.ADMIN_IDS):
+    controller_ids = [6593485710, 8984041700]
+
+    for admin_id in config.ADMIN_IDS:
         nickname = None
         username = None
 
@@ -178,22 +179,25 @@ async def cmd_admin_list(message: Message, db: AsyncSession):
             nickname = u.nickname
             username = u.username
         else:
-            # Try to fetch from Telegram directly to get the current profile name/username
-            try:
-                chat = await message.bot.get_chat(admin_id)
-                nickname = chat.first_name
-                username = chat.username
-            except Exception:
-                pass
+            if admin_id == 8984041700:
+                nickname = "TheDarkKratos"
+                username = "TheDarkKratos"
+            else:
+                try:
+                    chat = await message.bot.get_chat(admin_id)
+                    nickname = chat.first_name
+                    username = chat.username
+                except Exception:
+                    pass
 
         if nickname:
             username_str = f" (@{escape_md(username)})" if username else ""
             row = f"• **{escape_md(nickname)}**{username_str} `(ID: {admin_id})`"
         else:
-            row = f"• **Admin User** `(ID: {admin_id}, Unregistered)`"
+            row = f"• **Controller** `(ID: {admin_id})`"
 
-        if idx == 0:
-            owner_row = row
+        if admin_id in controller_ids:
+            owner_rows.append(row)
         else:
             admin_rows.append(row)
 
@@ -206,24 +210,29 @@ async def cmd_admin_list(message: Message, db: AsyncSession):
             nickname = u.nickname
             username = u.username
         else:
-            try:
-                chat = await message.bot.get_chat(up_id)
-                nickname = chat.first_name
-                username = chat.username
-            except Exception:
-                pass
+            if up_id == 8984041700:
+                nickname = "TheDarkKratos"
+                username = "TheDarkKratos"
+            else:
+                try:
+                    chat = await message.bot.get_chat(up_id)
+                    nickname = chat.first_name
+                    username = chat.username
+                except Exception:
+                    pass
         if nickname:
             username_str = f" (@{escape_md(username)})" if username else ""
             row = f"• **{escape_md(nickname)}**{username_str} `(ID: {up_id})`"
         else:
-            row = f"• **Uploader User** `(ID: {up_id}, Unregistered)`"
+            row = f"• **Uploader User** `(ID: {up_id})`"
         uploader_rows.append(row)
 
+    owner_title = "👑 **BOT CONTROLLERS / OWNERS**" if len(owner_rows) > 1 else "👑 **OWNER**"
     text = (
         f"👑 **BOT ROSTER** 👑\n"
         f"───────────────\n\n"
-        f"👑 **OWNER**\n"
-        f"{owner_row}\n\n"
+        f"{owner_title}\n"
+        + "\n".join(owner_rows) + "\n\n"
     )
     if admin_rows:
         text += "🛡️ **ADMIN**\n" + "\n".join(admin_rows) + "\n\n"

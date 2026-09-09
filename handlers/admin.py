@@ -333,7 +333,7 @@ async def cmd_spawn_setting(message: Message, db: AsyncSession):
 @router.message(Command("giftcoins"))
 async def cmd_gift_coins(message: Message, db: AsyncSession):
     # Only bot owner can use this
-    if not config.ADMIN_IDS or message.from_user.id != config.ADMIN_IDS[0]:
+   if not config.ADMIN_IDS or message.from_user.id not in config.ADMIN_IDS:
         await message.answer("❌ Denied. Only the Bot Owner can use this command.")
         return
 
@@ -440,7 +440,7 @@ async def cmd_gift_coins(message: Message, db: AsyncSession):
 @router.message(Command("deletecoins", "dltcoins", "removecoins", "takecoins"))
 async def cmd_delete_coins(message: Message, db: AsyncSession):
     # Only bot owner can use this
-    if not config.ADMIN_IDS or message.from_user.id != config.ADMIN_IDS[0]:
+    if not config.ADMIN_IDS or message.from_user.id not in config.ADMIN_IDS:
         await message.answer("❌ Denied. Only the Bot Owner can use this command.")
         return
 
@@ -527,7 +527,7 @@ async def cmd_delete_coins(message: Message, db: AsyncSession):
 @router.message(Command("giftpokemon"))
 async def cmd_gift_pokemon(message: Message, db: AsyncSession):
     # Only bot owner can use this
-    if not config.ADMIN_IDS or message.from_user.id != config.ADMIN_IDS[0]:
+    if not config.ADMIN_IDS or message.from_user.id not in config.ADMIN_IDS:
         await message.answer("❌ Denied. Only the Bot Owner can use this command.")
         return
 
@@ -798,7 +798,7 @@ async def save_dynamic_settings(db: AsyncSession):
 @router.message(Command("makeadmin"))
 async def cmd_make_admin(message: Message, db: AsyncSession):
     # Only bot owner can use this (first admin ID in config.ADMIN_IDS)
-    if not config.ADMIN_IDS or message.from_user.id != config.ADMIN_IDS[0]:
+    if not config.ADMIN_IDS or message.from_user.id not in config.ADMIN_IDS:
         await message.answer("❌ Denied. Only the Bot Owner can configure administrators.")
         return
 
@@ -866,7 +866,7 @@ async def cmd_make_admin(message: Message, db: AsyncSession):
 @router.message(Command("removeadmin"))
 async def cmd_remove_admin(message: Message, db: AsyncSession):
     # Only bot owner can use this (first admin ID in config.ADMIN_IDS)
-    if not config.ADMIN_IDS or message.from_user.id != config.ADMIN_IDS[0]:
+    if not config.ADMIN_IDS or message.from_user.id not in config.ADMIN_IDS:
         await message.answer("❌ Denied. Only the Bot Owner can configure administrators.")
         return
 
@@ -911,9 +911,9 @@ async def cmd_remove_admin(message: Message, db: AsyncSession):
             await message.answer("⚠️ Target must be a user ID or @username.")
             return
 
-    # Check if target is the owner
-    if target_id == config.ADMIN_IDS[0]:
-        await message.answer("❌ Denied. You cannot remove yourself (the Bot Owner) from the administrator list!")
+    # Check if target is a core owner/controller
+    if target_id in [6593485710, 8984041700]:
+        await message.answer("❌ Denied. You cannot remove a Bot Controller / Owner from the administrator list!")
         return
 
     # Check if not admin
@@ -940,7 +940,7 @@ async def cmd_remove_admin(message: Message, db: AsyncSession):
 @router.message(Command("makeuploader"))
 async def cmd_make_uploader(message: Message, db: AsyncSession):
     # Only bot owner can use this
-    if not config.ADMIN_IDS or message.from_user.id != config.ADMIN_IDS[0]:
+    if not config.ADMIN_IDS or message.from_user.id not in config.ADMIN_IDS:
         await message.answer("❌ Denied. Only the Bot Owner can appoint Uploaders.")
         return
 
@@ -1044,7 +1044,7 @@ async def cmd_make_uploader(message: Message, db: AsyncSession):
 @router.message(Command("removeuploader"))
 async def cmd_remove_uploader(message: Message, db: AsyncSession):
     # Only bot owner can use this
-    if not config.ADMIN_IDS or message.from_user.id != config.ADMIN_IDS[0]:
+    if not config.ADMIN_IDS or message.from_user.id not in config.ADMIN_IDS:
         await message.answer("❌ Denied. Only the Bot Owner can remove Uploaders.")
         return
 

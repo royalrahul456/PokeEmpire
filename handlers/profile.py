@@ -2518,14 +2518,22 @@ async def build_transactions_payload(user_id: int, page: int, db: AsyncSession, 
     from database.models import TransactionHistory, User
     
     # 1. Calculate lifetime total received (+), total paid/spent (-), and total transaction count
-    totals_stmt = select(
-        func.coalesce(func.sum(case((TransactionHistory.amount > 0, TransactionHistory.amount), else_=0)), 0),
-        func.coalesce(func.sum(case((TransactionHistory.amount < 0, TransactionHistory.amount), else_=0)), 0),
-        func.count(TransactionHistory.id)
-    ).where(TransactionHistory.user_id == user_id)
-    totals_res = await db.execute(totals_stmt)
-    total_received, total_paid_neg, total_count = totals_res.one()
-    total_paid = abs(total_paid_neg)
+    recv_stmt = select(func.coalesce(func.sum(TransactionHistory.amount), 0)).where(
+        TransactionHistory.user_id == user_id,
+        TransactionHistory.amount > 0
+    )
+    paid_stmt = select(func.coalesce(func.sum(TransactionHistory.amount), 0)).where(
+        TransactionHistory.user_id == user_id,
+        TransactionHistory.amount < 0
+    )
+    count_stmt = select(func.count(TransactionHistory.id)).where(
+        TransactionHistory.user_id == user_id
+    )
+
+    total_received = int((await db.execute(recv_stmt)).scalar() or 0)
+    total_paid_raw = int((await db.execute(paid_stmt)).scalar() or 0)
+    total_paid = abs(total_paid_raw)
+    total_count = int((await db.execute(count_stmt)).scalar() or 0)
 
     # Auto-seed initial balance if user has coins from before transaction logging
     if total_count == 0:
@@ -2542,9 +2550,8 @@ async def build_transactions_payload(user_id: int, page: int, db: AsyncSession, 
             db.add(init_tx)
             await db.commit()
 
-            totals_res = await db.execute(totals_stmt)
-            total_received, total_paid_neg, total_count = totals_res.one()
-            total_paid = abs(total_paid_neg)
+            total_received = user.coins
+            total_count = 1
 
     if total_count == 0:
         text = (
@@ -2603,24 +2610,17 @@ async def build_transactions_payload(user_id: int, page: int, db: AsyncSession, 
     markup = get_tx_pagination_keyboard(user_id=user_id, page=page, max_page=max_page, is_dm=is_dm)
     return text, markup
 
+
 @router.message(Command("transactions", "tx", "history"))
 async def cmd_transactions(message: Message, db: AsyncSession):
-    user_id = message.from_user.id
-    is_dm = (message.chat.type == "private")
-    text, markup = await build_transactions_payload(user_id=user_id, page=1, db=db, is_dm=is_dm)
-    await message.answer(text, reply_markup=markup, parse_mode="HTML")
-
-
-@router.callback_query(F.data == "dm_transactions")
-async def cb_dm_transactions(callback: CallbackQuery, db: AsyncSession):
-    user_id = callback.from_user.id
-    text, markup = await build_transactions_payload(user_id=user_id, page=1, db=db, is_dm=True)
     try:
-        await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
-    except Exception:
-        await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
-    await callback.answer()
-
+        user_id = message.from_user.id
+        is_dm = (message.chat.type == "private")
+        text, markup = await build_transactions_payload(user_id=user_id, page=1, db=db, is_dm=is_dm)
+        await message.answer(text, reply_markup=markup, parse_mode="HTML")
+    except Exception as e:
+        print(f"Error in cmd_transactions: {e}")
+        await message.answer("⚠️ Unable to load transactions history right now.")
 
 @router.callback_query(F.data.startswith("tx_page_"))
 async def cb_tx_page(callback: CallbackQuery, db: AsyncSession):

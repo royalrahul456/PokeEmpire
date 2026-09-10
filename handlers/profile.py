@@ -2610,7 +2610,6 @@ async def build_transactions_payload(user_id: int, page: int, db: AsyncSession, 
     markup = get_tx_pagination_keyboard(user_id=user_id, page=page, max_page=max_page, is_dm=is_dm)
     return text, markup
 
-
 @router.message(Command("transactions", "tx", "history"))
 async def cmd_transactions(message: Message, db: AsyncSession):
     try:
@@ -2620,8 +2619,8 @@ async def cmd_transactions(message: Message, db: AsyncSession):
         await message.answer(text, reply_markup=markup, parse_mode="HTML")
     except Exception as e:
         print(f"Error in cmd_transactions: {e}")
-        await message.answer("⚠️ Unable to load transactions history right now.")
-
+        await message.answer(f"⚠️ Unable to load transactions history: <code>{html.escape(str(e))}</code>", parse_mode="HTML")
+        
 @router.callback_query(F.data.startswith("tx_page_"))
 async def cb_tx_page(callback: CallbackQuery, db: AsyncSession):
     parts = callback.data.split("_")

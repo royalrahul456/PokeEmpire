@@ -247,7 +247,7 @@ class TransactionHistory(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    amount = Column(Integer, nullable=False)  # positive for gain, negative for spent
+    amount = Column(BigInteger, nullable=False)  # positive for gain, negative for spent
     category = Column(String(50), nullable=False)
     description = Column(String(255), nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)

@@ -2514,66 +2514,35 @@ async def cmd_gift(message: Message, db: AsyncSession):
 
 
 @router.message(Command("transactions", "tx", "history"))
+from keyboards.inline import create_styled_button, get_tx_pagination_keyboard
+
 async def build_transactions_payload(user_id: int, page: int, db: AsyncSession, is_dm: bool = False):
     from database.models import TransactionHistory, User
-    
-    total_received = 0
-    total_paid = 0
-    total_count = 0
 
-    try:
-        count_stmt = select(func.count(TransactionHistory.id)).where(TransactionHistory.user_id == user_id)
-        total_count = int((await db.execute(count_stmt)).scalar() or 0)
+    # 1. Total transaction count
+    stmt_count = select(func.count(TransactionHistory.id)).where(TransactionHistory.user_id == user_id)
+    res_count = await db.execute(stmt_count)
+    total_count = res_count.scalar() or 0
 
-        recv_stmt = select(func.coalesce(func.sum(TransactionHistory.amount), 0)).where(
-            TransactionHistory.user_id == user_id,
-            TransactionHistory.amount > 0
-        )
-        paid_stmt = select(func.coalesce(func.sum(TransactionHistory.amount), 0)).where(
-            TransactionHistory.user_id == user_id,
-            TransactionHistory.amount < 0
-        )
-        total_received = int((await db.execute(recv_stmt)).scalar() or 0)
-        total_paid_raw = int((await db.execute(paid_stmt)).scalar() or 0)
-        total_paid = abs(total_paid_raw)
-    except Exception as e:
-        print(f"Notice querying transactions: {e}")
-        try:
-            await db.rollback()
-        except Exception:
-            pass
-
-    # Auto-seed initial balance if user has coins from before transaction logging
+    # Auto-seed initial balance if no transaction history exists
     if total_count == 0:
-        try:
-            user_stmt = select(User).where(User.id == user_id)
-            user_res = await db.execute(user_stmt)
-            user = user_res.scalar_one_or_none()
-            if user and user.coins > 0:
-                init_tx = TransactionHistory(
-                    user_id=user_id,
-                    amount=user.coins,
-                    category="Initial Balance",
-                    description="Trainer coin balance"
-                )
-                db.add(init_tx)
-                await db.commit()
-
-                total_received = user.coins
-                total_count = 1
-        except Exception as ex2:
-            print(f"Notice auto seeding tx: {ex2}")
-            try:
-                await db.rollback()
-            except Exception:
-                pass
+        stmt_u = select(User).where(User.id == user_id)
+        res_u = await db.execute(stmt_u)
+        user = res_u.scalar_one_or_none()
+        if user and user.coins > 0:
+            init_tx = TransactionHistory(
+                user_id=user_id,
+                amount=user.coins,
+                category="Initial Balance",
+                description="Trainer coin balance"
+            )
+            db.add(init_tx)
+            await db.commit()
+            total_count = 1
 
     if total_count == 0:
         text = (
             f"⚡ <b>TRANSACTION HISTORY</b> ⚡\n"
-            f"◈ ────────────────── ◈\n"
-            f"📥 <b>Total Received:</b> 🟢 <code>+0 coins</code>\n"
-            f"📤 <b>Total Paid:</b> 🔴 <code>-0 coins</code>\n"
             f"◈ ────────────────── ◈\n"
             f"<i>No transaction records found yet.</i>\n"
             f"◈ ────────────────── ◈"
@@ -2581,41 +2550,33 @@ async def build_transactions_payload(user_id: int, page: int, db: AsyncSession, 
         markup = get_tx_pagination_keyboard(user_id=user_id, page=1, max_page=1, is_dm=is_dm)
         return text, markup
 
+    # 2. Paginated transactions
     PAGE_SIZE = 8
     max_page = max(1, (total_count + PAGE_SIZE - 1) // PAGE_SIZE)
     page = max(1, min(page, max_page))
     offset = (page - 1) * PAGE_SIZE
 
-    txs = []
-    try:
-        stmt = select(TransactionHistory).where(
-            TransactionHistory.user_id == user_id
-        ).order_by(TransactionHistory.created_at.desc()).offset(offset).limit(PAGE_SIZE)
-        res = await db.execute(stmt)
-        txs = res.scalars().all()
-    except Exception as e:
-        print(f"Error fetching tx rows: {e}")
-        try:
-            await db.rollback()
-        except Exception:
-            pass
+    stmt_tx = select(TransactionHistory).where(
+        TransactionHistory.user_id == user_id
+    ).order_by(TransactionHistory.created_at.desc()).offset(offset).limit(PAGE_SIZE)
+    res_tx = await db.execute(stmt_tx)
+    txs = res_tx.scalars().all()
 
     rows = []
     for tx in txs:
-        created_at = getattr(tx, "created_at", None)
-        dt_str = created_at.strftime("%b %d, %Y %H:%M") if created_at else "Recently"
-        cat = html.escape(str(getattr(tx, "category", "Transaction") or "Transaction"))
-        desc = html.escape(str(getattr(tx, "description", "") or ""))
-        amount = getattr(tx, "amount", 0) or 0
+        dt_str = tx.created_at.strftime("%b %d, %Y %H:%M") if tx.created_at else "Recently"
+        cat = html.escape(tx.category or "Transaction")
+        desc = html.escape(tx.description or "")
+        amt = tx.amount or 0
         
-        if amount >= 0:
+        if amt >= 0:
             rows.append(
-                f"✦ 📥 <b>Received:</b> 🟢 <code>+{amount:,} coins</code> (<b>{cat}</b>)\n"
+                f"✦ 📥 <b>Received:</b> 🟢 <code>+{amt:,} coins</code> (<b>{cat}</b>)\n"
                 f"   ↳ <i>{desc}</i> • <code>{dt_str}</code>"
             )
         else:
             rows.append(
-                f"✦ 📤 <b>Paid:</b> 🔴 <code>-{abs(amount):,} coins</code> (<b>{cat}</b>)\n"
+                f"✦ 📤 <b>Paid:</b> 🔴 <code>-{abs(amt):,} coins</code> (<b>{cat}</b>)\n"
                 f"   ↳ <i>{desc}</i> • <code>{dt_str}</code>"
             )
 
@@ -2623,8 +2584,6 @@ async def build_transactions_payload(user_id: int, page: int, db: AsyncSession, 
     text = (
         f"⚡ <b>TRANSACTION HISTORY</b> ⚡\n"
         f"◈ ────────────────── ◈\n"
-        f"📥 <b>Total Received:</b> 🟢 <code>+{total_received:,} coins</code>\n"
-        f"📤 <b>Total Paid:</b> 🔴 <code>-{total_paid:,} coins</code>\n"
         f"📊 <b>Total Transactions:</b> <code>{total_count:,}</code>\n"
         f"◈ ────────────────── ◈\n\n"
         f"{tx_body}\n\n"
@@ -2640,21 +2599,8 @@ async def build_transactions_payload(user_id: int, page: int, db: AsyncSession, 
 async def cmd_transactions(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     is_dm = (message.chat.type == "private")
-    try:
-        text, markup = await build_transactions_payload(user_id=user_id, page=1, db=db, is_dm=is_dm)
-        try:
-            await message.answer(text, reply_markup=markup, parse_mode="HTML")
-        except Exception:
-            clean_text = text.replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", "").replace("<code>", "").replace("</code>", "")
-            await message.answer(clean_text, reply_markup=markup)
-    except Exception as e:
-        print(f"Error in cmd_transactions: {e}")
-        fallback_text = (
-            f"⚡ <b>TRANSACTION HISTORY</b> ⚡\n"
-            f"◈ ────────────────── ◈\n"
-            f"<i>Unable to query transaction records ({html.escape(str(e))}).</i>"
-        )
-        await message.answer(fallback_text, parse_mode="HTML")
+    text, markup = await build_transactions_payload(user_id=user_id, page=1, db=db, is_dm=is_dm)
+    await message.answer(text, reply_markup=markup, parse_mode="HTML")
 
 
 @router.callback_query(F.data == "dm_transactions")
@@ -2664,26 +2610,15 @@ async def cb_dm_transactions(callback: CallbackQuery, db: AsyncSession):
     try:
         await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
     except Exception:
-        try:
-            await callback.message.edit_caption(caption=text, reply_markup=markup, parse_mode="HTML")
-        except Exception:
-            try:
-                await callback.message.delete()
-            except Exception:
-                pass
-            await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
+        await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("tx_page_"))
 async def cb_tx_page(callback: CallbackQuery, db: AsyncSession):
     parts = callback.data.split("_")
-    if len(parts) >= 4:
-        target_user_id = int(parts[2])
-        page = int(parts[3])
-    else:
-        target_user_id = callback.from_user.id
-        page = int(parts[2])
+    target_user_id = int(parts[2]) if len(parts) >= 4 else callback.from_user.id
+    page = int(parts[3]) if len(parts) >= 4 else int(parts[2])
 
     if callback.from_user.id != target_user_id:
         await callback.answer("❌ You can only navigate your own transaction history!", show_alert=True)
@@ -2691,66 +2626,14 @@ async def cb_tx_page(callback: CallbackQuery, db: AsyncSession):
 
     is_dm = (callback.message.chat.type == "private") if callback.message and callback.message.chat else True
     text, markup = await build_transactions_payload(user_id=target_user_id, page=page, db=db, is_dm=is_dm)
-    
     try:
         await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
     except Exception:
-        try:
-            await callback.message.edit_caption(caption=text, reply_markup=markup, parse_mode="HTML")
-        except Exception:
-            await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
+        await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
     await callback.answer()
 
 
 @router.callback_query(F.data == "tx_noop")
 async def cb_tx_noop(callback: CallbackQuery):
-    await callback.answer()
-    
-@router.message(Command("transactions", "tx", "history"))
-async def cmd_transactions(message: Message, db: AsyncSession):
-    user_id = message.from_user.id
-    is_dm = (message.chat.type == "private")
-    try:
-        text, markup = await build_transactions_payload(user_id=user_id, page=1, db=db, is_dm=is_dm)
-        try:
-            await message.answer(text, reply_markup=markup, parse_mode="HTML")
-        except Exception:
-            clean_text = text.replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", "").replace("<code>", "").replace("</code>", "")
-            await message.answer(clean_text, reply_markup=markup)
-    except Exception as e:
-        print(f"Error in cmd_transactions: {e}")
-        fallback_text = (
-            f"⚡ <b>TRANSACTION HISTORY</b> ⚡\n"
-            f"◈ ────────────────── ◈\n"
-            f"<i>Unable to query transaction records ({html.escape(str(e))}).</i>"
-        )
-        await message.answer(fallback_text, parse_mode="HTML")
-    await callback.answer()
-
-@router.callback_query(F.data.startswith("tx_page_"))
-async def cb_tx_page(callback: CallbackQuery, db: AsyncSession):
-    parts = callback.data.split("_")
-    # Format: tx_page_{user_id}_{page}
-    if len(parts) >= 4:
-        target_user_id = int(parts[2])
-        page = int(parts[3])
-    else:
-        target_user_id = callback.from_user.id
-        page = int(parts[2])
-
-    if callback.from_user.id != target_user_id:
-        await callback.answer("❌ You can only navigate your own transaction history!", show_alert=True)
-        return
-
-    is_dm = (callback.message.chat.type == "private") if callback.message and callback.message.chat else True
-    text, markup = await build_transactions_payload(user_id=target_user_id, page=page, db=db, is_dm=is_dm)
-    
-    try:
-        await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
-    except Exception:
-        try:
-            await callback.message.edit_caption(caption=text, reply_markup=markup, parse_mode="HTML")
-        except Exception:
-            await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
     await callback.answer()
 

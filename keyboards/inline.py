@@ -174,6 +174,27 @@ def get_tx_pagination_keyboard(user_id: int, page: int, max_page: int, is_dm: bo
         nav_buttons.append(create_styled_button(text="◀️ Prev", key="prev", callback_data=f"tx_page_{user_id}_{page-1}"))
     else:
         nav_buttons.append(create_styled_button(text="⏹️", callback_data="tx_noop"))
+    nav_buttons.append(create_styled_button(text=f"📄 {page}/{max_page}", callback_data="tx_noop"))
+    if page < max_page:
+        nav_buttons.append(create_styled_button(text="Next ➡️", key="next", callback_data=f"tx_page_{user_id}_{page+1}"))
+    else:
+        nav_buttons.append(create_styled_button(text="⏹️", callback_data="tx_noop"))
+    if max_page > 1:
+        builder.row(*nav_buttons)
+    if is_dm:
+        builder.row(create_styled_button(text="Back to Hub Menu", key="back", callback_data="dm_home"))
+    else:
+        builder.row(create_styled_button(text="👤 My Profile", key="profile", callback_data="dm_profile"))
+    return builder.as_markup()
+
+def get_tx_pagination_keyboard(user_id: int, page: int, max_page: int, is_dm: bool = False) -> InlineKeyboardMarkup:
+    """Generates navigation buttons for browsing Transaction History."""
+    builder = InlineKeyboardBuilder()
+    nav_buttons = []
+    if page > 1:
+        nav_buttons.append(create_styled_button(text="◀️ Prev", key="prev", callback_data=f"tx_page_{user_id}_{page-1}"))
+    else:
+        nav_buttons.append(create_styled_button(text="⏹️", callback_data="tx_noop"))
 
     nav_buttons.append(create_styled_button(text=f"📄 {page}/{max_page}", callback_data="tx_noop"))
 

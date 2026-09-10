@@ -123,8 +123,8 @@ async def init_db():
                     "ALTER TABLE pokemon ADD COLUMN IF NOT EXISTS terastal_url VARCHAR(255)",
                     "ALTER TABLE user_pokemon ADD COLUMN IF NOT EXISTS is_amv BOOLEAN DEFAULT false",
                     "ALTER TABLE user_pokemon ADD COLUMN IF NOT EXISTS form_index INTEGER DEFAULT 0",
-                    "ALTER TABLE user_pokemon ADD COLUMN IF NOT EXISTS serial_number VARCHAR(20)",
-                    "ALTER TABLE redeem_codes ADD COLUMN IF NOT EXISTS reward_form_index INTEGER DEFAULT 0"
+                    "ALTER TABLE redeem_codes ADD COLUMN IF NOT EXISTS reward_form_index INTEGER DEFAULT 0",
+                    "CREATE TABLE IF NOT EXISTS transaction_history (id SERIAL PRIMARY KEY, user_id BIGINT NOT NULL, amount INTEGER NOT NULL, category VARCHAR(50) NOT NULL, description VARCHAR(255) NOT NULL, created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP)"
                 ]
                 for ddl in ddl_statements:
                     try:

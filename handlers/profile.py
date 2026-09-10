@@ -2623,33 +2623,48 @@ async def build_transactions_payload(user_id: int, page: int, db: AsyncSession, 
     markup = get_tx_pagination_keyboard(user_id=user_id, page=page, max_page=max_page, is_dm=is_dm)
     return text, markup
 
-
-@router.message(Command("transactions", "tx", "history"))
-async def cmd_transactions(message: Message, db: AsyncSession):
+@router.callback_query(F.data == "dm_transactions")
+async def cb_dm_transactions(callback: CallbackQuery, db: AsyncSession):
+    user_id = callback.from_user.id
+    text, markup = await build_transactions_payload(user_id=user_id, page=1, db=db, is_dm=True)
     try:
-        user_id = message.from_user.id
-        is_dm = (message.chat.type == "private")
-        text, markup = await build_transactions_payload(user_id=user_id, page=1, db=db, is_dm=is_dm)
+        await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+    except Exception:
         try:
-            await message.answer(text, reply_markup=markup, parse_mode="HTML")
+            await callback.message.edit_caption(caption=text, reply_markup=markup, parse_mode="HTML")
         except Exception:
-            clean_text = text.replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", "").replace("<code>", "").replace("</code>", "")
-            await message.answer(clean_text, reply_markup=markup)
-    except Exception as e:
-        print(f"Error in cmd_transactions: {e}")
-        await message.answer(f"⚠️ Unable to load transactions history: <code>{html.escape(str(e))}</code>", parse_mode="HTML")
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
+            await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("tx_page_"))
+async def cb_tx_page(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_")
+    # Format: tx_page_{user_id}_{page}
+    if len(parts) >= 4:
+        target_user_id = int(parts[2])
+        page = int(parts[3])
+    else:
+        target_user_id = callback.from_user.id
+        page = int(parts[2])
+
+    if callback.from_user.id != target_user_id:
+        await callback.answer("❌ You can only navigate your own transaction history!", show_alert=True)
+        return
+
     is_dm = (callback.message.chat.type == "private") if callback.message and callback.message.chat else True
     text, markup = await build_transactions_payload(user_id=target_user_id, page=page, db=db, is_dm=is_dm)
     
     try:
         await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
     except Exception:
-        pass
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=markup, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
     await callback.answer()
-
-
-@router.callback_query(F.data == "tx_noop")
-async def cb_tx_noop(callback: CallbackQuery):
-    await callback.answer()
-
 

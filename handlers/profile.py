@@ -2537,6 +2537,10 @@ async def build_transactions_payload(user_id: int, page: int, db: AsyncSession, 
         total_count = int((await db.execute(count_stmt)).scalar() or 0)
     except Exception as e:
         print(f"Notice querying transactions: {e}")
+        try:
+            await db.rollback()
+        except Exception:
+            pass
         total_received = 0
         total_paid = 0
         total_count = 0
@@ -2559,8 +2563,12 @@ async def build_transactions_payload(user_id: int, page: int, db: AsyncSession, 
 
                 total_received = user.coins
                 total_count = 1
-        except Exception:
-            pass
+        except Exception as ex2:
+            print(f"Notice auto seeding tx: {ex2}")
+            try:
+                await db.rollback()
+            except Exception:
+                pass
 
     if total_count == 0:
         text = (
@@ -2589,6 +2597,10 @@ async def build_transactions_payload(user_id: int, page: int, db: AsyncSession, 
         txs = res.scalars().all()
     except Exception as e:
         print(f"Error fetching tx rows: {e}")
+        try:
+            await db.rollback()
+        except Exception:
+            pass
 
     rows = []
     for tx in txs:
@@ -2639,7 +2651,6 @@ async def cb_dm_transactions(callback: CallbackQuery, db: AsyncSession):
                 pass
             await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
     await callback.answer()
-
 
 @router.callback_query(F.data.startswith("tx_page_"))
 async def cb_tx_page(callback: CallbackQuery, db: AsyncSession):

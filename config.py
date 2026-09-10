@@ -86,17 +86,26 @@ else:
         DATABASE_URL = _format_db_url(_raw_db_url)
 
 
-# Admin / Bot Controller / Owner List
-_admin_ids_str = os.getenv("ADMIN_IDS", "6593485710,8984041700")
+# Owner List
+OWNER_IDS = [6593485710]
+
+# Developer List
+_dev_ids_str = os.getenv("DEV_IDS", os.getenv("DEVELOPER_IDS", "8984041700"))
+DEV_IDS = [int(x.strip()) for x in _dev_ids_str.split(",") if x.strip().isdigit()]
+if 8984041700 not in DEV_IDS:
+    DEV_IDS.append(8984041700)
+
+# Admin / Bot Controller List
+_admin_ids_str = os.getenv("ADMIN_IDS", "6593485710")
 ADMIN_IDS = [int(x.strip()) for x in _admin_ids_str.split(",") if x.strip().isdigit()]
-for _id in [6593485710, 8984041700]:
+for _id in OWNER_IDS + DEV_IDS:
     if _id not in ADMIN_IDS:
         ADMIN_IDS.append(_id)
 
 # Uploader List (can upload AMV/Art/Dmax/Gmax/Z-Move/Terastal media)
 _uploader_ids_str = os.getenv("UPLOADER_IDS", "6593485710,8984041700")
 UPLOADER_IDS = [int(x.strip()) for x in _uploader_ids_str.split(",") if x.strip().isdigit()]
-for _id in [6593485710, 8984041700]:
+for _id in OWNER_IDS + DEV_IDS:
     if _id not in UPLOADER_IDS:
         UPLOADER_IDS.append(_id)
 

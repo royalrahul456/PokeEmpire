@@ -108,7 +108,7 @@ UPLOADER_IDS = [int(x.strip()) for x in _uploader_ids_str.split(",") if x.strip(
 for _id in OWNER_IDS + DEV_IDS:
     if _id not in UPLOADER_IDS:
         UPLOADER_IDS.append(_id)
-
+        
 # Game Configuration Defaults
 SHINY_RATE = float(os.getenv("SHINY_RATE", "0.002"))
 HUNT_COOLDOWN = int(os.getenv("HUNT_COOLDOWN", "30"))

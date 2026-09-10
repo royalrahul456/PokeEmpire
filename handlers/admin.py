@@ -335,10 +335,13 @@ async def cmd_spawn_setting(message: Message, db: AsyncSession):
 
 @router.message(Command("giftcoins"))
 async def cmd_gift_coins(message: Message, db: AsyncSession):
-    # Only bot owner can use this
-   if not config.ADMIN_IDS or message.from_user.id not in config.ADMIN_IDS:
-        await message.answer("❌ Denied. Only the Bot Owner can use this command.")
+    # Only bot owner/controller can use this
+    if not config.ADMIN_IDS or message.from_user.id not in config.ADMIN_IDS:
+        await message.answer("❌ Denied. Only Bot Owners/Controllers can use this command.")
         return
+
+    # Parse arguments
+    parts = message.text.split()
 
     # Parse arguments
     parts = message.text.split()

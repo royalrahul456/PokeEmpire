@@ -2655,6 +2655,76 @@ async def cmd_transactions(message: Message, db: AsyncSession):
             f"<i>Unable to query transaction records ({html.escape(str(e))}).</i>"
         )
         await message.answer(fallback_text, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "dm_transactions")
+async def cb_dm_transactions(callback: CallbackQuery, db: AsyncSession):
+    user_id = callback.from_user.id
+    text, markup = await build_transactions_payload(user_id=user_id, page=1, db=db, is_dm=True)
+    try:
+        await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+    except Exception:
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=markup, parse_mode="HTML")
+        except Exception:
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
+            await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("tx_page_"))
+async def cb_tx_page(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_")
+    if len(parts) >= 4:
+        target_user_id = int(parts[2])
+        page = int(parts[3])
+    else:
+        target_user_id = callback.from_user.id
+        page = int(parts[2])
+
+    if callback.from_user.id != target_user_id:
+        await callback.answer("❌ You can only navigate your own transaction history!", show_alert=True)
+        return
+
+    is_dm = (callback.message.chat.type == "private") if callback.message and callback.message.chat else True
+    text, markup = await build_transactions_payload(user_id=target_user_id, page=page, db=db, is_dm=is_dm)
+    
+    try:
+        await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+    except Exception:
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=markup, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "tx_noop")
+async def cb_tx_noop(callback: CallbackQuery):
+    await callback.answer()
+    
+@router.message(Command("transactions", "tx", "history"))
+async def cmd_transactions(message: Message, db: AsyncSession):
+    user_id = message.from_user.id
+    is_dm = (message.chat.type == "private")
+    try:
+        text, markup = await build_transactions_payload(user_id=user_id, page=1, db=db, is_dm=is_dm)
+        try:
+            await message.answer(text, reply_markup=markup, parse_mode="HTML")
+        except Exception:
+            clean_text = text.replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", "").replace("<code>", "").replace("</code>", "")
+            await message.answer(clean_text, reply_markup=markup)
+    except Exception as e:
+        print(f"Error in cmd_transactions: {e}")
+        fallback_text = (
+            f"⚡ <b>TRANSACTION HISTORY</b> ⚡\n"
+            f"◈ ────────────────── ◈\n"
+            f"<i>Unable to query transaction records ({html.escape(str(e))}).</i>"
+        )
+        await message.answer(fallback_text, parse_mode="HTML")
     await callback.answer()
 
 @router.callback_query(F.data.startswith("tx_page_"))

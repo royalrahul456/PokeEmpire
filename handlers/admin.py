@@ -157,34 +157,38 @@ async def cmd_admin_list(message: Message, db: AsyncSession):
         await message.answer("ℹ️ **Bot Administrators**: None configured.")
         return
 
+    owner_ids = getattr(config, "OWNER_IDS", [6593485710])
+    dev_ids = getattr(config, "DEV_IDS", [8984041700])
+    all_admin_ids = getattr(config, "ADMIN_IDS", [6593485710, 8984041700])
+    uploader_ids = getattr(config, "UPLOADER_IDS", [6593485710, 8984041700])
+
     # Query database for matching registered bot admins & uploaders
-    all_ids = list(set(config.ADMIN_IDS + config.UPLOADER_IDS))
+    all_ids = list(set(owner_ids + dev_ids + all_admin_ids + uploader_ids))
     stmt = select(User).where(User.id.in_(all_ids))
     res = await db.execute(stmt)
     registered_users = res.scalars().all()
     registered_ids = {u.id: u for u in registered_users}
 
     owner_rows = []
+    dev_rows = []
     admin_rows = []
     uploader_rows = []
 
-    controller_ids = [6593485710, 8984041700]
-
-    for admin_id in config.ADMIN_IDS:
+    async def get_user_row(uid: int, default_role: str) -> str:
         nickname = None
         username = None
 
-        if admin_id in registered_ids:
-            u = registered_ids[admin_id]
+        if uid in registered_ids:
+            u = registered_ids[uid]
             nickname = u.nickname
             username = u.username
         else:
-            if admin_id == 8984041700:
+            if uid == 8984041700:
                 nickname = "TheDarkKratos"
                 username = "TheDarkKratos"
             else:
                 try:
-                    chat = await message.bot.get_chat(admin_id)
+                    chat = await message.bot.get_chat(uid)
                     nickname = chat.first_name
                     username = chat.username
                 except Exception:
@@ -192,52 +196,51 @@ async def cmd_admin_list(message: Message, db: AsyncSession):
 
         if nickname:
             username_str = f" (@{escape_md(username)})" if username else ""
-            row = f"• **{escape_md(nickname)}**{username_str} `(ID: {admin_id})`"
+            return f"• **{escape_md(nickname)}**{username_str} `(ID: {uid})`"
         else:
-            row = f"• **Controller** `(ID: {admin_id})`"
+            return f"• **{default_role}** `(ID: {uid})`"
 
-        if admin_id in controller_ids:
-            owner_rows.append(row)
-        else:
+    # Build Owner rows
+    for oid in owner_ids:
+        row = await get_user_row(oid, "Owner")
+        owner_rows.append(row)
+
+    # Build Developer rows
+    for did in dev_ids:
+        row = await get_user_row(did, "Developer")
+        dev_rows.append(row)
+
+    # Build Admin rows (excluding owner & dev)
+    for aid in all_admin_ids:
+        if aid not in owner_ids and aid not in dev_ids:
+            row = await get_user_row(aid, "Admin")
             admin_rows.append(row)
 
-    # Build uploader rows
-    for up_id in config.UPLOADER_IDS:
-        nickname = None
-        username = None
-        if up_id in registered_ids:
-            u = registered_ids[up_id]
-            nickname = u.nickname
-            username = u.username
-        else:
-            if up_id == 8984041700:
-                nickname = "TheDarkKratos"
-                username = "TheDarkKratos"
-            else:
-                try:
-                    chat = await message.bot.get_chat(up_id)
-                    nickname = chat.first_name
-                    username = chat.username
-                except Exception:
-                    pass
-        if nickname:
-            username_str = f" (@{escape_md(username)})" if username else ""
-            row = f"• **{escape_md(nickname)}**{username_str} `(ID: {up_id})`"
-        else:
-            row = f"• **Uploader User** `(ID: {up_id})`"
-        uploader_rows.append(row)
+    # Build Uploader rows (excluding owner & dev)
+    for up_id in uploader_ids:
+        if up_id not in owner_ids and up_id not in dev_ids:
+            row = await get_user_row(up_id, "Uploader")
+            uploader_rows.append(row)
 
-    owner_title = "👑 **BOT CONTROLLERS / OWNERS**" if len(owner_rows) > 1 else "👑 **OWNER**"
     text = (
         f"👑 **BOT ROSTER** 👑\n"
         f"───────────────\n\n"
-        f"{owner_title}\n"
-        + "\n".join(owner_rows) + "\n\n"
     )
+    if owner_rows:
+        owner_title = "👑 **OWNER**" if len(owner_rows) == 1 else "👑 **OWNERS**"
+        text += f"{owner_title}\n" + "\n".join(owner_rows) + "\n\n"
+
+    if dev_rows:
+        dev_title = "💻 **DEVELOPER**" if len(dev_rows) == 1 else "💻 **DEVELOPERS**"
+        text += f"{dev_title}\n" + "\n".join(dev_rows) + "\n\n"
+
     if admin_rows:
-        text += "🛡️ **ADMIN**\n" + "\n".join(admin_rows) + "\n\n"
+        admin_title = "🛡️ **ADMIN**" if len(admin_rows) == 1 else "🛡️ **ADMINS**"
+        text += f"{admin_title}\n" + "\n".join(admin_rows) + "\n\n"
+
     if uploader_rows:
-        text += "🎬 **UPLOADER**\n" + "\n".join(uploader_rows) + "\n\n"
+        uploader_title = "🎬 **UPLOADER**" if len(uploader_rows) == 1 else "🎬 **UPLOADERS**"
+        text += f"{uploader_title}\n" + "\n".join(uploader_rows) + "\n\n"
 
     text += "───────────────"
     await message.answer(text, parse_mode="Markdown")

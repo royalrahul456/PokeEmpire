@@ -914,9 +914,11 @@ async def cmd_remove_admin(message: Message, db: AsyncSession):
             await message.answer("⚠️ Target must be a user ID or @username.")
             return
 
-    # Check if target is a core owner/controller
-    if target_id in [6593485710, 8984041700]:
-        await message.answer("❌ Denied. You cannot remove a Bot Controller / Owner from the administrator list!")
+    # Check if target is a core owner/developer
+    owner_ids = getattr(config, "OWNER_IDS", [6593485710])
+    dev_ids = getattr(config, "DEV_IDS", [8984041700])
+    if target_id in owner_ids or target_id in dev_ids:
+        await message.answer("❌ Denied. You cannot remove a Bot Owner or Developer from the administrator list!")
         return
 
     # Check if not admin

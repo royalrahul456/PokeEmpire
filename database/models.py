@@ -252,9 +252,6 @@ class TransactionHistory(Base):
     description = Column(String(255), nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)
 
-    user = relationship("User", foreign_keys=[user_id])
-
-
 class MysteryEventState(Base):
     __tablename__ = "mystery_event_state"
 

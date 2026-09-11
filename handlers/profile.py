@@ -130,10 +130,6 @@ async def get_single_form_media_value(db: AsyncSession, pokemon_id: int, form_in
     return res.scalar_one_or_none()
 
 async def get_player_cover_media(user_id: int, db: AsyncSession) -> tuple[str, str]:
-    """
-    Resolves the cover media for a trainer.
-    Returns (media_type, media_value)
-    """
     fav_val = await get_favorite_id(user_id, db)
     media_type = None
     media_value = None
@@ -150,7 +146,6 @@ async def get_player_cover_media(user_id: int, db: AsyncSession) -> tuple[str, s
             pokemon_id = int(fav_val)
             
         if pokemon_id:
-            # Check if they own this species
             stmt = select(UserPokemon).where(
                 UserPokemon.pokemon_id == pokemon_id,
                 UserPokemon.user_id == user_id
@@ -187,7 +182,6 @@ async def get_player_cover_media(user_id: int, db: AsyncSession) -> tuple[str, s
                                 media_value = media_val_db
                                 
     if not media_value:
-        # Fallback 1: Random Pokémon from their bag
         rand_stmt = select(UserPokemon).options(joinedload(UserPokemon.pokemon)).where(
             UserPokemon.user_id == user_id
         ).order_by(func.random()).limit(1)
@@ -211,11 +205,9 @@ async def get_player_cover_media(user_id: int, db: AsyncSession) -> tuple[str, s
                 media_value = up.pokemon.image_url
                 
     if not media_value:
-        # Fallback 2: Default pokedex cover configured by owner
         media_type, media_value = get_custom_cover("pokedex")
         
     if not media_value:
-        # Fallback 3: Hardcoded default
         media_type = "photo"
         media_value = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/890.png"
         
@@ -256,7 +248,6 @@ async def cmd_achievements(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     nickname = message.from_user.first_name
 
-    # Check if user exists in DB
     u_stmt = select(User).where(User.id == user_id)
     u_res = await db.execute(u_stmt)
     user = u_res.scalar_one_or_none()
@@ -265,7 +256,6 @@ async def cmd_achievements(message: Message, db: AsyncSession):
         await message.answer("⚠️ You haven't caught any Pokémon yet! Catch a wild Pokémon using `/catch <name>` to start.")
         return
 
-    # Count total catches
     stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == user_id)
     res = await db.execute(stmt)
     total_catches = res.scalar() or 0
@@ -291,7 +281,6 @@ async def cmd_achievements(message: Message, db: AsyncSession):
         if total_catches >= target:
             lines.append(f"✅ {title} — Complete {target} catches")
         else:
-            # Generate progress bar
             fraction = min(1.0, max(0.0, total_catches / target))
             filled_length = int(fraction * 8)
             empty_length = 8 - filled_length
@@ -321,7 +310,6 @@ async def cmd_balance(message: Message, db: AsyncSession):
             db.add(user)
             await db.commit()
 
-        import html
         name = html.escape(user.nickname or message.from_user.first_name or "Trainer")
         text = (
             f"💰 <b>TRAINER BALANCE</b> 💰\n"
@@ -340,7 +328,6 @@ async def cmd_profile(message: Message, db: AsyncSession):
     try:
         user_id = message.from_user.id
 
-        # Check registration
         u_stmt = select(User).where(User.id == user_id)
         u_res = await db.execute(u_stmt)
         user = u_res.scalar_one_or_none()
@@ -349,36 +336,29 @@ async def cmd_profile(message: Message, db: AsyncSession):
             await message.answer("⚠️ You haven't caught any Pokémon yet! Join a group chat and catch a wild Pokémon using `/catch <name>` to start.")
             return
 
-        # Count total caught Pokémon
         count_stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == user_id)
         count_res = await db.execute(count_stmt)
         total_caught = count_res.scalar() or 0
 
-        # Count unique caught Pokémon
         unique_stmt = select(func.count(distinct(UserPokemon.pokemon_id))).where(UserPokemon.user_id == user_id)
         unique_res = await db.execute(unique_stmt)
         unique_caught = unique_res.scalar() or 0
 
-        # Count shiny Pokémon
         shiny_stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == user_id, UserPokemon.is_shiny == True)
         shiny_res = await db.execute(shiny_stmt)
         total_shiny = shiny_res.scalar() or 0
 
-        # Count total species in database
         total_species_stmt = select(func.count(Pokemon.id))
         total_species_res = await db.execute(total_species_stmt)
         total_species = total_species_res.scalar() or 1
 
-        # Calculate percentage
         dex_pct = (unique_caught / total_species) * 100
         dex_bar = get_progress_bar(unique_caught, total_species, 10, fill_char="▰", empty_char="▱")
 
-        # Count caught by rarity
         rarity_stmt = select(Pokemon.rarity, func.count(UserPokemon.id)).join(UserPokemon).where(UserPokemon.user_id == user_id).group_by(Pokemon.rarity)
         rarity_res = await db.execute(rarity_stmt)
         rarity_counts = {r: count for r, count in rarity_res.all()}
 
-        # Standard list
         standard_breakdown = [
             ("Common", "⚪️"),
             ("Uncommon", "🟢"),
@@ -389,7 +369,6 @@ async def cmd_profile(message: Message, db: AsyncSession):
             ("Mythical", "🌌")
         ]
         
-        # Load custom rarities from DB directly
         from utils.settings import get_all_custom_rarities
         custom_rarities = await get_all_custom_rarities(db)
 
@@ -398,10 +377,8 @@ async def cmd_profile(message: Message, db: AsyncSession):
             cnt = rarity_counts.get(r_name, 0)
             breakdown_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
             
-        # Rarity Breakdown strictly has only the standard 7!
         rarity_breakdown_text = "\n".join(breakdown_lines)
 
-        # Count form-based (AMV/Art=1, Dmax=2, Gmax=3, Z-Move=4, Terastal=5)
         form_counts_stmt = select(UserPokemon.form_index, func.count(distinct(UserPokemon.pokemon_id))).where(
             UserPokemon.user_id == user_id, UserPokemon.form_index > 0
         ).group_by(UserPokemon.form_index)
@@ -413,7 +390,6 @@ async def cmd_profile(message: Message, db: AsyncSession):
         zmove_count = form_counts.get(4, 0)
         terastal_count = form_counts.get(5, 0)
 
-        # Build dynamic forms breakdown list starting with static forms
         forms_lines = [
             f"├─➩ 🎬 AMV / Art: {amv_count}",
             f"├─➩ ⚡ Dmax: {dmax_count}",
@@ -422,7 +398,6 @@ async def cmd_profile(message: Message, db: AsyncSession):
             f"├─➩ 🔮 Terastal: {terastal_count}"
         ]
         
-        # Add all custom rarities (which are forms) to Forms Breakdown dynamically
         custom_forms = await get_custom_rarity_forms(db)
         for f_idx, (r_name, r_emoji) in custom_forms.items():
             if f_idx in {1, 2, 3, 4, 5}:
@@ -432,11 +407,9 @@ async def cmd_profile(message: Message, db: AsyncSession):
             
         forms_breakdown_text = "\n".join(forms_lines)
 
-        # Formatted coins
         formatted_coins = f"{user.coins:,}"
         user_nickname = user.nickname if (user and user.nickname) else (message.from_user.first_name or "Trainer")
 
-        # Calculate global rank position based on catches (optimized query, no joins)
         rank_stmt = (
             select(func.count())
             .select_from(
@@ -449,13 +422,11 @@ async def cmd_profile(message: Message, db: AsyncSession):
         rank_res = await db.execute(rank_stmt)
         rank_position = (rank_res.scalar() or 0) + 1
 
-        # Fetch daily catch streak data
         from utils.streak import get_streak_data
         s_data = await get_streak_data(user_id)
         current_streak = s_data.get("current_streak", 0)
         best_streak = s_data.get("best_streak", 0)
 
-        # Fetch favorite Pokémon cover display name
         fav_val = await get_favorite_id(user_id, db)
         fav_name = "None (Random Bag)"
         if fav_val:
@@ -775,9 +746,6 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
         f"📖 <b>Pokédex Checklist</b>{filter_str} • Page {page}/{max_page}\n\n"
     )
 
-    from utils.settings import get_all_custom_rarities
-    custom_rarities = await get_all_custom_rarities(db)
-
     rarity_badges = {
         "Common": "⚪️",
         "Uncommon": "🟢",
@@ -855,16 +823,15 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
             text += f"◆ [ {entry_badge} ] {entry_id} {entry_name}{shiny_tag} ×{total_caught}\n"
 
     return text, page, max_page
+
 def get_pokedex_keyboard(user_id: int, page: int, max_page: int, rarity_filter: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     
-    # Row 1: Tab Switches (Clean, no extra stars, matching mockup)
     builder.row(
         InlineKeyboardButton(text="Collection", callback_data=f"pd_tab_{user_id}_col"),
         InlineKeyboardButton(text="💟 Forms & Covers", callback_data=f"pd_tab_{user_id}_cov")
     )
     
-    # Row 2: Dynamic Pagination Buttons (no wrapping, only show arrows if next/prev page exists)
     if max_page > 1:
         nav_row = []
         if page > 1:
@@ -877,12 +844,9 @@ def get_pokedex_keyboard(user_id: int, page: int, max_page: int, rarity_filter: 
             
         builder.row(*nav_row)
         
-    # Row 3: Filter by Rarity Button
     builder.row(
         InlineKeyboardButton(text="🔍 Filter by Rarity", callback_data=f"pd_rarity_{user_id}_{page}_{rarity_filter}")
     )
-    
-    # Row 4: View Profile Button
     builder.row(
         InlineKeyboardButton(text="👤 View Profile", callback_data=f"profile_view_{user_id}")
     )
@@ -917,7 +881,6 @@ def get_rarity_filter_keyboard(user_id: int, current_page: int, current_filter: 
         InlineKeyboardButton(text="🔮 Terastal", callback_data=f"pd_setfilter_{user_id}_Terastal")
     )
     
-    # Dynamic custom rarities
     if custom_rarities is None:
         from utils.settings import global_settings_cache
         import json
@@ -951,7 +914,6 @@ def get_rarity_filter_keyboard(user_id: int, current_page: int, current_filter: 
 async def cmd_pokedex(message: Message, db: AsyncSession):
     user_id = message.from_user.id
 
-    # Parse page number
     parts = message.text.split()
     page = 1
     if len(parts) > 1 and parts[1].isdigit():
@@ -1006,7 +968,6 @@ async def cb_pokedex_tab(callback: CallbackQuery, db: AsyncSession):
             pass
         await callback.answer()
     else:
-        # Default/collection back trigger
         u_stmt = select(User).where(User.id == user_id)
         u_res = await db.execute(u_stmt)
         user = u_res.scalar_one_or_none()
@@ -1159,14 +1120,12 @@ async def cmd_check_pokemon(message: Message, db: AsyncSession):
 
 
 async def build_check_pokemon_payload(pokemon_id: int, form_index: int, db: AsyncSession):
-    # Fetch pokemon
     stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
     res = await db.execute(stmt)
     pokemon = res.scalar_one_or_none()
     if not pokemon:
         return None, None, None, None
         
-    # Resolve media
     media_type = "photo"
     media_value = None
 
@@ -1182,7 +1141,6 @@ async def build_check_pokemon_payload(pokemon_id: int, form_index: int, db: Asyn
         if pokemon.image_url:
             media_type, media_value = parse_stored_media_value(pokemon.image_url)
             
-    # Resolve form label
     if form_index > 0:
         form_media_db = await get_single_form_media_value(db, pokemon.id, form_index)
         form_label = get_form_label(form_index, form_media_db)
@@ -1204,7 +1162,6 @@ async def build_check_pokemon_payload(pokemon_id: int, form_index: int, db: Asyn
         f"🎬 <b>Rarity</b>: {rarity_str}"
     )
     
-    # Keyboard has a single button: Owners
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text="👥 Owners", callback_data=f"show_check_owners_{pokemon.id}_{form_index}")
@@ -1218,7 +1175,6 @@ async def cb_show_check_owners(callback: CallbackQuery, db: AsyncSession):
     pokemon_id = int(parts[3])
     form_index = int(parts[4])
     
-    # Query owners
     owners_stmt = (
         select(User.id, User.nickname, func.count(UserPokemon.id))
         .join(UserPokemon, UserPokemon.user_id == User.id)
@@ -1276,7 +1232,6 @@ async def cb_check_back(callback: CallbackQuery, db: AsyncSession):
 
 
 async def get_leaderboard_text(lb_type: str, db: AsyncSession) -> str:
-    import html
     import config
     
     bot_id = None
@@ -1344,14 +1299,12 @@ async def get_leaderboard_text(lb_type: str, db: AsyncSession) -> str:
         text = "🏆 <b>TOP 10 — Streaks</b>\n\n"
         if top_users:
             text += "<blockquote>"
-            # Filter out bot ID
             filtered_users = []
             for user_id, uinfo in top_users:
                 if bot_id and user_id == bot_id:
                     continue
                 filtered_users.append((user_id, uinfo))
             
-            # Take top 10 after filter
             filtered_users = filtered_users[:10]
             
             for idx, (user_id, uinfo) in enumerate(filtered_users):
@@ -1457,7 +1410,6 @@ async def cmd_fav(message: Message, db: AsyncSession):
         await message.answer("⚠️ Format: `/fav <pokedex_id>[.form_index]`\n(e.g., `/fav 251` or `/fav 6.1` to set Charizard AMV as your favorite cover)")
         return
     
-    # Verify user owns at least one Pokémon of this species/form
     if form_index > 0:
         stmt = select(UserPokemon).options(joinedload(UserPokemon.pokemon)).where(
             UserPokemon.pokemon_id == pokemon_id,
@@ -1484,7 +1436,6 @@ async def cmd_fav(message: Message, db: AsyncSession):
     await set_favorite_id(user_id, fav_str, db)
     await db.commit()
     
-    # Check if they own any shiny version of this species
     shiny_stmt = select(UserPokemon.is_shiny).where(
         UserPokemon.pokemon_id == pokemon_id,
         UserPokemon.user_id == user_id,
@@ -1509,6 +1460,7 @@ async def cmd_unfav(message: Message, db: AsyncSession):
 async def build_rankings_payload(chat_id: int, user_id: int, period: str, db: AsyncSession):
     period_lower = period.lower()
     from database.models import ChatMessageStat, User
+    from datetime import datetime
 
     if period_lower == "daily":
         order_col = ChatMessageStat.daily_count
@@ -1524,7 +1476,6 @@ async def build_rankings_payload(chat_id: int, user_id: int, period: str, db: As
         order_col = ChatMessageStat.overall_count
         period_title = "Overall"
 
-    # Query top 10 chatters for this chat_id
     stmt = (
         select(ChatMessageStat, User)
         .join(User, ChatMessageStat.user_id == User.id)
@@ -1563,7 +1514,6 @@ async def build_rankings_payload(chat_id: int, user_id: int, period: str, db: As
             res = await db.execute(stmt)
             records = res.all()
 
-    # Query total group messages for this chat_id
     tot_stmt = select(func.sum(order_col)).where(ChatMessageStat.chat_id == chat_id)
     tot_res = await db.execute(tot_stmt)
     total_chat_messages = tot_res.scalar() or 0
@@ -1691,7 +1641,6 @@ async def cmd_search(message: Message, db: AsyncSession):
         await message.answer(f"Pokemon '{html.escape(searched_term)}' not found in database.", parse_mode="HTML")
         return
 
-    # Sort results so the closest match (shortest name or exact name) is selected as the primary_pokemon
     if pokemon_name_query:
         pokemons.sort(key=lambda p: (abs(len(p.name) - len(pokemon_name_query)), p.name.lower() != pokemon_name_query.lower()))
     pokemon = pokemons[0]
@@ -1700,14 +1649,12 @@ async def cmd_search(message: Message, db: AsyncSession):
 
 
 async def build_variants_search_payload(pokemon_id: int, page: int, db: AsyncSession):
-    # Fetch primary pokemon
     stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
     res = await db.execute(stmt)
     pokemon = res.scalar_one_or_none()
     if not pokemon:
         return "Character not found.", None
         
-    # Fetch all forms from PokemonFormMedia
     from database.models import PokemonFormMedia
     stmt = select(PokemonFormMedia.form_index, PokemonFormMedia.media_value).where(
         PokemonFormMedia.pokemon_id == pokemon_id
@@ -1718,7 +1665,6 @@ async def build_variants_search_payload(pokemon_id: int, page: int, db: AsyncSes
     custom_forms = await get_custom_rarity_forms(db)
     custom_rarities = await get_all_custom_rarities(db)
     
-    # Build list of variants: (form_index, label, rarity_emoji, entry_id)
     base_emoji = get_rarity_emoji(pokemon.rarity, custom_rarities)
     variants = [(0, pokemon.rarity, base_emoji, f"{pokemon.id}")]
     
@@ -1755,7 +1701,6 @@ async def build_variants_search_payload(pokemon_id: int, page: int, db: AsyncSes
     for form_index, label, emoji, entry_id in page_variants:
         caption += f"┣━ {emoji} {label} | ID: <code>{entry_id}</code>\n"
         
-    # Build keyboard
     builder = InlineKeyboardBuilder()
     if total_pages > 1:
         if page == 1:
@@ -1834,36 +1779,25 @@ async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
             await callback.answer("❌ This is not your profile!", show_alert=True)
             return
 
-        # Count total caught Pokémon
         count_stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == user_id)
         count_res = await db.execute(count_stmt)
         total_caught = count_res.scalar() or 0
 
-        # Count unique caught Pokémon
         unique_stmt = select(func.count(distinct(UserPokemon.pokemon_id))).where(UserPokemon.user_id == user_id)
         unique_res = await db.execute(unique_stmt)
         unique_caught = unique_res.scalar() or 0
 
-        # Count shiny Pokémon
-        shiny_stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == user_id, UserPokemon.is_shiny == True)
-        shiny_res = await db.execute(shiny_stmt)
-        total_shiny = shiny_res.scalar() or 0
-
-        # Count total species in database
         total_species_stmt = select(func.count(Pokemon.id))
         total_species_res = await db.execute(total_species_stmt)
         total_species = total_species_res.scalar() or 1
 
-        # Calculate percentage
         dex_pct = (unique_caught / total_species) * 100
         dex_bar = get_progress_bar(unique_caught, total_species, 10, fill_char="▰", empty_char="▱")
 
-        # Count caught by rarity
         rarity_stmt = select(Pokemon.rarity, func.count(UserPokemon.id)).join(UserPokemon).where(UserPokemon.user_id == user_id).group_by(Pokemon.rarity)
         rarity_res = await db.execute(rarity_stmt)
         rarity_counts = {r: count for r, count in rarity_res.all()}
 
-        # Standard list
         standard_breakdown = [
             ("Common", "⚪️"),
             ("Uncommon", "🟢"),
@@ -1874,7 +1808,6 @@ async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
             ("Mythical", "🌌")
         ]
         
-        # Load custom rarities from DB directly
         from utils.settings import get_all_custom_rarities
         custom_rarities = await get_all_custom_rarities(db)
 
@@ -1883,10 +1816,8 @@ async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
             cnt = rarity_counts.get(r_name, 0)
             breakdown_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
             
-        # Rarity Breakdown strictly has only the standard 7!
         rarity_breakdown_text = "\n".join(breakdown_lines)
 
-        # Count form-based (AMV/Art=1, Dmax=2, Gmax=3, Z-Move=4, Terastal=5)
         form_counts_stmt = select(UserPokemon.form_index, func.count(distinct(UserPokemon.pokemon_id))).where(
             UserPokemon.user_id == user_id, UserPokemon.form_index > 0
         ).group_by(UserPokemon.form_index)
@@ -1898,7 +1829,6 @@ async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
         zmove_count = form_counts.get(4, 0)
         terastal_count = form_counts.get(5, 0)
 
-        # Build dynamic forms breakdown list starting with static forms
         forms_lines = [
             f"├─➩ 🎬 AMV / Art: {amv_count}",
             f"├─➩ ⚡ Dmax: {dmax_count}",
@@ -1907,7 +1837,6 @@ async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
             f"├─➩ 🔮 Terastal: {terastal_count}"
         ]
         
-        # Add all custom rarities (which are forms) to Forms Breakdown dynamically
         standard_keys = {"Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical", "Limited", "Limited Edition"}
         for r_name, r_emoji in custom_rarities.items():
             if r_name in standard_keys:
@@ -1921,7 +1850,6 @@ async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
             
         forms_breakdown_text = "\n".join(forms_lines)
 
-        # Fetch User
         u_stmt = select(User).where(User.id == user_id)
         u_res = await db.execute(u_stmt)
         user = u_res.scalar_one_or_none()
@@ -1929,7 +1857,6 @@ async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
         formatted_coins = f"{user.coins:,}" if user else "0"
         user_nickname = user.nickname if (user and user.nickname) else (callback.from_user.first_name or "Trainer")
 
-        # Calculate global rank position based on catches (optimized query, no joins)
         rank_stmt = (
             select(func.count())
             .select_from(
@@ -1942,13 +1869,11 @@ async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
         rank_res = await db.execute(rank_stmt)
         rank_position = (rank_res.scalar() or 0) + 1
 
-        # Fetch daily catch streak data
         from utils.streak import get_streak_data
         s_data = await get_streak_data(user_id)
         current_streak = s_data.get("current_streak", 0)
         best_streak = s_data.get("best_streak", 0)
 
-        # Fetch favorite Pokémon cover display name
         fav_val = await get_favorite_id(user_id, db)
         fav_name = "None (Random Bag)"
         if fav_val:
@@ -2016,7 +1941,6 @@ async def cmd_dex(message: Message, db: AsyncSession):
     query = " ".join(parts[1:]).strip().lower()
     user_id = message.from_user.id
     
-    # 1. Resolve Pokemon
     if query.isdigit():
         poke_stmt = select(Pokemon).where(Pokemon.id == int(query))
     else:
@@ -2029,7 +1953,6 @@ async def cmd_dex(message: Message, db: AsyncSession):
         await message.answer(f"❌ Pokémon '{html.escape(query)}' not found.")
         return
         
-    # 2. Get owned form indexes for this user and species
     owned_stmt = select(UserPokemon.form_index).where(
         UserPokemon.user_id == user_id,
         UserPokemon.pokemon_id == pokemon.id
@@ -2037,7 +1960,6 @@ async def cmd_dex(message: Message, db: AsyncSession):
     owned_res = await db.execute(owned_stmt)
     owned_forms = set(owned_res.scalars().all())
     
-    # 3. Check if they own any shiny version
     shiny_stmt = select(UserPokemon.id).where(
         UserPokemon.user_id == user_id,
         UserPokemon.pokemon_id == pokemon.id,
@@ -2046,7 +1968,6 @@ async def cmd_dex(message: Message, db: AsyncSession):
     shiny_res = await db.execute(shiny_stmt)
     has_shiny = shiny_res.scalar() is not None
     
-    # 4. Get configured form media
     from database.models import PokemonFormMedia
     media_stmt = select(PokemonFormMedia.form_index, PokemonFormMedia.media_value).where(
         PokemonFormMedia.pokemon_id == pokemon.id
@@ -2054,7 +1975,6 @@ async def cmd_dex(message: Message, db: AsyncSession):
     media_res = await db.execute(media_stmt)
     configured_media = {row[0]: row[1] for row in media_res.all()}
     
-    # 5. Build Subtype Status list
     custom_forms = await get_custom_rarity_forms(db)
     form_names = {
         0: "Standard",
@@ -2077,7 +1997,6 @@ async def cmd_dex(message: Message, db: AsyncSession):
         form_badges[f_idx] = r_emoji
     
     subtypes_text = ""
-    # List Form 0, configured forms, AND any forms owned by the user
     available_forms = sorted(list({0} | set(configured_media.keys()) | owned_forms))
     
     builder = InlineKeyboardBuilder()
@@ -2089,7 +2008,6 @@ async def cmd_dex(message: Message, db: AsyncSession):
         is_owned = f in owned_forms
         owned_status = "✅ Owned" if is_owned else "❌ Locked"
         
-        # Rarity for subtypes
         if f == 0:
             rarity_lbl = pokemon.rarity
         else:
@@ -2355,7 +2273,6 @@ async def cmd_gift(message: Message, db: AsyncSession):
     target_user = None
     gift_str = None
     
-    # 1. Parse target and pokemon query
     if message.reply_to_message:
         if len(parts) < 2:
             await message.answer("⚠️ Format (replying): `/gift <pokedex_id>[.form_index]`")
@@ -2395,7 +2312,6 @@ async def cmd_gift(message: Message, db: AsyncSession):
         await message.answer("❌ You cannot gift Pokémon to yourself!")
         return
 
-    # 2. Parse pokedex_id and form_index
     form_index = 0
     pokedex_str = gift_str
     if "." in gift_str:
@@ -2409,7 +2325,6 @@ async def cmd_gift(message: Message, db: AsyncSession):
         return
     pokedex_id = int(pokedex_str)
     
-    # 3. Find if user owns this species and form (prefer non-shiny first)
     stmt = select(UserPokemon).options(joinedload(UserPokemon.pokemon)).where(
         UserPokemon.user_id == message.from_user.id,
         UserPokemon.pokemon_id == pokedex_id,
@@ -2431,11 +2346,9 @@ async def cmd_gift(message: Message, db: AsyncSession):
         await message.answer(f"❌ You do not own a <b>{f_name}</b> form of Pokédex #{pokedex_id:03d}!", parse_mode="HTML")
         return
         
-    # 4. Transfer ownership
     old_user_id = up.user_id
     up.user_id = target_user.id
     
-    # Clear cover favorite if they gifted their last copy of this species
     remain_stmt = select(UserPokemon.id).where(
         UserPokemon.user_id == old_user_id,
         UserPokemon.pokemon_id == pokedex_id
@@ -2448,7 +2361,6 @@ async def cmd_gift(message: Message, db: AsyncSession):
             
     await db.commit()
     
-    # Success message
     shiny_badge = "✨ Shiny " if up.is_shiny else ""
     form_names = {
         0: "",
@@ -2461,7 +2373,6 @@ async def cmd_gift(message: Message, db: AsyncSession):
     form_badge = form_names.get(form_index, f"Form {form_index} ")
     r_emoji = get_rarity_emoji(up.pokemon.rarity)
     
-    # Resolve media of the gifted Pokémon
     media_type = "photo"
     media_value = up.pokemon.image_url
     if up.pokemon.image_url:
@@ -2501,7 +2412,6 @@ async def cmd_gift(message: Message, db: AsyncSession):
         print(f"Error sending player gifted pokemon media: {e}")
         await message.answer(caption, parse_mode="HTML")
 
-    # Send private DM to recipient
     dm_text = (
         f"📣 <b>You received a Gift!</b>\n"
         f"<blockquote>👤 Sender: <b>{html.escape(sender_name)}</b>\n"
@@ -2512,18 +2422,14 @@ async def cmd_gift(message: Message, db: AsyncSession):
     except Exception:
         pass
 
-@router.message(Command("transactions", "tx", "history"))
-from keyboards.inline import create_styled_button, get_tx_pagination_keyboard
 
 async def build_transactions_payload(user_id: int, page: int, db: AsyncSession, is_dm: bool = False):
     from database.models import TransactionHistory, User
 
-    # 1. Total transaction count
     stmt_count = select(func.count(TransactionHistory.id)).where(TransactionHistory.user_id == user_id)
     res_count = await db.execute(stmt_count)
     total_count = res_count.scalar() or 0
 
-    # Auto-seed initial balance if no transaction history exists
     if total_count == 0:
         stmt_u = select(User).where(User.id == user_id)
         res_u = await db.execute(stmt_u)
@@ -2549,7 +2455,6 @@ async def build_transactions_payload(user_id: int, page: int, db: AsyncSession, 
         markup = get_tx_pagination_keyboard(user_id=user_id, page=1, max_page=1, is_dm=is_dm)
         return text, markup
 
-    # 2. Paginated transactions
     PAGE_SIZE = 8
     max_page = max(1, (total_count + PAGE_SIZE - 1) // PAGE_SIZE)
     page = max(1, min(page, max_page))
@@ -2635,8 +2540,3 @@ async def cb_tx_page(callback: CallbackQuery, db: AsyncSession):
 @router.callback_query(F.data == "tx_noop")
 async def cb_tx_noop(callback: CallbackQuery):
     await callback.answer()
-
-@router.callback_query(F.data == "tx_noop")
-async def cb_tx_noop(callback: CallbackQuery):
-    await callback.answer()
-

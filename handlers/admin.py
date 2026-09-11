@@ -2752,4 +2752,147 @@ async def cmd_toggle_emojis(message: Message, db: AsyncSession):
         f"✨ <b>Premium Emoji Mode</b> is now <b>{status_str}</b>.\n\n"
         f"<i>Saved in database! Setting will remain unchanged across all future bot restarts & updates.</i>",
         parse_mode="HTML"
+        
+# ─────────────────────────────────────────────────────────────────────────────
+# /broadcast — Broadcast message to all groups & channels (Admin/Owner)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.message(Command("broadcast", "bcast", "gcast"))
+async def cmd_broadcast(message: Message, db: AsyncSession):
+    if not message.from_user or message.from_user.id not in config.ADMIN_IDS:
+        await message.answer("❌ Denied. Only Bot Creators & Admins can use /broadcast.")
+        return
+
+    # Determine broadcast source: reply message OR direct text
+    broadcast_mode = None
+    target_msg_id = None
+    from_chat_id = None
+    reply_markup = None
+    broadcast_text = None
+
+    if message.reply_to_message:
+        broadcast_mode = "copy"
+        from_chat_id = message.chat.id
+        target_msg_id = message.reply_to_message.message_id
+        reply_markup = message.reply_to_message.reply_markup
+    else:
+        parts = message.text.split(maxsplit=1)
+        if len(parts) > 1 and parts[1].strip():
+            broadcast_mode = "text"
+            broadcast_text = parts[1].strip()
+        else:
+            await message.answer(
+                "📢 <b>BROADCAST COMMAND USAGE</b>\n"
+                "◈ ────────────────── ◈\n"
+                "Broadcast announcements to all groups & channels.\n\n"
+                "<b>Option 1: Reply Mode (Text, Media, Sticker, GIF, Video, Photo)</b>\n"
+                "• Reply to any message with <code>/broadcast</code>\n\n"
+                "<b>Option 2: Direct Text Mode</b>\n"
+                "• Type: <code>/broadcast Your message here</code>\n"
+                "◈ ────────────────── ◈",
+                parse_mode="HTML"
+            )
+            return
+
+    # Fetch all registered groups & channels from database
+    stmt = select(GroupSetting.chat_id)
+    res = await db.execute(stmt)
+    raw_chat_ids = res.scalars().all()
+    chat_ids = list(dict.fromkeys(raw_chat_ids))  # preserve order, unique
+
+    if not chat_ids:
+        await message.answer("❌ No registered groups or channels found in the database.")
+        return
+
+    import time
+    from aiogram.exceptions import TelegramRetryAfter
+
+    total = len(chat_ids)
+    start_time = time.time()
+    success_count = 0
+    failed_count = 0
+
+    status_msg = await message.answer(
+        f"🚀 <b>Starting Broadcast...</b>\n"
+        f"◈ ────────────────── ◈\n"
+        f"📊 <b>Total Target Chats:</b> <code>{total}</code>\n"
+        f"⏳ <i>Sending messages...</i>",
+        parse_mode="HTML"
     )
+
+    last_edit_time = time.time()
+
+    for idx, chat_id in enumerate(chat_ids, 1):
+        try:
+            if broadcast_mode == "copy":
+                await message.bot.copy_message(
+                    chat_id=chat_id,
+                    from_chat_id=from_chat_id,
+                    message_id=target_msg_id,
+                    reply_markup=reply_markup
+                )
+            else:
+                await message.bot.send_message(
+                    chat_id=chat_id,
+                    text=broadcast_text,
+                    parse_mode="HTML"
+                )
+            success_count += 1
+        except TelegramRetryAfter as e:
+            await asyncio.sleep(e.retry_after + 0.1)
+            try:
+                if broadcast_mode == "copy":
+                    await message.bot.copy_message(
+                        chat_id=chat_id,
+                        from_chat_id=from_chat_id,
+                        message_id=target_msg_id,
+                        reply_markup=reply_markup
+                    )
+                else:
+                    await message.bot.send_message(
+                        chat_id=chat_id,
+                        text=broadcast_text,
+                        parse_mode="HTML"
+                    )
+                success_count += 1
+            except Exception:
+                failed_count += 1
+        except Exception:
+            failed_count += 1
+
+        # Rate-limiting pause
+        await asyncio.sleep(0.05)
+
+        # Update progress card periodically
+        now = time.time()
+        if (now - last_edit_time > 3.0 or idx == total) and idx < total:
+            last_edit_time = now
+            try:
+                await status_msg.edit_text(
+                    f"🚀 <b>Broadcasting in Progress...</b>\n"
+                    f"◈ ────────────────── ◈\n"
+                    f"📊 <b>Progress:</b> <code>{idx}/{total}</code> (<b>{int(idx/total*100)}%</b>)\n"
+                    f"✅ <b>Sent:</b> <code>{success_count}</code> | ❌ <b>Failed:</b> <code>{failed_count}</code>",
+                    parse_mode="HTML"
+                )
+            except Exception:
+                pass
+
+    elapsed = time.time() - start_time
+    report_text = (
+        f"📢 <b>BROADCAST REPORT</b> 📢\n"
+        f"◈ ────────────────── ◈\n"
+        f"✅ <b>Delivered Successfully:</b> <code>{success_count}</code>\n"
+        f"❌ <b>Failed / Inaccessible:</b> <code>{failed_count}</code>\n"
+        f"📊 <b>Total Target Chats:</b> <code>{total}</code>\n"
+        f"⏱️ <b>Time Elapsed:</b> <code>{elapsed:.1f}s</code>\n"
+        f"◈ ────────────────── ◈"
+    )
+
+    try:
+        await status_msg.edit_text(report_text, parse_mode="HTML")
+    except Exception:
+        await message.answer(report_text, parse_mode="HTML")
+        
+    )
+    

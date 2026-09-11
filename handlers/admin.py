@@ -2590,10 +2590,8 @@ async def handle_spam_wizard_text(message: Message):
     state = _spam_state.get(user_id)
     if not state:
         return
-
     step = state.get("step")
-
-        if step == "enter_msg":
+    if step == "enter_msg":
         _spam_state[user_id]["msg_text"] = message.text
         _spam_state[user_id]["step"] = "enter_count"
         await message.answer(

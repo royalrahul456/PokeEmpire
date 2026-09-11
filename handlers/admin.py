@@ -2593,22 +2593,22 @@ async def handle_spam_wizard_text(message: Message):
 
     step = state.get("step")
 
-    if step == "enter_msg":
+        if step == "enter_msg":
         _spam_state[user_id]["msg_text"] = message.text
         _spam_state[user_id]["step"] = "enter_count"
         await message.answer(
             "<b>Spam Wizard</b>\n"
             "Message saved!\n\n"
-            "Step 3: How many times to send it? (1 to 50):",
+            "Step 3: How many times to send it? (1 to 500):",
             parse_mode="HTML"
         )
 
     elif step == "enter_count":
         count_str = message.text.strip()
-        if not count_str.isdigit() or not (1 <= int(count_str) <= 50):
-            await message.answer("Please enter a valid number between 1 and 50.")
+        if not count_str.isdigit() or not (1 <= int(count_str) <= 500):
+            await message.answer("Please enter a valid number between 1 and 500.")
             return
-
+            
         count = int(count_str)
         chat_id = state["chat_id"]
         msg_text = state.get("msg_text", "")

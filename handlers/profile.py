@@ -588,34 +588,41 @@ def get_rarity_filter_keyboard(user_id: int, current_page: int, current_filter: 
 
 @router.message(Command("pokedex", "dexlist"))
 async def cmd_pokedex(message: Message, db: AsyncSession):
-    user_id = message.from_user.id
+    try:
+        user_id = message.from_user.id
 
-    parts = message.text.split()
-    page = 1
-    if len(parts) > 1 and parts[1].isdigit():
-        page = int(parts[1])
+        parts = message.text.split()
+        page = 1
+        if len(parts) > 1 and parts[1].isdigit():
+            page = int(parts[1])
 
-    u_stmt = select(User).where(User.id == user_id)
-    u_res = await db.execute(u_stmt)
-    user = u_res.scalar_one_or_none()
-    nickname = user.nickname if (user and user.nickname) else (message.from_user.first_name or "Trainer")
+        u_stmt = select(User).where(User.id == user_id)
+        u_res = await db.execute(u_stmt)
+        user = u_res.scalar_one_or_none()
+        nickname = user.nickname if (user and user.nickname) else (message.from_user.first_name or "Trainer")
 
-    text, final_page, max_page = await get_pokedex_data(user_id, nickname, page, "All", db)
-    
-    if max_page == 0:
-        await message.answer(text, parse_mode="HTML")
-        return
+        text, final_page, max_page = await get_pokedex_data(user_id, nickname, page, "All", db)
+        
+        if max_page == 0:
+            await message.answer(text, parse_mode="HTML")
+            return
 
-    kb = get_pokedex_keyboard(user_id, final_page, max_page, "All")
-    await send_player_cover(
-        chat_id=message.chat.id,
-        user_id=user_id,
-        caption=text,
-        reply_markup=kb,
-        bot=message.bot,
-        db=db,
-        message_to_reply=message
-    )
+        kb = get_pokedex_keyboard(user_id, final_page, max_page, "All")
+        await send_player_cover(
+            chat_id=message.chat.id,
+            user_id=user_id,
+            caption=text,
+            reply_markup=kb,
+            bot=message.bot,
+            db=db,
+            message_to_reply=message
+        )
+    except Exception as e:
+        print(f"Error in cmd_pokedex: {e}")
+        try:
+            await message.answer(text, reply_markup=kb, parse_mode="HTML")
+        except Exception:
+            await message.answer("⚠️ Unable to load Pokédex at this moment. Please try again.")
 
 @router.callback_query(F.data == "pd_page_info_noop")
 async def cb_pd_page_info_noop(callback: CallbackQuery):

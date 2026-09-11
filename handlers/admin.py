@@ -2514,12 +2514,75 @@ async def cmd_spam_start(message: Message, db: AsyncSession):
         await message.answer("Denied. Only Bot Owners can use this command.")
         return
 
+    parts = message.text.split(maxsplit=2)
+
+    # Option A: Direct command `/spam <count> [text]` OR replying to a message with `/spam <count>`
+    if len(parts) > 1 and parts[1].isdigit():
+        count = int(parts[1])
+        if not (1 <= count <= 500):
+            await message.answer("⚠️ Count must be between 1 and 500.")
+            return
+
+        chat_id = message.chat.id
+        msg_text = None
+        reply_to_copy = None
+
+        if len(parts) > 2:
+            msg_text = parts[2]
+        elif message.reply_to_message:
+            reply_to_copy = message.reply_to_message
+        else:
+            await message.answer(
+                "⚠️ <b>Provide message or reply:</b>\n"
+                "• <code>/spam &lt;count&gt; &lt;your_message&gt;</code>\n"
+                "• Reply to any message/media with <code>/spam &lt;count&gt;</code>\n"
+                "<i>(Count up to 500)</i>",
+                parse_mode="HTML"
+            )
+            return
+
+        status_msg = await message.answer(f"🚀 Sending <b>{count}</b> messages...", parse_mode="HTML")
+        sent = 0
+        failed = 0
+        for i in range(count):
+            try:
+                if reply_to_copy:
+                    await message.bot.copy_message(
+                        chat_id=chat_id,
+                        from_chat_id=message.chat.id,
+                        message_id=reply_to_copy.message_id
+                    )
+                else:
+                    await message.bot.send_message(chat_id=chat_id, text=msg_text)
+                sent += 1
+                await asyncio.sleep(0.3)
+            except Exception as e:
+                failed += 1
+                print(f"Spam send failed [{i+1}/{count}]: {e}")
+
+        try:
+            await status_msg.edit_text(
+                f"<b>Spam Complete!</b>\n"
+                f"<blockquote>Sent: <b>{sent}</b>\n"
+                f"Failed: <b>{failed}</b></blockquote>",
+                parse_mode="HTML"
+            )
+        except Exception:
+            await message.answer(
+                f"<b>Spam Complete!</b>\n"
+                f"<blockquote>Sent: <b>{sent}</b>\n"
+                f"Failed: <b>{failed}</b></blockquote>",
+                parse_mode="HTML"
+            )
+        return
+
+    # Option B: Interactive Spam Wizard
     stmt = select(GroupSetting.chat_id)
     res = await db.execute(stmt)
     chat_ids = res.scalars().all()
 
     if not chat_ids:
-        await message.answer("The bot is not in any groups.")
+        await message.answer("The bot is not in any registered groups.")
         return
 
     builder = InlineKeyboardBuilder()
@@ -2540,7 +2603,8 @@ async def cmd_spam_start(message: Message, db: AsyncSession):
     _spam_state[message.from_user.id] = {"step": "choose_group"}
     await message.answer(
         "<b>Spam Wizard</b>\n"
-        "Step 1: Choose the group to spam:",
+        "Step 1: Choose the group to spam:\n\n"
+        "<i>Or directly use: <code>/spam &lt;1-500&gt; &lt;text&gt;</code></i>",
         reply_markup=builder.as_markup(),
         parse_mode="HTML"
     )
@@ -2582,7 +2646,8 @@ async def cb_spam_cancel(callback: CallbackQuery):
 def is_in_spam_state(msg: Message) -> bool:
     return bool(msg.from_user and msg.from_user.id in config.ADMIN_IDS and msg.from_user.id in _spam_state)
 
-@router.message(F.chat.type == "private", F.text & ~F.text.startswith("/"), is_in_spam_state)
+
+@router.message(F.text & ~F.text.startswith("/"), is_in_spam_state)
 async def handle_spam_wizard_text(message: Message):
     user_id = message.from_user.id
     if not user_id or user_id not in config.ADMIN_IDS:
@@ -2606,7 +2671,7 @@ async def handle_spam_wizard_text(message: Message):
         if not count_str.isdigit() or not (1 <= int(count_str) <= 500):
             await message.answer("Please enter a valid number between 1 and 500.")
             return
-            
+
         count = int(count_str)
         chat_id = state["chat_id"]
         msg_text = state.get("msg_text", "")
@@ -2629,7 +2694,7 @@ async def handle_spam_wizard_text(message: Message):
             try:
                 await message.bot.send_message(chat_id=chat_id, text=msg_text)
                 sent += 1
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.3)
             except Exception as e:
                 failed += 1
                 print(f"Spam send failed [{i+1}/{count}]: {e}")

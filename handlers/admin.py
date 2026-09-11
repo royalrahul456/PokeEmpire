@@ -342,10 +342,6 @@ async def cmd_gift_coins(message: Message, db: AsyncSession):
 
     # Parse arguments
     parts = message.text.split()
-
-    # Parse arguments
-    parts = message.text.split()
-
     target_user = None
     amount = 0
 
@@ -1416,7 +1412,6 @@ async def cmd_set_poke_media(message: Message, db: AsyncSession):
 @router.callback_query(F.data.startswith("setpm_"))
 async def cb_set_poke_media_choice(callback: CallbackQuery, db: AsyncSession):
     parts = callback.data.split("_")
-    # Structure: setpm_<form_index>_<pokemon_id>_<owner_id>
     form_index = int(parts[1])
     pokemon_id = int(parts[2])
     owner_id = int(parts[3])
@@ -1449,7 +1444,6 @@ async def cb_set_poke_media_choice(callback: CallbackQuery, db: AsyncSession):
     await callback.answer()
 
 
-# Media receiver for admin/uploader pokemon edits
 @router.message(F.chat.type == "private", lambda msg: msg.from_user.id in config.ADMIN_IDS or msg.from_user.id in config.UPLOADER_IDS, lambda msg: msg.from_user.id in active_poke_media_updates)
 async def on_poke_media_received(message: Message, db: AsyncSession):
     user_id = message.from_user.id
@@ -1459,7 +1453,6 @@ async def on_poke_media_received(message: Message, db: AsyncSession):
 
     pokemon_id, form_index = update_info
 
-    # Check media type in the sent message
     media_prefix = "video:"
     media_value = None
 
@@ -1488,14 +1481,11 @@ async def on_poke_media_received(message: Message, db: AsyncSession):
         await message.answer("❌ Pokémon no longer exists in database.")
         return
 
-    # Save media value
     db_media_value = f"{media_prefix}{media_value}"
 
-    # Standard Form (form_index == 0) gets saved to pokemon.image_url directly
     if form_index == 0:
         pokemon.image_url = media_value
     else:
-        # Save to PokemonFormMedia
         from database.models import PokemonFormMedia
         media_stmt = select(PokemonFormMedia).where(
             PokemonFormMedia.pokemon_id == pokemon_id,
@@ -1509,7 +1499,6 @@ async def on_poke_media_received(message: Message, db: AsyncSession):
         else:
             db.add(PokemonFormMedia(pokemon_id=pokemon_id, form_index=form_index, media_value=db_media_value))
 
-        # Backwards compatibility: update Pokemon columns
         if form_index == 1:
             pokemon.video_url = media_value
         elif form_index == 2:
@@ -1523,7 +1512,6 @@ async def on_poke_media_received(message: Message, db: AsyncSession):
 
     await db.commit()
 
-    # Post to updates channel if form_index > 0
     by_user = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
     if form_index > 0:
         await post_media_update_to_channel(message.bot, pokemon, form_index, db_media_value, by_user, db)
@@ -1542,7 +1530,6 @@ async def on_poke_media_received(message: Message, db: AsyncSession):
 async def get_media_list_text(db: AsyncSession) -> str:
     from utils.settings import get_custom_cover
 
-    # 1. Covers
     covers = ["start", "xo", "pokedex"]
     cover_lines = []
     for c in covers:
@@ -1552,7 +1539,6 @@ async def get_media_list_text(db: AsyncSession) -> str:
         else:
             cover_lines.append(f"• <b>{c.upper()} Cover:</b> <i>Not set (using default)</i>")
 
-    # 2. Pokémon custom media
     from database.models import PokemonFormMedia
     stmt = select(PokemonFormMedia, Pokemon).join(Pokemon).order_by(Pokemon.id, PokemonFormMedia.form_index)
     res = await db.execute(stmt)
@@ -1586,7 +1572,6 @@ async def get_media_list_text(db: AsyncSession) -> str:
             details_str = "\n  - ".join(details)
             poke_lines.append(f"• <b>#{p.id:03d} {p.name.title()}</b>:\n  - {details_str}")
 
-    # Build the final message
     response = (
         "📋 <b>PokeEmpire Configured Media IDs</b>\n"
         "───────────────────\n\n"
@@ -1619,7 +1604,6 @@ async def cb_owner_medialist(callback: CallbackQuery, db: AsyncSession):
         return
 
     text = await get_media_list_text(db)
-    # Send a new message so we don't hit the 1024-character caption limit on the home menu
     await callback.message.answer(text, parse_mode="HTML")
     await callback.answer()
 
@@ -1658,7 +1642,6 @@ async def cmd_emoji_id(message: Message):
 async def post_media_update_to_channel(bot: Bot, pokemon: Pokemon, form_index: int, media_value: str, by_user: str, db: AsyncSession):
     from datetime import datetime, timezone, timedelta
 
-    # 1. Resolve form index to name / rarity
     custom_forms = await get_custom_rarity_forms(db)
     form_names = {
         0: "Standard",
@@ -1673,7 +1656,6 @@ async def post_media_update_to_channel(bot: Bot, pokemon: Pokemon, form_index: i
         
     form_name = form_names.get(form_index, f"Form {form_index}")
 
-    # Map to rarity label
     rarity_label = form_name
     if form_index == 1:
         if media_value.startswith("photo:"):
@@ -1681,7 +1663,6 @@ async def post_media_update_to_channel(bot: Bot, pokemon: Pokemon, form_index: i
         else:
             rarity_label = "AMV"
 
-    # Clean media value (strip prefix)
     media_id = media_value
     media_type = "video"
     if media_value.startswith("video:"):
@@ -1699,11 +1680,9 @@ async def post_media_update_to_channel(bot: Bot, pokemon: Pokemon, form_index: i
         else:
             media_type = "video"
 
-    # Checkbox checks
     is_img = "✅" if media_type == "photo" else "❌"
     is_vid = "✅" if media_type in ["video", "animation"] else "❌"
 
-    # Time in IST
     utc_now = datetime.now(timezone.utc)
     ist_time = utc_now + timedelta(hours=5, minutes=30)
     time_str = ist_time.strftime("%d %b %Y, %I:%M %p IST")
@@ -1742,7 +1721,6 @@ async def post_media_update_to_channel(bot: Bot, pokemon: Pokemon, form_index: i
 
 @router.message(Command("banword"))
 async def cmd_ban_word(message: Message):
-    import html
     if message.from_user.id not in config.ADMIN_IDS:
         await message.answer("❌ Denied. Only bot administrators can ban words.")
         return
@@ -1763,7 +1741,6 @@ async def cmd_ban_word(message: Message):
 
 @router.message(Command("removebanword"))
 async def cmd_remove_ban_word(message: Message):
-    import html
     if message.from_user.id not in config.ADMIN_IDS:
         await message.answer("❌ Denied. Only bot administrators can manage banned words.")
         return
@@ -1784,7 +1761,6 @@ async def cmd_remove_ban_word(message: Message):
 
 @router.message(Command("banwords"))
 async def cmd_ban_words(message: Message):
-    import html
     if message.from_user.id not in config.ADMIN_IDS:
         await message.answer("❌ Denied. Only bot administrators can check banned words.")
         return
@@ -1804,13 +1780,8 @@ async def cmd_ban_words(message: Message):
         parse_mode="HTML"
     )
 
-# -------------------------------------------------------------
-# EXECUTIVE OWNER PANEL (/panel) & PLAYER ANALYTICS
-# -------------------------------------------------------------
-
 async def send_or_edit_panel(event: Message | CallbackQuery, db: AsyncSession, owner_name: str):
     from sqlalchemy import func
-    import html
     
     u_count = await db.execute(select(func.count(User.id)))
     total_users = u_count.scalar() or 0
@@ -1881,8 +1852,6 @@ async def cmd_owner_panel(message: Message, db: AsyncSession):
         await send_or_edit_panel(message, db, owner_name)
     except Exception as e:
         print(f"Error in cmd_owner_panel: {e}")
-        import traceback
-        traceback.print_exc()
 
 @router.callback_query(F.data == "owner_panel")
 async def cb_owner_panel(callback: CallbackQuery, db: AsyncSession):
@@ -1894,7 +1863,6 @@ async def cb_panel_players(callback: CallbackQuery, db: AsyncSession):
     page = int(callback.data.replace("panel_players_", ""))
     per_page = 5
 
-    # Count total users
     count_res = await db.execute(select(func.count(User.id)))
     total_users = count_res.scalar() or 0
     max_pages = max(1, (total_users + per_page - 1) // per_page)
@@ -1905,14 +1873,12 @@ async def cb_panel_players(callback: CallbackQuery, db: AsyncSession):
     res = await db.execute(stmt)
     users = res.scalars().all()
 
-    import html
     lines = [f"👥 <b>ALL TRAINERS DIRECTORY (Page {page}/{max_pages})</b>\n───────────────────────────────"]
     
     for u in users:
         u_name = html.escape(u.nickname or u.username or "Trainer")
         u_handle = f" (@{html.escape(u.username)})" if u.username else ""
         
-        # Count catches for this user
         c_stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == u.id)
         c_res = await db.execute(c_stmt)
         u_catches = c_res.scalar() or 0
@@ -1962,7 +1928,6 @@ async def cb_panel_wealth(callback: CallbackQuery, db: AsyncSession):
     res = await db.execute(stmt)
     users = res.scalars().all()
 
-    import html
     lines = [f"🏆 <b>WEALTHY TRAINERS RANKINGS (Page {page}/{max_pages})</b>\n───────────────────────────────"]
     
     medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
@@ -1991,7 +1956,10 @@ async def cb_panel_wealth(callback: CallbackQuery, db: AsyncSession):
         try:
             await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
         except Exception:
-            pass
+            try:
+                await callback.message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+            except Exception:
+                pass
     await callback.answer()
 
 @router.callback_query(F.data == "panel_spawn_prompt")
@@ -2001,12 +1969,6 @@ async def cb_panel_spawn_prompt(callback: CallbackQuery):
 @router.callback_query(F.data == "panel_gen_prompt")
 async def cb_panel_gen_prompt(callback: CallbackQuery):
     await callback.answer("👉 Use /gen <code_name> <usage_limit> <coins|pokemon_id> <value> to generate a redeem code!", show_alert=True)
-
-
-# -------------------------------------------------------------
-# DATABASE CHANNEL ADMIN DB COMMANDS
-# -------------------------------------------------------------
-
 
 @router.message(Command("addform", "newform", "addrarity", "newrarity"))
 async def cmd_add_form(message: Message, db: AsyncSession):
@@ -2029,18 +1991,15 @@ async def cmd_add_form(message: Message, db: AsyncSession):
     rarity_name = parts[1].strip()
     rarity_emoji = parts[2].strip()
 
-    # Validate alphanumeric
     if not rarity_name.isalnum():
-        await message.answer("❌ Invalid format! The FormName must be alphanumeric only (letters and numbers, no special symbols or spaces).")
+        await message.answer("❌ Invalid format! The FormName must be alphanumeric only.")
         return
 
-    # Enforce Title Case format (e.g. SuperRare)
     rarity_name = rarity_name[0].upper() + rarity_name[1:]
 
     from database.models import GlobalSetting
     import json
 
-    # Load custom rarities
     stmt = select(GlobalSetting).where(GlobalSetting.key == "custom_rarities")
     res = await db.execute(stmt)
     setting = res.scalar_one_or_none()
@@ -2063,11 +2022,9 @@ async def cmd_add_form(message: Message, db: AsyncSession):
     
     await db.commit()
 
-    # Update dynamic cache
     from utils.settings import global_settings_cache
     global_settings_cache["custom_rarities"] = val_str
 
-    # Notify all configured Uploaders
     for uploader_id in config.UPLOADER_IDS:
         try:
             await message.bot.send_message(
@@ -2093,7 +2050,6 @@ async def cmd_add_form(message: Message, db: AsyncSession):
         parse_mode="HTML"
     )
 
-
 active_pokemon_additions = {}
 
 @router.message(Command("cancel"))
@@ -2106,7 +2062,6 @@ async def cmd_cancel_addition(message: Message):
         await message.answer("❌ Pokémon registration cancelled.")
     else:
         await message.answer("❌ No active registration flow to cancel.")
-
 
 @router.message(F.chat.type == "private", F.from_user.id.in_(config.ADMIN_IDS), lambda msg: msg.from_user and msg.from_user.id in active_pokemon_additions)
 async def process_pokemon_addition(message: Message, db: AsyncSession):
@@ -2121,7 +2076,6 @@ async def process_pokemon_addition(message: Message, db: AsyncSession):
             return
         poke_id = int(text)
         
-        # Check existence
         from database.models import Pokemon
         stmt = select(Pokemon).where(Pokemon.id == poke_id)
         res = await db.execute(stmt)
@@ -2141,10 +2095,9 @@ async def process_pokemon_addition(message: Message, db: AsyncSession):
         text = message.text.strip().lower() if message.text else ""
         import re
         if not text or not re.match(r'^[a-zA-Z0-9_\-\(\)]+$', text):
-            await message.answer("❌ Invalid Name! Please reply with a valid name (letters, numbers, hyphens -, underscores _, and parentheses () allowed, or type `/cancel`):")
+            await message.answer("❌ Invalid Name! Please reply with a valid name (or type `/cancel`):")
             return
         
-        # Check existence
         from database.models import Pokemon
         stmt = select(Pokemon).where(Pokemon.name == text)
         res = await db.execute(stmt)
@@ -2155,7 +2108,6 @@ async def process_pokemon_addition(message: Message, db: AsyncSession):
         data["name"] = text
         data["step"] = "rarity"
         
-        # Load valid rarities from DB
         custom_rarities = await get_all_custom_rarities(db)
         valid_rarities = ["Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical", "Limited", "Limited Edition"]
         valid_rarities.extend(custom_rarities.keys())
@@ -2169,7 +2121,6 @@ async def process_pokemon_addition(message: Message, db: AsyncSession):
     elif step == "rarity":
         text = message.text.strip() if message.text else ""
         
-        # Load custom rarities from DB
         custom_rarities = await get_all_custom_rarities(db)
         valid_rarities = {"Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical", "Limited", "Limited Edition"}
         valid_rarities.update(custom_rarities.keys())
@@ -2230,7 +2181,6 @@ async def process_pokemon_addition(message: Message, db: AsyncSession):
         generation = data["generation"]
         image_url = file_id
 
-        # Clean state
         active_pokemon_additions.pop(user_id, None)
 
         from database.models import Pokemon
@@ -2245,7 +2195,6 @@ async def process_pokemon_addition(message: Message, db: AsyncSession):
         db.add(pokemon)
         await db.commit()
 
-        # Post announcement to channels
         r_emoji = get_rarity_emoji(rarity)
         caption = (
             f"✨ <b>NEW POKÉMON REGISTERED!</b>\n\n"
@@ -2272,8 +2221,6 @@ async def process_pokemon_addition(message: Message, db: AsyncSession):
         except Exception as channel_err:
             print(f"⚠️ Failed to post new pokemon announcement to UPDATES_CHANNEL: {channel_err}")
 
-
-
         await message.answer(
             f"✅ <b>POKÉMON ADDED SUCCESSFULLY</b>\n"
             f"───────────────\n"
@@ -2292,7 +2239,6 @@ async def cmd_add_pokemon(message: Message, db: AsyncSession):
 
     parts = message.text.split()
     if len(parts) >= 6:
-        # Command line fast path
         try:
             pokemon_id = int(parts[1])
             name = parts[2].strip().lower()
@@ -2309,7 +2255,6 @@ async def cmd_add_pokemon(message: Message, db: AsyncSession):
             await message.answer("❌ Invalid Name format! Allowed characters are letters, numbers, hyphens -, underscores _, and parentheses ().")
             return
 
-        # Load custom rarities from DB to validate
         custom_rarities = await get_all_custom_rarities(db)
         valid_rarities = {"Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical", "Limited", "Limited Edition"}
         valid_rarities.update(custom_rarities.keys())
@@ -2326,7 +2271,6 @@ async def cmd_add_pokemon(message: Message, db: AsyncSession):
 
         from database.models import Pokemon
 
-        # Check existence
         stmt = select(Pokemon).where((Pokemon.id == pokemon_id) | (Pokemon.name == name))
         res = await db.execute(stmt)
         if res.scalar_one_or_none():
@@ -2344,7 +2288,6 @@ async def cmd_add_pokemon(message: Message, db: AsyncSession):
         db.add(pokemon)
         await db.commit()
 
-        # Post announcement to channels
         r_emoji = get_rarity_emoji(matching_rarity)
         caption = (
             f"✨ <b>NEW POKÉMON REGISTERED!</b>\n\n"
@@ -2371,8 +2314,6 @@ async def cmd_add_pokemon(message: Message, db: AsyncSession):
         except Exception as channel_err:
             print(f"⚠️ Failed to post new pokemon announcement to UPDATES_CHANNEL: {channel_err}")
 
-
-
         await message.answer(
             f"✅ <b>POKÉMON ADDED SUCCESSFULLY</b>\n"
             f"───────────────\n"
@@ -2382,7 +2323,6 @@ async def cmd_add_pokemon(message: Message, db: AsyncSession):
             parse_mode="HTML"
         )
     else:
-        # Interactive flow
         if message.chat.type != "private":
             await message.answer("⚠️ Interactive Pokémon registration is only supported in private DM with the bot. Please start the flow there!")
             return
@@ -2405,7 +2345,6 @@ async def cmd_sync_database(message: Message, db: AsyncSession):
 
     from database.models import Pokemon, PokemonFormMedia
     
-    # 1. Fetch all Pokémon
     stmt = select(Pokemon).order_by(Pokemon.id)
     res = await db.execute(stmt)
     pokemon_list = res.scalars().all()
@@ -2413,7 +2352,6 @@ async def cmd_sync_database(message: Message, db: AsyncSession):
     sent_count = 0
     total_count = len(pokemon_list)
 
-    # 2. Iterate and send
     for p in pokemon_list:
         r_emoji = get_rarity_emoji(p.rarity)
         caption = (
@@ -2426,7 +2364,6 @@ async def cmd_sync_database(message: Message, db: AsyncSession):
         )
         try:
             if p.video_url and not p.video_url.startswith("photo:"):
-                # Clean video value
                 clean_vid = p.video_url.replace("video:", "")
                 await message.bot.send_video(chat_id=config.DATABASE_CHANNEL, video=clean_vid, caption=caption, parse_mode="HTML")
             else:
@@ -2437,18 +2374,16 @@ async def cmd_sync_database(message: Message, db: AsyncSession):
             if sent_count % 10 == 0:
                 await progress_msg.edit_text(f"⏳ <b>Database sync...</b>\nSent {sent_count}/{total_count} Pokémon entries.", parse_mode="HTML")
             
-            await asyncio.sleep(0.5) # Prevent flooding limits
+            await asyncio.sleep(0.5)
         except Exception as e:
             print(f"⚠️ Sync failed for Pokémon #{p.id}: {e}")
 
-    # 3. Synchronize dynamic forms/media as well
     stmt = select(PokemonFormMedia, Pokemon).join(Pokemon).order_by(Pokemon.id, PokemonFormMedia.form_index)
     res = await db.execute(stmt)
     media_records = res.all()
 
     media_sent = 0
     for pfm, p in media_records:
-        # Clean prefix
         media_id = pfm.media_value
         media_type = "video"
         if pfm.media_value.startswith("video:"):
@@ -2494,7 +2429,7 @@ async def cmd_sync_database(message: Message, db: AsyncSession):
                 await message.bot.send_photo(chat_id=config.DATABASE_CHANNEL, photo=media_id, caption=caption, parse_mode="HTML")
             
             media_sent += 1
-            await asyncio.sleep(0.5) # Prevent flooding limits
+            await asyncio.sleep(0.5)
         except Exception as e:
             print(f"⚠️ Sync failed for media #{p.id}.{pfm.form_index}: {e}")
 
@@ -2506,12 +2441,6 @@ async def cmd_sync_database(message: Message, db: AsyncSession):
         f"All database items synchronized successfully.",
         parse_mode="HTML"
     )
-
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# /grps — List all groups the bot is in (Owner only)
-# ─────────────────────────────────────────────────────────────────────────────
 
 @router.message(Command("grps"))
 async def cmd_grps(message: Message, db: AsyncSession):
@@ -2577,15 +2506,7 @@ async def cmd_grps(message: Message, db: AsyncSession):
     else:
         await progress_msg.edit_text(text, parse_mode="HTML", disable_web_page_preview=True)
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-
-# ─────────────────────────────────────────────────────────────────────────────
-# /spam — Spam a message to a chosen group (Owner only)
-# ─────────────────────────────────────────────────────────────────────────────
-
 _spam_state: dict = {}
-
 
 @router.message(Command("spam"))
 async def cmd_spam_start(message: Message, db: AsyncSession):
@@ -2800,13 +2721,12 @@ async def cmd_broadcast(message: Message, db: AsyncSession):
     stmt = select(GroupSetting.chat_id)
     res = await db.execute(stmt)
     raw_chat_ids = res.scalars().all()
-    chat_ids = list(dict.fromkeys(raw_chat_ids))  # preserve order, unique
+    chat_ids = list(dict.fromkeys(raw_chat_ids))
 
     if not chat_ids:
         await message.answer("❌ No registered groups or channels found in the database.")
         return
 
-    import time
     from aiogram.exceptions import TelegramRetryAfter
 
     total = len(chat_ids)
@@ -2862,10 +2782,8 @@ async def cmd_broadcast(message: Message, db: AsyncSession):
         except Exception:
             failed_count += 1
 
-        # Rate-limiting pause
         await asyncio.sleep(0.05)
 
-        # Update progress card periodically
         now = time.time()
         if (now - last_edit_time > 3.0 or idx == total) and idx < total:
             last_edit_time = now
@@ -2895,4 +2813,3 @@ async def cmd_broadcast(message: Message, db: AsyncSession):
         await status_msg.edit_text(report_text, parse_mode="HTML")
     except Exception:
         await message.answer(report_text, parse_mode="HTML")
-    

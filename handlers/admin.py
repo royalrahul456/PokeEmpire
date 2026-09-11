@@ -2752,7 +2752,9 @@ async def cmd_toggle_emojis(message: Message, db: AsyncSession):
         f"✨ <b>Premium Emoji Mode</b> is now <b>{status_str}</b>.\n\n"
         f"<i>Saved in database! Setting will remain unchanged across all future bot restarts & updates.</i>",
         parse_mode="HTML"
-        
+    )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # /broadcast — Broadcast message to all groups & channels (Admin/Owner)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2893,6 +2895,4 @@ async def cmd_broadcast(message: Message, db: AsyncSession):
         await status_msg.edit_text(report_text, parse_mode="HTML")
     except Exception:
         await message.answer(report_text, parse_mode="HTML")
-        
-    )
     

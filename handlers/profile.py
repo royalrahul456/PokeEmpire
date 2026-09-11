@@ -2512,7 +2512,6 @@ async def cmd_gift(message: Message, db: AsyncSession):
     except Exception:
         pass
 
-
 @router.message(Command("transactions", "tx", "history"))
 from keyboards.inline import create_styled_button, get_tx_pagination_keyboard
 
@@ -2632,6 +2631,10 @@ async def cb_tx_page(callback: CallbackQuery, db: AsyncSession):
         await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
     await callback.answer()
 
+
+@router.callback_query(F.data == "tx_noop")
+async def cb_tx_noop(callback: CallbackQuery):
+    await callback.answer()
 
 @router.callback_query(F.data == "tx_noop")
 async def cb_tx_noop(callback: CallbackQuery):

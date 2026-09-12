@@ -34,6 +34,8 @@ async def cmd_guild(message: Message, db: AsyncSession):
                 f"💡 <b>Guild Commands</b>:\n"
                 f"👉 <code>/guild create &lt;name&gt;</code> — Found a new Guild (500k coins)\n"
                 f"👉 <code>/guild join &lt;name&gt;</code> — Join an existing Guild\n"
+                f"👉 <code>/guild deposit &lt;amount&gt;</code> — Donate coins to Treasury\n"
+                f"👉 <code>/guild withdraw &lt;amount&gt;</code> — Withdraw coins from Treasury (Leader only)\n"
                 f"👉 <code>/guild delete</code> — Disband/Delete your Guild (Owner only)\n"
                 f"👉 <code>/guild leave</code> — Leave your current Guild\n"
                 f"👉 <code>/guildlb</code> — View top Guild Leaderboards\n"
@@ -53,6 +55,12 @@ async def cmd_guild(message: Message, db: AsyncSession):
         owner = owner_res.scalar_one_or_none()
         owner_name = html.escape(owner.nickname or owner.username or f"Trainer {owner.id}") if owner else "Unknown"
 
+        leader_tip = (
+            f"👉 <i>Use <code>/guild withdraw &lt;amount&gt;</code> to withdraw from Treasury!</i>"
+            if guild.owner_id == user_id
+            else f"👉 <i>Use <code>/guild deposit &lt;amount&gt;</code> to donate to the Treasury!</i>"
+        )
+
         text = (
             f"🏰 <b>GUILD: {html.escape(guild.name).upper()} [{html.escape(guild.tag)}]</b> 🏰\n"
             f"◈ ────────────────── ◈\n"
@@ -62,7 +70,7 @@ async def cmd_guild(message: Message, db: AsyncSession):
             f"🏛️ <b>Guild Treasury:</b> <code>💰 {guild.treasury:,} coins</code>\n"
             f"⚡ <b>Guild Perks:</b> <code>+5% Shiny Chance | +10% Coin Earnings</code>\n"
             f"◈ ────────────────── ◈\n"
-            f"👉 <i>Use <code>/guild deposit &lt;amount&gt;</code> to donate to the Treasury!</i>"
+            f"{leader_tip}"
         )
         await message.answer(text, parse_mode="HTML")
         return
@@ -194,6 +202,59 @@ async def cmd_guild(message: Message, db: AsyncSession):
             parse_mode="HTML"
         )
 
+    elif sub in ["withdraw", "withdrawal"]:
+        if len(parts) < 3 or not parts[2].isdigit():
+            await message.answer("⚠️ Format: <code>/guild withdraw &lt;amount&gt;</code>", parse_mode="HTML")
+            return
+
+        amount = int(parts[2])
+        if amount <= 0:
+            await message.answer("❌ Withdrawal amount must be greater than zero.", parse_mode="HTML")
+            return
+
+        member, guild = await get_user_guild_data(user_id, db)
+        if not guild:
+            await message.answer("❌ You are not in any Guild!", parse_mode="HTML")
+            return
+
+        if guild.owner_id != user_id and user_id not in getattr(config, "OWNER_IDS", []):
+            await message.answer("❌ Only the Guild Leader can withdraw coins from the Treasury!", parse_mode="HTML")
+            return
+
+        if guild.treasury < amount:
+            await message.answer(
+                f"❌ Insufficient Treasury funds! Current Treasury: <b>💰 {guild.treasury:,} coins</b>.",
+                parse_mode="HTML"
+            )
+            return
+
+        u_stmt = select(User).where(User.id == user_id)
+        u_res = await db.execute(u_stmt)
+        user = u_res.scalar_one_or_none()
+        if not user:
+            user = User(id=user_id, username=message.from_user.username, nickname=message.from_user.first_name)
+            db.add(user)
+            await db.flush()
+
+        guild.treasury -= amount
+        user.coins += amount
+
+        await log_transaction(user_id, amount, "GUILD_WITHDRAW", f"Withdrew from {guild.name} Treasury", db)
+        await db.commit()
+
+        leader_name = user.nickname or user.username or message.from_user.first_name or "Trainer"
+        await message.answer(
+            f"🏛️ <b>Guild Treasury Withdrawal Successful!</b>\n"
+            f"◈ ────────────────── ◈\n"
+            f"👑 <b>Leader:</b> {html.escape(leader_name)}\n"
+            f"🏰 <b>Guild:</b> {html.escape(guild.name)}\n"
+            f"💰 <b>Withdrawn:</b> <code>+{amount:,} coins</code>\n"
+            f"🏛️ <b>Remaining Treasury:</b> <code>💰 {guild.treasury:,} coins</code>\n"
+            f"👤 <b>Your New Balance:</b> <code>💰 {user.coins:,} coins</code>\n"
+            f"◈ ────────────────── ◈",
+            parse_mode="HTML"
+        )
+
     elif sub == "leave":
         member, guild = await get_user_guild_data(user_id, db)
         if not guild:
@@ -227,6 +288,66 @@ async def cmd_guild(message: Message, db: AsyncSession):
 
         await message.answer(f"🗑️ Guild <b>{html.escape(guild_name)}</b> has been successfully disbanded and deleted!", parse_mode="HTML")
 
+
+@router.message(Command("guildwithdraw", "gwithdraw"))
+async def cmd_guild_withdraw_standalone(message: Message, db: AsyncSession):
+    """Direct shortcut command /guildwithdraw <amount> or /gwithdraw <amount>."""
+    parts = message.text.split()
+    user_id = message.from_user.id
+
+    if len(parts) < 2 or not parts[1].isdigit():
+        await message.answer("⚠️ Format: <code>/guildwithdraw &lt;amount&gt;</code> (or <code>/gwithdraw &lt;amount&gt;</code>)", parse_mode="HTML")
+        return
+
+    amount = int(parts[1])
+    if amount <= 0:
+        await message.answer("❌ Withdrawal amount must be greater than zero.", parse_mode="HTML")
+        return
+
+    member, guild = await get_user_guild_data(user_id, db)
+    if not guild:
+        await message.answer("❌ You are not in any Guild!", parse_mode="HTML")
+        return
+
+    if guild.owner_id != user_id and user_id not in getattr(config, "OWNER_IDS", []):
+        await message.answer("❌ Only the Guild Leader can withdraw coins from the Treasury!", parse_mode="HTML")
+        return
+
+    if guild.treasury < amount:
+        await message.answer(
+            f"❌ Insufficient Treasury funds! Current Treasury: <b>💰 {guild.treasury:,} coins</b>.",
+            parse_mode="HTML"
+        )
+        return
+
+    u_stmt = select(User).where(User.id == user_id)
+    u_res = await db.execute(u_stmt)
+    user = u_res.scalar_one_or_none()
+    if not user:
+        user = User(id=user_id, username=message.from_user.username, nickname=message.from_user.first_name)
+        db.add(user)
+        await db.flush()
+
+    guild.treasury -= amount
+    user.coins += amount
+
+    await log_transaction(user_id, amount, "GUILD_WITHDRAW", f"Withdrew from {guild.name} Treasury", db)
+    await db.commit()
+
+    leader_name = user.nickname or user.username or message.from_user.first_name or "Trainer"
+    await message.answer(
+        f"🏛️ <b>Guild Treasury Withdrawal Successful!</b>\n"
+        f"◈ ────────────────── ◈\n"
+        f"👑 <b>Leader:</b> {html.escape(leader_name)}\n"
+        f"🏰 <b>Guild:</b> {html.escape(guild.name)}\n"
+        f"💰 <b>Withdrawn:</b> <code>+{amount:,} coins</code>\n"
+        f"🏛️ <b>Remaining Treasury:</b> <code>💰 {guild.treasury:,} coins</code>\n"
+        f"👤 <b>Your New Balance:</b> <code>💰 {user.coins:,} coins</code>\n"
+        f"◈ ────────────────── ◈",
+        parse_mode="HTML"
+    )
+
+
 @router.message(Command("guildlb", "clanlb"))
 async def cmd_guild_lb(message: Message, db: AsyncSession):
     stmt = select(Guild).order_by(Guild.treasury.desc()).limit(10)
@@ -251,3 +372,66 @@ async def cmd_guild_lb(message: Message, db: AsyncSession):
         f"👉 <i>Found your own Guild with <code>/guild create &lt;name&gt;</code>!</i>"
     )
     await message.answer(text, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "dm_guild_info")
+async def cb_dm_guild_info(callback: CallbackQuery, db: AsyncSession):
+    """Hub Menu callback handler for Guilds."""
+    user_id = callback.from_user.id
+    member, guild = await get_user_guild_data(user_id, db)
+
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🔙 Back to Hub Menu", callback_data="dm_home"))
+
+    if not guild:
+        text = (
+            f"🏰 <b>TRAINER GUILD CENTER</b> 🏰\n"
+            f"◈ ────────────────── ◈\n"
+            f"You are currently <b>not in any Guild</b>!\n\n"
+            f"💡 <b>Guild Commands</b>:\n"
+            f"👉 <code>/guild create &lt;name&gt;</code> — Found a new Guild (500k coins)\n"
+            f"👉 <code>/guild join &lt;name&gt;</code> — Join an existing Guild\n"
+            f"👉 <code>/guild deposit &lt;amount&gt;</code> — Donate coins to Guild Treasury\n"
+            f"👉 <code>/guild withdraw &lt;amount&gt;</code> — Withdraw coins from Treasury (Leader only)\n"
+            f"👉 <code>/guild delete</code> — Disband/Delete your Guild (Owner only)\n"
+            f"👉 <code>/guild leave</code> — Leave your current Guild\n"
+            f"👉 <code>/guildlb</code> — View top Guild Leaderboards\n"
+            f"◈ ────────────────── ◈\n"
+            f"✨ Guild members receive passive +5% Shiny Chance & +10% Coin Boosts!"
+        )
+    else:
+        mem_stmt = select(func.count(GuildMember.id)).where(GuildMember.guild_id == guild.id)
+        mem_res = await db.execute(mem_stmt)
+        total_members = mem_res.scalar() or 0
+
+        owner_stmt = select(User).where(User.id == guild.owner_id)
+        owner_res = await db.execute(owner_stmt)
+        owner = owner_res.scalar_one_or_none()
+        owner_name = html.escape(owner.nickname or owner.username or f"Trainer {owner.id}") if owner else "Unknown"
+
+        leader_tip = (
+            f"👉 <i>Use <code>/guild withdraw &lt;amount&gt;</code> to withdraw from Treasury!</i>"
+            if guild.owner_id == user_id
+            else f"👉 <i>Use <code>/guild deposit &lt;amount&gt;</code> to donate to the Treasury!</i>"
+        )
+
+        text = (
+            f"🏰 <b>GUILD: {html.escape(guild.name).upper()} [{html.escape(guild.tag)}]</b> 🏰\n"
+            f"◈ ────────────────── ◈\n"
+            f"👑 <b>Leader:</b> {owner_name}\n"
+            f"👥 <b>Members:</b> <code>{total_members} members</code>\n"
+            f"💎 <b>Guild Level:</b> <code>Lv. {guild.level}</code>\n"
+            f"🏛️ <b>Guild Treasury:</b> <code>💰 {guild.treasury:,} coins</code>\n"
+            f"⚡ <b>Guild Perks:</b> <code>+5% Shiny Chance | +10% Coin Earnings</code>\n"
+            f"◈ ────────────────── ◈\n"
+            f"{leader_tip}"
+        )
+
+    try:
+        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    except Exception:
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    await callback.answer()

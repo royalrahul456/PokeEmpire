@@ -241,7 +241,10 @@ async def edit_player_cover_message(callback: CallbackQuery, user_id: int, capti
         try:
             await callback.message.edit_caption(caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
         except Exception:
-            pass
+            try:
+                await callback.message.edit_text(text=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+            except Exception:
+                pass
 
 @router.message(Command("pokemon"))
 async def cmd_pokemon_list(message: Message):
@@ -266,256 +269,125 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
     else:
         view_mode = "all"
 
-    if view_mode == "all":
-        total_species_res = await db.execute(select(func.count(Pokemon.id)))
-        total_species = total_species_res.scalar() or 0
-        total_forms_res = await db.execute(select(func.count(PokemonFormMedia.form_index)))
-        total_forms = total_forms_res.scalar() or 0
-        total_entries = total_species + total_forms
+    # 1. Total Species in Database
+    total_species_stmt = select(func.count(Pokemon.id))
+    total_species_res = await db.execute(total_species_stmt)
+    total_species = total_species_res.scalar() or 0
 
-        caught_entries_subq = (
-            select(UserPokemon.pokemon_id, UserPokemon.form_index)
+    # 2. Get distinct entries caught by this user: (pokemon_id, form_index, total_caught, has_shiny)
+    if view_mode == "all":
+        stmt = (
+            select(
+                UserPokemon.pokemon_id,
+                UserPokemon.form_index,
+                func.count(UserPokemon.id).label("total_caught"),
+                func.max(case((UserPokemon.is_shiny == True, 1), else_=0)).label("has_shiny")
+            )
             .where(UserPokemon.user_id == user_id)
             .group_by(UserPokemon.pokemon_id, UserPokemon.form_index)
-            .subquery()
+            .order_by(UserPokemon.pokemon_id.asc(), UserPokemon.form_index.asc())
         )
-        caught_count_res = await db.execute(select(func.count()).select_from(caught_entries_subq))
-        caught_count = caught_count_res.scalar() or 0
+        res = await db.execute(stmt)
+        all_raw_entries = res.all()
     elif view_mode == "form":
-        total_res = await db.execute(
-            select(func.count(distinct(PokemonFormMedia.pokemon_id))).where(PokemonFormMedia.form_index == form_idx)
-        )
-        total_entries = total_res.scalar() or 0
-
-        caught_entries_subq = (
-            select(UserPokemon.pokemon_id)
+        stmt = (
+            select(
+                UserPokemon.pokemon_id,
+                UserPokemon.form_index,
+                func.count(UserPokemon.id).label("total_caught"),
+                func.max(case((UserPokemon.is_shiny == True, 1), else_=0)).label("has_shiny")
+            )
             .where(UserPokemon.user_id == user_id, UserPokemon.form_index == form_idx)
-            .group_by(UserPokemon.pokemon_id)
-            .subquery()
+            .group_by(UserPokemon.pokemon_id, UserPokemon.form_index)
+            .order_by(UserPokemon.pokemon_id.asc(), UserPokemon.form_index.asc())
         )
-        caught_count_res = await db.execute(select(func.count()).select_from(caught_entries_subq))
-        caught_count = caught_count_res.scalar() or 0
+        res = await db.execute(stmt)
+        all_raw_entries = res.all()
     else:
-        total_res = await db.execute(select(func.count(Pokemon.id)).where(Pokemon.rarity == rarity_filter))
-        total_entries = total_res.scalar() or 0
-
-        caught_entries_subq = (
-            select(UserPokemon.pokemon_id)
+        stmt = (
+            select(
+                UserPokemon.pokemon_id,
+                UserPokemon.form_index,
+                func.count(UserPokemon.id).label("total_caught"),
+                func.max(case((UserPokemon.is_shiny == True, 1), else_=0)).label("has_shiny")
+            )
             .join(Pokemon, UserPokemon.pokemon_id == Pokemon.id)
             .where(UserPokemon.user_id == user_id, Pokemon.rarity == rarity_filter)
-            .group_by(UserPokemon.pokemon_id)
-            .subquery()
+            .group_by(UserPokemon.pokemon_id, UserPokemon.form_index)
+            .order_by(UserPokemon.pokemon_id.asc(), UserPokemon.form_index.asc())
         )
-        caught_count_res = await db.execute(select(func.count()).select_from(caught_entries_subq))
-        caught_count = caught_count_res.scalar() or 0
+        res = await db.execute(stmt)
+        all_raw_entries = res.all()
 
-    if caught_count == 0:
+    total_caught_distinct = len(all_raw_entries)
+
+    if total_caught_distinct == 0:
         filter_str = f" ({html.escape(filter_label)})" if rarity_filter and rarity_filter != "All" else ""
         text = (
-            f"<b>{html.escape(nickname)}'s Pokédex</b>{filter_str}\n\n"
-            f"<b>Your Pokédex is empty.</b>\n"
-            f"Catch Pokémon in a group chat first to register them here."
+            f"📖 <b>{html.escape(nickname)}'s Pokédex</b>{filter_str}\n"
+            f"◈ ────────────────── ◈\n\n"
+            f"⚠️ <b>Your Pokédex is empty!</b>\n"
+            f"Catch wild Pokémon in group chats to register them in your Pokédex."
         )
         return text, 0, 0
 
     per_page = 8
-    max_page = max(1, (caught_count + per_page - 1) // per_page)
-    if page < 1:
-        page = 1
-    if page > max_page:
-        page = max_page
-
+    max_page = max(1, (total_caught_distinct + per_page - 1) // per_page)
+    page = max(1, min(page, max_page))
     offset = (page - 1) * per_page
+    page_raw_entries = all_raw_entries[offset:offset + per_page]
 
-    if view_mode == "all":
-        poke_stmt = (
-            select(
-                Pokemon,
-                UserPokemon.form_index.label("entry_form_index"),
-                func.count(UserPokemon.id).label("total_caught"),
-                func.max(case((UserPokemon.is_shiny == True, 1), else_=0)).label("has_shiny"),
-            )
-            .join(UserPokemon, UserPokemon.pokemon_id == Pokemon.id)
-            .where(UserPokemon.user_id == user_id)
-            .group_by(Pokemon.id, UserPokemon.form_index)
-            .order_by(Pokemon.id, UserPokemon.form_index)
-            .offset(offset)
-            .limit(per_page)
-        )
-        poke_res = await db.execute(poke_stmt)
-        page_entries = [
-            {
-                "pokemon": pokemon,
-                "form_index": form_index,
-                "total_caught": total_caught,
-                "has_shiny": bool(has_shiny),
-            }
-            for pokemon, form_index, total_caught, has_shiny in poke_res.all()
-        ]
-    elif view_mode == "form":
-        poke_stmt = (
-            select(
-                Pokemon,
-                UserPokemon.form_index.label("entry_form_index"),
-                func.count(UserPokemon.id).label("total_caught"),
-                func.max(case((UserPokemon.is_shiny == True, 1), else_=0)).label("has_shiny"),
-            )
-            .join(UserPokemon, UserPokemon.pokemon_id == Pokemon.id)
-            .where(UserPokemon.user_id == user_id, UserPokemon.form_index == form_idx)
-            .group_by(Pokemon.id, UserPokemon.form_index)
-            .order_by(Pokemon.id, UserPokemon.form_index)
-            .offset(offset)
-            .limit(per_page)
-        )
-        poke_res = await db.execute(poke_stmt)
-        page_entries = [
-            {
-                "pokemon": pokemon,
-                "form_index": entry_form_index,
-                "total_caught": total_caught,
-                "has_shiny": bool(has_shiny),
-            }
-            for pokemon, entry_form_index, total_caught, has_shiny in poke_res.all()
-        ]
-    else:
-        poke_stmt = (
-            select(
-                Pokemon,
-                func.count(UserPokemon.id).label("total_caught"),
-                func.max(case((UserPokemon.is_shiny == True, 1), else_=0)).label("has_shiny"),
-            )
-            .join(UserPokemon, UserPokemon.pokemon_id == Pokemon.id)
-            .where(UserPokemon.user_id == user_id, Pokemon.rarity == rarity_filter)
-            .group_by(Pokemon.id)
-            .order_by(Pokemon.id)
-            .offset(offset)
-            .limit(per_page)
-        )
-        poke_res = await db.execute(poke_stmt)
-        page_entries = [
-            {
-                "pokemon": pokemon,
-                "form_index": 0,
-                "total_caught": total_caught,
-                "has_shiny": bool(has_shiny),
-            }
-            for pokemon, total_caught, has_shiny in poke_res.all()
-        ]
+    # Fetch Pokemon metadata for the current page
+    page_pokemon_ids = list({row[0] for row in page_raw_entries})
+    p_stmt = select(Pokemon).where(Pokemon.id.in_(page_pokemon_ids))
+    p_res = await db.execute(p_stmt)
+    pokemon_dict = {p.id: p for p in p_res.scalars().all()}
 
-    if view_mode == "all":
-        gen_stats_subq = (
-            select(Pokemon.generation.label("generation"), UserPokemon.pokemon_id, UserPokemon.form_index)
-            .join(UserPokemon, UserPokemon.pokemon_id == Pokemon.id)
-            .where(UserPokemon.user_id == user_id)
-            .group_by(Pokemon.generation, UserPokemon.pokemon_id, UserPokemon.form_index)
-            .subquery()
-        )
-        gen_stats_res = await db.execute(
-            select(gen_stats_subq.c.generation, func.count()).group_by(gen_stats_subq.c.generation)
-        )
-        gen_stats = {gen: count for gen, count in gen_stats_res.all()}
-
-        gen_species_res = await db.execute(
-            select(Pokemon.generation, func.count(Pokemon.id)).group_by(Pokemon.generation)
-        )
-        gen_totals = {gen: count for gen, count in gen_species_res.all()}
-
-        gen_form_res = await db.execute(
-            select(Pokemon.generation, func.count(PokemonFormMedia.form_index))
-            .join(PokemonFormMedia, PokemonFormMedia.pokemon_id == Pokemon.id)
-            .group_by(Pokemon.generation)
-        )
-        for gen, count in gen_form_res.all():
-            gen_totals[gen] = gen_totals.get(gen, 0) + count
-    elif view_mode == "form":
-        gen_stats_res = await db.execute(
-            select(Pokemon.generation, func.count(distinct(UserPokemon.pokemon_id)))
-            .join(UserPokemon, UserPokemon.pokemon_id == Pokemon.id)
-            .where(UserPokemon.user_id == user_id, UserPokemon.form_index == form_idx)
-            .group_by(Pokemon.generation)
-        )
-        gen_stats = {gen: count for gen, count in gen_stats_res.all()}
-
-        gen_totals_res = await db.execute(
-            select(Pokemon.generation, func.count(distinct(PokemonFormMedia.pokemon_id)))
-            .join(PokemonFormMedia, PokemonFormMedia.pokemon_id == Pokemon.id)
-            .where(PokemonFormMedia.form_index == form_idx)
-            .group_by(Pokemon.generation)
-        )
-        gen_totals = {gen: count for gen, count in gen_totals_res.all()}
-    else:
-        gen_stats_res = await db.execute(
-            select(Pokemon.generation, func.count(distinct(UserPokemon.pokemon_id)))
-            .join(UserPokemon, UserPokemon.pokemon_id == Pokemon.id)
-            .where(UserPokemon.user_id == user_id, Pokemon.rarity == rarity_filter)
-            .group_by(Pokemon.generation)
-        )
-        gen_stats = {gen: count for gen, count in gen_stats_res.all()}
-
-        gen_totals_res = await db.execute(
-            select(Pokemon.generation, func.count(Pokemon.id))
-            .where(Pokemon.rarity == rarity_filter)
-            .group_by(Pokemon.generation)
-        )
-        gen_totals = {gen: count for gen, count in gen_totals_res.all()}
-
-    page_pokemon_ids = list({entry["pokemon"].id for entry in page_entries})
     form_media_lookup = await get_form_media_lookup(db, page_pokemon_ids)
     custom_forms = await get_custom_rarity_forms(db)
 
-    owned_species_forms = {}
-    if view_mode == "rarity" and page_pokemon_ids:
-        owned_forms_stmt = select(UserPokemon.pokemon_id, UserPokemon.form_index).where(
-            UserPokemon.user_id == user_id,
-            UserPokemon.pokemon_id.in_(page_pokemon_ids),
-            UserPokemon.form_index > 0,
-        )
-        owned_forms_res = await db.execute(owned_forms_stmt)
-        for pokemon_id, owned_form_index in owned_forms_res.all():
-            owned_species_forms.setdefault(pokemon_id, set()).add(owned_form_index)
+    # Unique species caught for overall completion percentage
+    unique_species_caught = len({row[0] for row in all_raw_entries})
+    percent = int((unique_species_caught / total_species * 100)) if total_species > 0 else 0
+    bar = get_progress_bar(unique_species_caught, total_species, length=10)
 
     filter_str = f" ({html.escape(filter_label)})" if rarity_filter and rarity_filter != "All" else ""
-    text = f"📖 <b>{html.escape(nickname)}'s Pokédex</b>{filter_str} — Page {page}/{max_page}\n"
+    text = (
+        f"📖 <b>{html.escape(nickname)}'s Pokédex</b>{filter_str}\n"
+        f"◈ ────────────────── ◈\n"
+        f"📊 <b>Completion:</b> <code>{unique_species_caught}/{total_species}</code> species (<b>{percent}%</b>)\n"
+        f"<code>[{bar}]</code>\n"
+        f"📑 <b>Page:</b> <code>{page}/{max_page}</code> | <b>Entries:</b> <code>{total_caught_distinct}</code>\n"
+        f"◈ ────────────────── ◈\n\n"
+    )
 
     current_gen = None
-    first_group = True
-    for entry in page_entries:
-        pokemon = entry["pokemon"]
-        if pokemon.generation != current_gen:
-            current_gen = pokemon.generation
-            if not first_group:
-                text += "\n"
-            first_group = False
-            text += f"<b>Generation {current_gen}</b> ({gen_stats.get(current_gen, 0)}/{gen_totals.get(current_gen, 0)})\n"
-
-        shiny_tag = " ✨" if entry["has_shiny"] else ""
-        total_caught = entry["total_caught"]
-        pokemon_name = html.escape(pokemon.name.title())
-
-        if view_mode == "rarity":
-            forms_owned = sorted(owned_species_forms.get(pokemon.id, set()))
-            form_suffix = ""
-            if forms_owned:
-                owned_form_ids = ", ".join(f"{pokemon.id}.{owned_form_index}" for owned_form_index in forms_owned)
-                form_suffix = f" | Forms: {owned_form_ids}"
-            rarity_label = html.escape(pokemon.rarity)
-            text += f"[{rarity_label}] #{pokemon.id:03d} {pokemon_name}{shiny_tag}{form_suffix} ×{total_caught}\n"
+    for pid, f_idx, caught_cnt, has_shiny in page_raw_entries:
+        pokemon = pokemon_dict.get(pid)
+        if not pokemon:
             continue
 
-        form_index = entry["form_index"]
-        if form_index == 0:
+        if pokemon.generation != current_gen:
+            current_gen = pokemon.generation
+            text += f"🌟 <b>Generation {current_gen}</b>\n"
+
+        shiny_tag = " ✨" if has_shiny else ""
+        poke_name = html.escape(pokemon.name.title())
+
+        if f_idx == 0:
+            rarity_emoji = get_rarity_emoji(pokemon.rarity)
             entry_label = html.escape(pokemon.rarity)
             entry_id = f"#{pokemon.id:03d}"
-            entry_name = pokemon_name
+            text += f"✦ {rarity_emoji} <b>{entry_id} {poke_name}</b>{shiny_tag} [<code>{entry_label}</code>] ×{caught_cnt}\n"
         else:
-            media_value = form_media_lookup.get((pokemon.id, form_index))
-            form_label = get_form_label(form_index, media_value, custom_forms)
+            media_value = form_media_lookup.get((pokemon.id, f_idx))
+            form_label = get_form_label(f_idx, media_value, custom_forms)
+            rarity_emoji = get_rarity_emoji(pokemon.rarity)
             entry_label = html.escape(form_label)
-            entry_id = f"#{pokemon.id:03d}.{form_index}"
-            entry_name = f"{html.escape(form_label)} {pokemon_name}"
+            entry_id = f"#{pokemon.id:03d}.{f_idx}"
+            text += f"✦ 🔮 <b>{entry_id} {entry_label} {poke_name}</b>{shiny_tag} ×{caught_cnt}\n"
 
-        text += f"[{entry_label}] {entry_id} {entry_name}{shiny_tag} ×{total_caught}\n"
-
+    text += f"\n◈ ────────────────── ◈"
     return text, page, max_page
 
 def get_pokedex_keyboard(user_id: int, page: int, max_page: int, rarity_filter: str) -> InlineKeyboardMarkup:

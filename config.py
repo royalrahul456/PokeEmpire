@@ -147,31 +147,31 @@ CUSTOM_EMOJI_IDS = {
     "support": os.getenv("EMOJI_SUPPORT", "5377599075237502153"),          # 🎫 / 🎟️
     "help": os.getenv("EMOJI_HELP", "5436113877181941026"),                # ❓
     "stats": os.getenv("EMOJI_STATS", "5231200819986047254"),               # 📊
-    "profile": os.getenv("EMOJI_PROFILE", "5373012449597335010"),          # 👤
+    "profile": os.getenv("EMOJI_PROFILE", "5280781432824802048"),          # 👤
     "pokedex": os.getenv("EMOJI_POKEDEX", "5188344996356448758"),          # 🏆
     "quests": os.getenv("EMOJI_QUESTS", "5453991094435997597"),            # ⚔️
-    "guilds": os.getenv("EMOJI_GUILDS", "5449918202718985124"),            # 🏰
+    "guilds": os.getenv("EMOJI_GUILDS", "5379788323147505344"),            # 🏰
     "bag": os.getenv("EMOJI_BAG", "5409234219496907243"),                  # 🎒
     "leaderboard": os.getenv("EMOJI_LEADERBOARD", "5282950412784117735"),  # 📈
     "battle": os.getenv("EMOJI_BATTLE", "5251203410396458957"),            # 🛡️
     "trade": os.getenv("EMOJI_TRADE", "6122764622509380932"),              # 🔄
     "redeem": os.getenv("EMOJI_REDEEM", "5203996991054432397"),            # 🎁
-    "shop": os.getenv("EMOJI_SHOP", "5312361253610475399"),                # 🛒
+    "shop": os.getenv("EMOJI_SHOP", "5226656353744862682"),                # 🛒
     "games": os.getenv("EMOJI_GAMES", "5255765065096774716"),              # 🎰
     "streak": os.getenv("EMOJI_STREAK", "5424972470023104089"),            # 🔥
-    "panel": os.getenv("EMOJI_PANEL", "5433758796289685818"),              # 👑
+    "panel": os.getenv("EMOJI_PANEL", "5307608734858484532"),              # 👑
     "tools": os.getenv("EMOJI_TOOLS", "5461047575379466857"),              # 🛠️
-    "back": os.getenv("EMOJI_BACK", "5400169738263352182"),                 # 🔙
+    "back": os.getenv("EMOJI_BACK", "5253997076169115797"),                 # 🔙
     "catch": os.getenv("EMOJI_CATCH", "5188344996356448758"),              # ⚾ / 🏆
     "auction": os.getenv("EMOJI_AUCTION", "5203996991054432397"),          # 🔨
-    "confirm": os.getenv("EMOJI_CONFIRM", "5424972470023104089"),          # ✅
-    "cancel": os.getenv("EMOJI_CANCEL", "5400169738263352182"),            # ❌
+    "confirm": os.getenv("EMOJI_CONFIRM", "6255796213686208481"),          # ✔️
+    "cancel": os.getenv("EMOJI_CANCEL", "5210952531676504517"),            # ❌
     "refresh": os.getenv("EMOJI_REFRESH", "5461047575379466857"),          # 🔄
     "claim": os.getenv("EMOJI_CLAIM", "5203996991054432397"),              # 🎁
     "prev": os.getenv("EMOJI_PREV", "5400169738263352182"),                # ◀️
     "next": os.getenv("EMOJI_NEXT", "5400169738263352182"),                # ▶️
     "hint": os.getenv("EMOJI_HINT", "5436113877181941026"),                # 🔍
-    "buy": os.getenv("EMOJI_BUY", "5312361253610475399"),                  # 🛒
+    "buy": os.getenv("EMOJI_BUY", "5226656353744862682"),                  # 🛒
     "info": os.getenv("EMOJI_INFO", "5436113877181941026"),                # ℹ️
 }
 

@@ -187,29 +187,46 @@ def get_tx_pagination_keyboard(user_id: int, page: int, max_page: int, is_dm: bo
         builder.row(create_styled_button(text="👤 My Profile", key="profile", callback_data="dm_profile"))
     return builder.as_markup()
 
-def get_tx_pagination_keyboard(user_id: int, page: int, max_page: int, is_dm: bool = False) -> InlineKeyboardMarkup:
-    """Generates navigation buttons for browsing Transaction History."""
+def get_pay_confirm_keyboard(sender_id: int, target_id: int, amount: int) -> InlineKeyboardMarkup:
+    """Generates Green Accept and Red Decline buttons for coin transfer confirmation."""
     builder = InlineKeyboardBuilder()
-    nav_buttons = []
-    if page > 1:
-        nav_buttons.append(create_styled_button(text="◀️ Prev", key="prev", callback_data=f"tx_page_{user_id}_{page-1}"))
-    else:
-        nav_buttons.append(create_styled_button(text="⏹️", callback_data="tx_noop"))
+    builder.row(
+        create_styled_button(
+            text="✔️ Accept",
+            key="confirm",
+            style="success",
+            icon_custom_emoji_id="6255796213686208481",
+            callback_data=f"pay_cnf_{sender_id}_{target_id}_{amount}"
+        ),
+        create_styled_button(
+            text="❌ Decline",
+            key="cancel",
+            style="danger",
+            icon_custom_emoji_id="5210952531676504517",
+            callback_data=f"pay_dec_{sender_id}_{target_id}_{amount}"
+        )
+    )
+    return builder.as_markup()
 
-    nav_buttons.append(create_styled_button(text=f"📄 {page}/{max_page}", callback_data="tx_noop"))
-
-    if page < max_page:
-        nav_buttons.append(create_styled_button(text="Next ➡️", key="next", callback_data=f"tx_page_{user_id}_{page+1}"))
-    else:
-        nav_buttons.append(create_styled_button(text="⏹️", callback_data="tx_noop"))
-
-    if max_page > 1:
-        builder.row(*nav_buttons)
-
-    if is_dm:
-        builder.row(create_styled_button(text="Back to Hub Menu", key="back", callback_data="dm_home"))
-    else:
-        builder.row(create_styled_button(text="👤 My Profile", key="profile", callback_data="dm_profile"))
+def get_gift_confirm_keyboard(sender_id: int, target_id: int, user_pokemon_id: int) -> InlineKeyboardMarkup:
+    """Generates Green Accept and Red Decline buttons for Pokémon gift confirmation."""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        create_styled_button(
+            text="✔️ Accept",
+            key="confirm",
+            style="success",
+            icon_custom_emoji_id="6255796213686208481",
+            callback_data=f"gift_cnf_{sender_id}_{target_id}_{user_pokemon_id}"
+        ),
+        create_styled_button(
+            text="❌ Decline",
+            key="cancel",
+            style="danger",
+            icon_custom_emoji_id="5210952531676504517",
+            callback_data=f"gift_dec_{sender_id}_{target_id}_{user_pokemon_id}"
+        )
+    )
     return builder.as_markup()
 
 def get_admin_menu_keyboard() -> InlineKeyboardMarkup:

@@ -10,7 +10,7 @@ from sqlalchemy import select, or_, func
 import config
 from database.models import User, Pokemon, UserPokemon
 from utils.formatters import get_rarity_emoji, escape_md
-from keyboards.inline import create_styled_button
+from keyboards.inline import create_styled_button, get_pay_confirm_keyboard
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -124,7 +124,62 @@ async def cmd_pay(message: Message, db: AsyncSession):
             await message.answer(f"❌ Transaction failed. You don't have enough coins! (Balance: 💰 <code>{sender_user.coins:,} coins</code>)", parse_mode="HTML")
             return
 
-        # Transfer coins
+        # Show confirmation prompt with Green Accept and Red Decline buttons
+        kb = get_pay_confirm_keyboard(sender_id, target_user.id, amount)
+        sender_name = sender_user.nickname or message.from_user.first_name or "Trainer"
+        target_name = target_user.nickname or target_user.username or "Trainer"
+
+        text = (
+            f"💳 <b>COIN TRANSFER CONFIRMATION</b>\n"
+            f"◈ ────────────────── ◈\n"
+            f"👤 <b>Sender:</b> {html.escape(sender_name)}\n"
+            f"👤 <b>Recipient:</b> {html.escape(target_name)}\n"
+            f"💰 <b>Amount:</b> <code>{amount:,} coins</code>\n\n"
+            f"Are you sure you want to transfer <b>{amount:,} coins</b> to <b>{html.escape(target_name)}</b>?\n"
+            f"◈ ────────────────── ◈"
+        )
+        await message.answer(text, reply_markup=kb, parse_mode="HTML")
+    except Exception as e:
+        logger.exception("Error in cmd_pay:")
+        await message.answer("❌ An error occurred while processing coin transfer.", parse_mode="HTML")
+
+
+@router.callback_query(F.data.startswith("pay_cnf_"))
+async def cb_pay_confirm(callback: CallbackQuery, db: AsyncSession):
+    try:
+        parts = callback.data.split("_")
+        sender_id = int(parts[2])
+        target_id = int(parts[3])
+        amount = int(parts[4])
+
+        if callback.from_user.id != sender_id:
+            await callback.answer("❌ Only the sender can confirm this transfer!", show_alert=True)
+            return
+
+        sender_stmt = select(User).where(User.id == sender_id)
+        sender_res = await db.execute(sender_stmt)
+        sender_user = sender_res.scalar_one_or_none()
+
+        target_stmt = select(User).where(User.id == target_id)
+        target_res = await db.execute(target_stmt)
+        target_user = target_res.scalar_one_or_none()
+
+        if not sender_user or not target_user:
+            await callback.answer("❌ User data not found.", show_alert=True)
+            return
+
+        if sender_user.coins < amount:
+            await callback.answer("❌ You don't have enough coins!", show_alert=True)
+            try:
+                await callback.message.edit_text(
+                    f"❌ <b>Transfer Failed</b>: Insufficient coins (Balance: 💰 <code>{sender_user.coins:,} coins</code>).",
+                    parse_mode="HTML"
+                )
+            except Exception:
+                pass
+            return
+
+        # Perform transfer
         sender_user.coins -= amount
         target_user.coins += amount
         try:
@@ -135,19 +190,60 @@ async def cmd_pay(message: Message, db: AsyncSession):
             pass
         await db.commit()
 
+        sender_name = sender_user.nickname or "Trainer"
+        target_name = target_user.nickname or target_user.username or "Trainer"
+
         text = (
             f"💸 <b>COINS TRANSFERRED</b> 💸\n"
             f"◈ ────────────────── ◈\n"
-            f"Trainer <b>{html.escape(sender_user.nickname or 'Trainer')}</b> sent coins to Trainer <b>{html.escape(target_user.nickname or 'Trainer')}</b>:\n"
+            f"Trainer <b>{html.escape(sender_name)}</b> sent coins to Trainer <b>{html.escape(target_name)}</b>:\n"
             f"💰 <b>-{amount:,} coins</b> ➡️ 💰 <code>+{amount:,} coins</code>\n\n"
             f"👤 <b>Sender Balance:</b> <code>💰 {sender_user.coins:,} coins</code>\n"
             f"👤 <b>Recipient Balance:</b> <code>💰 {target_user.coins:,} coins</code>\n"
             f"◈ ────────────────── ◈"
         )
-        await message.answer(text, parse_mode="HTML")
+        try:
+            await callback.message.edit_text(text, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, parse_mode="HTML")
+
+        # Notify recipient via DM if possible
+        dm_text = (
+            f"💰 <b>You received coins!</b>\n"
+            f"◈ ────────────────── ◈\n"
+            f"Trainer <b>{html.escape(sender_name)}</b> transferred 💰 <b>{amount:,} coins</b> to you!\n"
+            f"👤 <b>Your New Balance:</b> <code>💰 {target_user.coins:,} coins</code>\n"
+            f"◈ ────────────────── ◈"
+        )
+        try:
+            await callback.bot.send_message(chat_id=target_id, text=dm_text, parse_mode="HTML")
+        except Exception:
+            pass
+
+        await callback.answer("✅ Coins transferred successfully!")
     except Exception as e:
-        logger.exception("Error in cmd_pay:")
-        await message.answer("❌ An error occurred while processing coin transfer.", parse_mode="HTML")
+        logger.exception("Error in cb_pay_confirm:")
+        await callback.answer("❌ Error processing transfer.", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("pay_dec_"))
+async def cb_pay_decline(callback: CallbackQuery):
+    try:
+        parts = callback.data.split("_")
+        sender_id = int(parts[2])
+
+        if callback.from_user.id != sender_id:
+            await callback.answer("❌ Only the sender can cancel this transfer!", show_alert=True)
+            return
+
+        try:
+            await callback.message.edit_text("❌ <b>Coin transfer cancelled.</b>", parse_mode="HTML")
+        except Exception:
+            pass
+        await callback.answer("Transfer cancelled.")
+    except Exception as e:
+        logger.exception("Error in cb_pay_decline:")
+        await callback.answer()
 
 
 @router.message(Command("trade"))

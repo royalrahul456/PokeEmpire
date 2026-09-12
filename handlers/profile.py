@@ -12,7 +12,7 @@ from utils.formatters import get_hp_bar, get_progress_bar, get_rarity_emoji, esc
 from utils.favorite import get_favorite_id, set_favorite_id
 from utils.settings import send_cover_media, get_custom_cover, get_custom_rarity_forms, get_all_custom_rarities, send_safe_media
 
-from keyboards.inline import create_styled_button, get_tx_pagination_keyboard
+from keyboards.inline import create_styled_button, get_tx_pagination_keyboard, get_gift_confirm_keyboard
 
 router = Router()
 
@@ -2172,22 +2172,7 @@ async def cmd_gift(message: Message, db: AsyncSession):
         f_name = form_names.get(form_index, f"Form {form_index}")
         await message.answer(f"❌ You do not own a <b>{f_name}</b> form of Pokédex #{pokedex_id:03d}!", parse_mode="HTML")
         return
-        
-    old_user_id = up.user_id
-    up.user_id = target_user.id
-    
-    remain_stmt = select(UserPokemon.id).where(
-        UserPokemon.user_id == old_user_id,
-        UserPokemon.pokemon_id == pokedex_id
-    ).limit(1)
-    remain_res = await db.execute(remain_stmt)
-    if remain_res.scalar() is None:
-        fav_val = await get_favorite_id(old_user_id, db)
-        if fav_val and (fav_val == str(pokedex_id) or fav_val.startswith(f"{pokedex_id}.")):
-            await set_favorite_id(old_user_id, None, db)
-            
-    await db.commit()
-    
+
     shiny_badge = "✨ Shiny " if up.is_shiny else ""
     form_names = {
         0: "",
@@ -2199,55 +2184,165 @@ async def cmd_gift(message: Message, db: AsyncSession):
     }
     form_badge = form_names.get(form_index, f"Form {form_index} ")
     r_emoji = get_rarity_emoji(up.pokemon.rarity)
-    
-    media_type = "photo"
-    media_value = up.pokemon.image_url
-    if up.pokemon.image_url:
-        media_type, media_value = parse_stored_media_value(up.pokemon.image_url)
-
-    if up.form_index > 0:
-        form_media = await get_single_form_media_value(db, up.pokemon_id, up.form_index)
-        if form_media:
-            media_type, media_value = parse_stored_media_value(form_media)
-        elif up.form_index == 1 and up.pokemon.video_url:
-            media_type, media_value = parse_stored_media_value(up.pokemon.video_url)
-
     pokemon_display = f"{r_emoji} {shiny_badge}{form_badge}<b>{up.pokemon.name.title()}</b>"
 
-    sender_name = message.from_user.first_name
-    receiver_name = target_user.nickname or "Trainer"
+    sender_name = message.from_user.first_name or "Trainer"
+    receiver_name = target_user.nickname or target_user.username or "Trainer"
 
-    caption = (
-        f"🎁 <b>POKÉMON GIFTED!</b> 🎁\n"
-        f"<blockquote>👤 Sender: <b>{html.escape(sender_name)}</b>\n"
-        f"👤 Recipient: <b>{html.escape(receiver_name)}</b>\n"
-        f"💝 Pokémon: {pokemon_display}</blockquote>"
+    kb = get_gift_confirm_keyboard(message.from_user.id, target_user.id, up.id)
+
+    text = (
+        f"🎁 <b>GIFT CONFIRMATION</b>\n"
+        f"◈ ────────────────── ◈\n"
+        f"👤 <b>Sender:</b> {html.escape(sender_name)}\n"
+        f"👤 <b>Recipient:</b> {html.escape(receiver_name)}\n"
+        f"💝 <b>Pokémon:</b> {pokemon_display}\n\n"
+        f"Are you sure you want to gift this Pokémon to <b>{html.escape(receiver_name)}</b>?\n"
+        f"◈ ────────────────── ◈"
     )
+    await message.answer(text, reply_markup=kb, parse_mode="HTML")
 
-    from aiogram.types import FSInputFile
-    if isinstance(media_value, str) and os.path.exists(media_value):
-        media_value = FSInputFile(media_value)
 
+@router.callback_query(F.data.startswith("gift_cnf_"))
+async def cb_gift_confirm(callback: CallbackQuery, db: AsyncSession):
     try:
-        if media_type == "video":
-            await message.answer_video(video=media_value, caption=caption, parse_mode="HTML")
-        elif media_type == "animation":
-            await message.answer_animation(animation=media_value, caption=caption, parse_mode="HTML")
-        else:
-            await message.answer_photo(photo=media_value, caption=caption, parse_mode="HTML")
+        parts = callback.data.split("_")
+        sender_id = int(parts[2])
+        target_id = int(parts[3])
+        up_id = int(parts[4])
+
+        if callback.from_user.id != sender_id:
+            await callback.answer("❌ Only the sender can confirm this gift!", show_alert=True)
+            return
+
+        stmt = select(UserPokemon).options(joinedload(UserPokemon.pokemon)).where(
+            UserPokemon.id == up_id
+        )
+        res = await db.execute(stmt)
+        up = res.scalars().first()
+
+        if not up or up.user_id != sender_id:
+            await callback.answer("❌ Pokémon is no longer in your bag!", show_alert=True)
+            try:
+                await callback.message.edit_text("❌ <b>Gift Failed</b>: Pokémon is no longer in your bag.", parse_mode="HTML")
+            except Exception:
+                pass
+            return
+
+        target_stmt = select(User).where(User.id == target_id)
+        target_res = await db.execute(target_stmt)
+        target_user = target_res.scalar_one_or_none()
+
+        if not target_user:
+            await callback.answer("❌ Recipient trainer not found.", show_alert=True)
+            return
+
+        # Transfer ownership
+        old_user_id = up.user_id
+        up.user_id = target_user.id
+
+        remain_stmt = select(UserPokemon.id).where(
+            UserPokemon.user_id == old_user_id,
+            UserPokemon.pokemon_id == up.pokemon_id
+        ).limit(1)
+        remain_res = await db.execute(remain_stmt)
+        if remain_res.scalar() is None:
+            fav_val = await get_favorite_id(old_user_id, db)
+            if fav_val and (fav_val == str(up.pokemon_id) or fav_val.startswith(f"{up.pokemon_id}.")):
+                await set_favorite_id(old_user_id, None, db)
+
+        await db.commit()
+
+        shiny_badge = "✨ Shiny " if up.is_shiny else ""
+        form_names = {
+            0: "",
+            1: "AMV ",
+            2: "Dmax ",
+            3: "Gmax ",
+            4: "Z-Move ",
+            5: "Terastal "
+        }
+        form_badge = form_names.get(up.form_index, f"Form {up.form_index} ")
+        r_emoji = get_rarity_emoji(up.pokemon.rarity)
+
+        media_type = "photo"
+        media_value = up.pokemon.image_url
+        if up.pokemon.image_url:
+            media_type, media_value = parse_stored_media_value(up.pokemon.image_url)
+
+        if up.form_index > 0:
+            form_media = await get_single_form_media_value(db, up.pokemon_id, up.form_index)
+            if form_media:
+                media_type, media_value = parse_stored_media_value(form_media)
+            elif up.form_index == 1 and up.pokemon.video_url:
+                media_type, media_value = parse_stored_media_value(up.pokemon.video_url)
+
+        pokemon_display = f"{r_emoji} {shiny_badge}{form_badge}<b>{up.pokemon.name.title()}</b>"
+
+        sender_name = callback.from_user.first_name or "Trainer"
+        receiver_name = target_user.nickname or target_user.username or "Trainer"
+
+        caption = (
+            f"🎁 <b>POKÉMON GIFTED!</b> 🎁\n"
+            f"<blockquote>👤 Sender: <b>{html.escape(sender_name)}</b>\n"
+            f"👤 Recipient: <b>{html.escape(receiver_name)}</b>\n"
+            f"💝 Pokémon: {pokemon_display}</blockquote>"
+        )
+
+        from aiogram.types import FSInputFile
+        if isinstance(media_value, str) and os.path.exists(media_value):
+            media_value = FSInputFile(media_value)
+
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+
+        try:
+            if media_type == "video":
+                await callback.message.answer_video(video=media_value, caption=caption, parse_mode="HTML")
+            elif media_type == "animation":
+                await callback.message.answer_animation(animation=media_value, caption=caption, parse_mode="HTML")
+            else:
+                await callback.message.answer_photo(photo=media_value, caption=caption, parse_mode="HTML")
+        except Exception as e:
+            print(f"Error sending player gifted pokemon media: {e}")
+            await callback.message.answer(caption, parse_mode="HTML")
+
+        dm_text = (
+            f"📣 <b>You received a Gift!</b>\n"
+            f"<blockquote>👤 Sender: <b>{html.escape(sender_name)}</b>\n"
+            f"💝 Pokémon: {pokemon_display}</blockquote>"
+        )
+        try:
+            await callback.bot.send_message(chat_id=target_user.id, text=dm_text, parse_mode="HTML")
+        except Exception:
+            pass
+
+        await callback.answer("✅ Gift sent successfully!")
     except Exception as e:
-        print(f"Error sending player gifted pokemon media: {e}")
-        await message.answer(caption, parse_mode="HTML")
+        print(f"Error in cb_gift_confirm: {e}")
+        await callback.answer("❌ Error processing gift.", show_alert=True)
 
-    dm_text = (
-        f"📣 <b>You received a Gift!</b>\n"
-        f"<blockquote>👤 Sender: <b>{html.escape(sender_name)}</b>\n"
-        f"💝 Pokémon: {pokemon_display}</blockquote>"
-    )
+
+@router.callback_query(F.data.startswith("gift_dec_"))
+async def cb_gift_decline(callback: CallbackQuery):
     try:
-        await message.bot.send_message(chat_id=target_user.id, text=dm_text, parse_mode="HTML")
-    except Exception:
-        pass
+        parts = callback.data.split("_")
+        sender_id = int(parts[2])
+
+        if callback.from_user.id != sender_id:
+            await callback.answer("❌ Only the sender can cancel this gift!", show_alert=True)
+            return
+
+        try:
+            await callback.message.edit_text("❌ <b>Gift cancelled.</b>", parse_mode="HTML")
+        except Exception:
+            pass
+        await callback.answer("Gift cancelled.")
+    except Exception as e:
+        print(f"Error in cb_gift_decline: {e}")
+        await callback.answer()
 
 
 async def build_transactions_payload(user_id: int, page: int, db: AsyncSession, is_dm: bool = False):

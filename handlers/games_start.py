@@ -7,7 +7,7 @@ from sqlalchemy import select
 import config
 from database.models import User
 from utils.formatters import escape_md
-from utils.trainer_level import get_level_info
+from utils.trainer_level import get_trainer_title, get_xp_required_for_next_level
 from keyboards.inline import create_styled_button
 
 router = Router()
@@ -88,14 +88,14 @@ async def cmd_balance(message: Message, db: AsyncSession):
         await db.commit()
         await db.refresh(user)
 
-    total_xp = user.xp or 0
-    level, title, level_icon, xp_current, xp_needed, pct = get_level_info(total_xp)
+    level = user.trainer_level or 1
+    title = get_trainer_title(level)
 
     bal_text = (
         f"💳 <b>Trainer Balance & Wallet</b> 💳\n"
         f"◈ ────────────────────────── ◈\n"
         f"👤 Trainer: <b>{user_name}</b> (<code>{user_id}</code>)\n"
-        f"{level_icon} Level: <b>{level} ({title})</b>\n\n"
+        f"⭐ Level: <b>{level} ({title})</b>\n\n"
         f"💰 <b>Coins:</b> <code>{user.coins:,}</code> 🪙\n"
         f"💎 <b>Gems:</b> <code>{user.gems:,}</code> 💎\n"
         f"◈ ────────────────────────── ◈\n"
@@ -125,14 +125,14 @@ async def cb_check_balance(callback: CallbackQuery, db: AsyncSession):
         await db.commit()
         await db.refresh(user)
 
-    total_xp = user.xp or 0
-    level, title, level_icon, xp_current, xp_needed, pct = get_level_info(total_xp)
+    level = user.trainer_level or 1
+    title = get_trainer_title(level)
 
     bal_text = (
         f"💳 <b>Trainer Balance & Wallet</b> 💳\n"
         f"◈ ────────────────────────── ◈\n"
         f"👤 Trainer: <b>{user_name}</b>\n"
-        f"{level_icon} Level: <b>{level} ({title})</b>\n\n"
+        f"⭐ Level: <b>{level} ({title})</b>\n\n"
         f"💰 <b>Coins:</b> <code>{user.coins:,}</code> 🪙\n"
         f"💎 <b>Gems:</b> <code>{user.gems:,}</code> 💎\n"
         f"◈ ────────────────────────── ◈\n"

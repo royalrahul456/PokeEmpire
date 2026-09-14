@@ -201,7 +201,7 @@ async def delete_message_after(message: Message, delay: int):
 # HANDLERS - MAIN MENU & AI GAME LOOPS
 # -------------------------------------------------------------
 
-@router.message(Command("xo"))
+@router.message(Command("xo", "ttc", "tictactoe"))
 async def cmd_xo(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     parts = message.text.split()

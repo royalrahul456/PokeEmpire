@@ -317,3 +317,168 @@ async def cb_spawn_hint(callback: CallbackQuery, db: AsyncSession):
         await callback.answer("❌ An error occurred while purchasing the hint. Please try again.", show_alert=True)
 
 
+from datetime import datetime, timedelta
+import html
+from utils.settings import send_safe_media
+
+@router.message(Command("claim"))
+async def cmd_claim(message: Message, db: AsyncSession):
+    user_id = message.from_user.id
+    nickname = message.from_user.first_name
+
+    # Check claim cooldown using utils/claim.py
+    from utils.claim import check_claim_cooldown, update_claim_cooldown
+    remaining_cooldown = check_claim_cooldown(user_id)
+    if remaining_cooldown > 0:
+        hours = remaining_cooldown // 3600
+        minutes = (remaining_cooldown % 3600) // 60
+        seconds = remaining_cooldown % 60
+        time_str = f"{hours}h {minutes}m {seconds}s"
+        await message.answer(
+            f"⏳ <b>DAILY CLAIM COOLDOWN</b>\n"
+            f"<blockquote>Too early! You can claim your next free Pokémon in <b>{time_str}</b>.</blockquote>",
+            parse_mode="HTML"
+        )
+        return
+
+    # Get all Pokémon list from database
+    stmt = select(Pokemon)
+    res = await db.execute(stmt)
+    pokemon_list = res.scalars().all()
+
+    if not pokemon_list:
+        await message.answer("❌ <b>Error:</b> No Pokémon found in database to claim.", parse_mode="HTML")
+        return
+
+    selected_pokemon = random.choice(pokemon_list)
+    is_shiny = random.randint(1, 100) == 1
+
+    iv_hp = random.randint(0, 31)
+    iv_atk = random.randint(0, 31)
+    iv_def = random.randint(0, 31)
+    iv_spd = random.randint(0, 31)
+
+    stmt_user = select(User).where(User.id == user_id)
+    res_user = await db.execute(stmt_user)
+    user = res_user.scalar_one_or_none()
+
+    if not user:
+        user = User(id=user_id, username=message.from_user.username, nickname=nickname)
+        db.add(user)
+        await db.flush()
+
+    capture = UserPokemon(
+        user_id=user_id,
+        pokemon_id=selected_pokemon.id,
+        is_shiny=is_shiny,
+        level=1,
+        xp=0,
+        iv_hp=iv_hp,
+        iv_atk=iv_atk,
+        iv_def=iv_def,
+        iv_spd=iv_spd
+    )
+    db.add(capture)
+    update_claim_cooldown(user_id)
+    await db.commit()
+
+    shiny_prefix = "✨ Shiny " if is_shiny else ""
+    r_emoji = get_rarity_emoji(selected_pokemon.rarity)
+
+    text = (
+        f"🎁 <b>POKÉMON CLAIMED</b> 🎁\n"
+        f"───────────────\n"
+        f"<blockquote>👤 Trainer: <b>{html.escape(user.nickname or 'Trainer')}</b>\n"
+        f"👾 Pokémon: <b>{shiny_prefix}{selected_pokemon.name.title()}</b>\n"
+        f"{r_emoji} Rarity: <b>{r_emoji} {selected_pokemon.rarity}</b></blockquote>"
+    )
+
+    from database.models import PokemonFormMedia
+    from handlers.profile import parse_stored_media_value
+
+    media_value = None
+    media_type = "photo"
+
+    if is_shiny:
+        s_media_stmt = select(PokemonFormMedia.media_value).where(
+            PokemonFormMedia.pokemon_id == selected_pokemon.id,
+            PokemonFormMedia.form_index == 6
+        )
+        s_media_res = await db.execute(s_media_stmt)
+        s_media = s_media_res.scalar_one_or_none()
+        if s_media:
+            media_type, media_value = parse_stored_media_value(s_media)
+
+    if not media_value:
+        form1_stmt = select(PokemonFormMedia.media_value).where(
+            PokemonFormMedia.pokemon_id == selected_pokemon.id,
+            PokemonFormMedia.form_index == 1
+        )
+        form1_res = await db.execute(form1_stmt)
+        form1_media = form1_res.scalar_one_or_none()
+        if form1_media:
+            media_type, media_value = parse_stored_media_value(form1_media)
+
+    if not media_value and selected_pokemon.image_url:
+        media_type, media_value = parse_stored_media_value(selected_pokemon.image_url)
+
+    await send_safe_media(
+        bot=message.bot,
+        chat_id=message.chat.id,
+        media_type=media_type,
+        media_value=media_value,
+        caption=text,
+        parse_mode="HTML",
+        message_to_reply=message
+    )
+
+@router.message(Command("daily"))
+async def cmd_daily(message: Message, db: AsyncSession):
+    user_id = message.from_user.id
+    nickname = message.from_user.first_name
+
+    stmt = select(User).where(User.id == user_id)
+    res = await db.execute(stmt)
+    user = res.scalar_one_or_none()
+
+    if not user:
+        user = User(id=user_id, username=message.from_user.username, nickname=nickname)
+        db.add(user)
+        await db.flush()
+
+    now = datetime.utcnow()
+    if user.last_daily_at:
+        cooldown = timedelta(hours=24)
+        elapsed = now - user.last_daily_at
+        if elapsed < cooldown:
+            remaining = cooldown - elapsed
+            hours, remainder = divmod(remaining.seconds, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            time_str = f"{hours}h {minutes}m {seconds}s"
+            await message.answer(
+                f"⏳ <b>DAILY REWARD COOLDOWN</b>\n"
+                f"<blockquote>Too early! You can claim your next daily reward in <b>{time_str}</b>.</blockquote>",
+                parse_mode="HTML"
+            )
+            return
+
+    reward = random.randint(250, 550)
+    user.coins += reward
+    user.last_daily_at = now
+    try:
+        from utils.trainer_level import log_transaction
+        await log_transaction(user_id, reward, "DAILY_REWARD", "Claimed daily coins", db)
+    except Exception:
+        pass
+    await db.commit()
+
+    text = (
+        f"📅 <b>DAILY REWARD SUCCESS</b>\n"
+        f"───────────────\n"
+        f"<blockquote>👤 Trainer: <b>{html.escape(user.nickname or 'Trainer')}</b>\n"
+        f"💰 Earned: <b>+{reward:,} coins</b>\n"
+        f"💳 Balance: <b>{user.coins:,} coins</b></blockquote>"
+    )
+    await message.answer(text, parse_mode="HTML")
+
+

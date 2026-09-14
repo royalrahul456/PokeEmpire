@@ -21,13 +21,11 @@ from handlers import (
     profile,
     catch,
     admin,
-    games,
+    games_redirect,
     shop,
     trade,
     battle,
-    xo,
     redeem,
-    mines,
     auction,
     quests,
     guilds,
@@ -319,13 +317,11 @@ async def main():
     dp.include_router(start.router)
     dp.include_router(profile.router)
     dp.include_router(catch.router)
-    dp.include_router(games.router)
+    dp.include_router(games_redirect.router)
     dp.include_router(shop.router)
     dp.include_router(trade.router)
     dp.include_router(battle.router)
-    dp.include_router(xo.router)
     dp.include_router(redeem.router)
-    dp.include_router(mines.router)
     dp.include_router(auction.router)
     dp.include_router(quests.router)
     dp.include_router(guilds.router)

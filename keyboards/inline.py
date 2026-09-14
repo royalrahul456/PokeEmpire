@@ -115,9 +115,10 @@ def get_dm_menu_keyboard() -> InlineKeyboardMarkup:
         create_styled_button(text="Trade", key="trade", callback_data="dm_trade_info"),
         create_styled_button(text="Redeem Code", key="redeem", callback_data="dm_redeem_info")
     )
+    games_bot_user = getattr(config, "GAMES_BOT_USERNAME", "@PokeArenaBot").replace("@", "")
     builder.row(
         create_styled_button(text="Shop", key="shop", callback_data="dm_shop"),
-        create_styled_button(text="Games Center", key="games", callback_data="dm_games")
+        create_styled_button(text="Games Center", key="games", url=f"https://t.me/{games_bot_user}?start=hub")
     )
     builder.row(
         create_styled_button(text="Streak", key="streak", callback_data="dm_streak"),

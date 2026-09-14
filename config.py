@@ -14,7 +14,7 @@ load_dotenv()
 # Bot Setup
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 GAMES_BOT_TOKEN = os.getenv("GAMES_BOT_TOKEN", "")
-GAMES_BOT_USERNAME = os.getenv("GAMES_BOT_USERNAME", "@PokeArenaBot")
+GAMES_BOT_USERNAME = os.getenv("GAMES_BOT_USERNAME", "@PokeXArenaBot")
 
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://royalrahul456.github.io/PokeEmpire/webapp/")
 

@@ -76,6 +76,28 @@ def apply_auto_reply_patch():
     Message.answer_animation = patched_answer_animation
     logger.info("Applied auto-reply monkey patch for group chats.")
 
+async def register_games_bot_commands(bot: Bot):
+    from aiogram.types import BotCommand
+    commands = [
+        BotCommand(command="start", description="🎮 Launch PokeArena Games Center"),
+        BotCommand(command="games", description="🎰 Open Games Hub"),
+        BotCommand(command="balance", description="💰 Check your Coins & Gems"),
+        BotCommand(command="bal", description="💰 Check your Coins & Gems"),
+        BotCommand(command="mines", description="💣 Play Mines Game"),
+        BotCommand(command="ttc", description="❌ Play Tic-Tac-Toe PvP Duel"),
+        BotCommand(command="slot", description="🎰 Play Slot Machine Casino"),
+        BotCommand(command="spin", description="🎡 Free Hourly Fortune Wheel"),
+        BotCommand(command="rps", description="✊ Play Rock Paper Scissors"),
+        BotCommand(command="scribble", description="✏️ Play Drawing & Guessing"),
+        BotCommand(command="nameguess", description="💡 Play Pokémon Name Quiz"),
+        BotCommand(command="help", description="📖 How to Play Mini-Games"),
+    ]
+    try:
+        await bot.set_my_commands(commands)
+        logger.info("Registered Telegram menu commands for PokeArena.")
+    except Exception as e:
+        logger.warning(f"Failed to register Telegram menu commands: {e}")
+
 async def main():
     token = config.GAMES_BOT_TOKEN or config.BOT_TOKEN
     if not token or token == "YOUR_BOT_TOKEN_HERE":
@@ -135,6 +157,9 @@ async def main():
     dp.include_router(mines.router)
 
     logger.info("Games Bot handlers registered.")
+
+    # Register bot commands menu in Telegram
+    await register_games_bot_commands(bot)
 
     # Fetch bot info to store main bot username if available
     try:

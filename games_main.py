@@ -110,15 +110,18 @@ async def main():
     apply_auto_reply_patch()
 
     # Initialize Database connection
+    logger.info("Initializing database connection...")
     await init_db()
     logger.info("Database initialized successfully.")
 
     # Initialize sub-millisecond in-memory Pokemon Cache
+    logger.info("Initializing Pokemon cache...")
     from utils.pokemon_cache import init_pokemon_cache
     async with SessionLocal() as db:
         await init_pokemon_cache(db)
 
     # Load settings cache
+    logger.info("Loading settings cache...")
     from utils.settings import load_all_settings_into_cache
     await load_all_settings_into_cache()
     logger.info("Settings cache loaded successfully.")

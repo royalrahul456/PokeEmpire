@@ -8,6 +8,15 @@ _cache_by_id: Dict[int, Pokemon] = {}
 _cache_by_name: Dict[str, Pokemon] = {}
 _cache_by_rarity: Dict[str, List[Pokemon]] = {}
 
+def safe_print(msg: str):
+    try:
+        print(msg)
+    except Exception:
+        try:
+            print(msg.encode('ascii', 'ignore').decode('ascii'))
+        except Exception:
+            pass
+
 async def init_pokemon_cache(db: AsyncSession):
     """Loads all Pokemon records into memory for instant sub-millisecond access."""
     global _cache_by_id, _cache_by_name, _cache_by_rarity
@@ -22,7 +31,7 @@ async def init_pokemon_cache(db: AsyncSession):
     for p in all_pokes:
         by_rarity.setdefault(p.rarity, []).append(p)
     _cache_by_rarity = by_rarity
-    print(f"⚡ In-Memory Pokemon Cache active! Loaded {len(all_pokes)} Pokemon species across {len(by_rarity)} rarity tiers.")
+    safe_print(f"⚡ In-Memory Pokemon Cache active! Loaded {len(all_pokes)} Pokemon species across {len(by_rarity)} rarity tiers.")
 
 def get_cached_pokemon_by_id(poke_id: int) -> Optional[Pokemon]:
     return _cache_by_id.get(poke_id)

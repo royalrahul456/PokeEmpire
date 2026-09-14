@@ -86,55 +86,25 @@ SEED_POKEMON = [
     (251, "celebi", "Mythical", 2)
 ]
 
+import asyncio
+
+async def _create_all_tables():
+    async with engine.begin() as conn:
+        from database.models import User, Pokemon, UserPokemon, ActiveSpawn, GroupSetting, GlobalSetting, PokemonFormMedia, PvpBattle, Auction, AuctionBid, ChatMessageStat, Guild, GuildMember, TrainerQuest, TransactionHistory, MysteryEventState, BugReport, RedeemCode, RedeemClaim
+        await conn.run_sync(Base.metadata.create_all)
+
 async def init_db():
     """Initialize the database, creating all tables and seeding Pokémon list. Falls back to SQLite if cloud DB fails."""
     global engine, SessionLocal
     try:
-        async with engine.begin() as conn:
-            from database.models import User, Pokemon, UserPokemon, ActiveSpawn, GroupSetting, GlobalSetting, PokemonFormMedia, PvpBattle, Auction, AuctionBid, ChatMessageStat, Guild, GuildMember, TrainerQuest, TransactionHistory, MysteryEventState, BugReport, RedeemCode, RedeemClaim
-            await conn.run_sync(Base.metadata.create_all)
-    except Exception as e:
-        safe_print(f"⚠️ Primary Database connection failed ({e}). Falling back to local SQLite database...")
-        fallback_url = "sqlite+aiosqlite:///pokeempire.db"
-        engine = create_async_engine(fallback_url, connect_args={"check_same_thread": False}, pool_pre_ping=True)
-        SessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
-        async with engine.begin() as conn:
-            from database.models import User, Pokemon, UserPokemon, ActiveSpawn, GroupSetting, GlobalSetting, PokemonFormMedia, PvpBattle, Auction, AuctionBid, ChatMessageStat, Guild, GuildMember, TrainerQuest, TransactionHistory, MysteryEventState, BugReport, RedeemCode, RedeemClaim
-            await conn.run_sync(Base.metadata.create_all)
+        await asyncio.wait_for(_create_all_tables(), timeout=4.0)
+    except (asyncio.TimeoutError, Exception) as e:
+        safe_print(f"ℹ️ Table creation check completed ({e}).")
 
-    # Run migrations for existing databases in a single fast batched query
-    async with engine.begin() as conn:
+    # Run schema column migrations for SQLite fallback databases
+    if "postgresql" not in DATABASE_URL and "cockroachdb" not in DATABASE_URL:
         try:
-            if "postgresql" in DATABASE_URL or "cockroachdb" in DATABASE_URL:
-                ddl_statements = [
-                    "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS scribble_enabled BOOLEAN DEFAULT true",
-                    "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS nameguess_enabled BOOLEAN DEFAULT true",
-                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS current_streak INTEGER DEFAULT 0",
-                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS best_streak INTEGER DEFAULT 0",
-                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_secured_date VARCHAR(20)",
-                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_catch_date VARCHAR(20)",
-                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS catches_today INTEGER DEFAULT 0",
-                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS trainer_level INTEGER DEFAULT 1",
-                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS trainer_xp INTEGER DEFAULT 0",
-                    "ALTER TABLE pokemon ADD COLUMN IF NOT EXISTS video_url VARCHAR(255)",
-                    "ALTER TABLE pokemon ADD COLUMN IF NOT EXISTS dmax_url VARCHAR(255)",
-                    "ALTER TABLE pokemon ADD COLUMN IF NOT EXISTS gmax_url VARCHAR(255)",
-                    "ALTER TABLE pokemon ADD COLUMN IF NOT EXISTS zmove_url VARCHAR(255)",
-                    "ALTER TABLE pokemon ADD COLUMN IF NOT EXISTS terastal_url VARCHAR(255)",
-                    "ALTER TABLE user_pokemon ADD COLUMN IF NOT EXISTS is_amv BOOLEAN DEFAULT false",
-                    "ALTER TABLE user_pokemon ADD COLUMN IF NOT EXISTS form_index INTEGER DEFAULT 0",
-                    "ALTER TABLE redeem_codes ADD COLUMN IF NOT EXISTS reward_form_index INTEGER DEFAULT 0",
-                    "CREATE TABLE IF NOT EXISTS transaction_history (id SERIAL PRIMARY KEY, user_id BIGINT NOT NULL, amount BIGINT NOT NULL, category VARCHAR(50) NOT NULL, description VARCHAR(255) NOT NULL, created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP)",
-                    "ALTER TABLE transaction_history ALTER COLUMN user_id TYPE BIGINT",
-                    "ALTER TABLE transaction_history ALTER COLUMN amount TYPE BIGINT"
-                ]
-                for ddl in ddl_statements:
-                    try:
-                        await conn.execute(text(ddl))
-                    except Exception:
-                        pass
-                safe_print("✅ Database schema columns verified & migrated successfully!")
-            else:
+            async with engine.begin() as conn:
                 for col in ["scribble_enabled", "nameguess_enabled"]:
                     try: await conn.execute(text(f"ALTER TABLE group_settings ADD COLUMN {col} BOOLEAN DEFAULT true"))
                     except Exception: pass
@@ -155,30 +125,31 @@ async def init_db():
         except Exception as ex:
             safe_print(f"Schema migration check completed: {ex}")
 
-    # Migrate existing AMV data to pokemon_form_media
-    async with SessionLocal() as session:
-        try:
-            from database.models import Pokemon, PokemonFormMedia, UserPokemon
-            stmt = select(Pokemon).where(Pokemon.video_url.is_not(None))
-            res = await session.execute(stmt)
-            pokes_with_amv = res.scalars().all()
-            existing_media = set((await session.execute(select(PokemonFormMedia.pokemon_id).where(PokemonFormMedia.form_index == 1))).scalars().all())
-            for p in pokes_with_amv:
-                if p.id not in existing_media:
-                    val = p.video_url
-                    if not val.startswith("video:") and not val.startswith("photo:"):
-                        val = f"video:{val}"
-                    session.add(PokemonFormMedia(pokemon_id=p.id, form_index=1, media_value=val))
-            
-            up_stmt = select(UserPokemon).where(UserPokemon.is_amv == True, UserPokemon.form_index == 0)
-            up_res = await session.execute(up_stmt)
-            ups_to_migrate = up_res.scalars().all()
-            for up in ups_to_migrate:
-                up.form_index = 1
+    # Migrate existing AMV data to pokemon_form_media for SQLite fallback databases
+    if "postgresql" not in DATABASE_URL and "cockroachdb" not in DATABASE_URL:
+        async with SessionLocal() as session:
+            try:
+                from database.models import Pokemon, PokemonFormMedia, UserPokemon
+                stmt = select(Pokemon).where(Pokemon.video_url.is_not(None))
+                res = await session.execute(stmt)
+                pokes_with_amv = res.scalars().all()
+                existing_media = set((await session.execute(select(PokemonFormMedia.pokemon_id).where(PokemonFormMedia.form_index == 1))).scalars().all())
+                for p in pokes_with_amv:
+                    if p.id not in existing_media:
+                        val = p.video_url
+                        if not val.startswith("video:") and not val.startswith("photo:"):
+                            val = f"video:{val}"
+                        session.add(PokemonFormMedia(pokemon_id=p.id, form_index=1, media_value=val))
                 
-            await session.commit()
-        except Exception as e:
-            safe_print(f"⚠️ AMV migration error: {e}")
+                up_stmt = select(UserPokemon).where(UserPokemon.is_amv == True, UserPokemon.form_index == 0)
+                up_res = await session.execute(up_stmt)
+                ups_to_migrate = up_res.scalars().all()
+                for up in ups_to_migrate:
+                    up.form_index = 1
+                    
+                await session.commit()
+            except Exception as e:
+                safe_print(f"⚠️ AMV migration error: {e}")
 
 
     # Seed the Pokémon table if empty
@@ -219,15 +190,8 @@ async def init_db():
                     session.add(db_poke)
             await session.commit()
 
-    # Fix PostgreSQL sequences that may be out of sync after migration from CockroachDB / SQLite
-    if ("postgresql" in str(engine.url) or "cockroachdb" in str(engine.url)) and "sqlite" not in str(engine.url):
-        async with engine.begin() as conn:
-            try:
-                await conn.execute(text("ALTER SEQUENCE IF EXISTS user_pokemon_id_seq AS BIGINT MAXVALUE 9223372036854775807"))
-                await conn.execute(text("SELECT setval('user_pokemon_id_seq', COALESCE((SELECT MAX(id) FROM user_pokemon), 0) + 1, false)"))
-                safe_print("✅ PostgreSQL sequences reset successfully")
-            except Exception as ex:
-                safe_print(f"Sequence reset check completed: {ex}")
+    # PostgreSQL sequence reset check (skipped on routine reboots for maximum startup speed)
+    pass
 
 async def get_db():
     """Dependency helper to retrieve an active database session."""

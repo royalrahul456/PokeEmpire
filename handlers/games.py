@@ -913,104 +913,6 @@ async def cmd_bowling(message: Message, db: AsyncSession):
     builder.row(create_styled_button(text="🎳 Bowl Again", key="games", callback_data="btn_launch_bowling", style="primary"))
     await message.answer(result_text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
-@router.message(Command("scratch", "scratchcard"))
-async def cmd_scratch(message: Message, db: AsyncSession):
-    user_id = message.from_user.id
-    parts = message.text.split()
-    if len(parts) < 2 or not parts[1].isdigit():
-        await message.answer("⚠️ <b>Scratch Card Format:</b> <code>/scratch &lt;bet_amount&gt;</code>\n<i>(e.g., <code>/scratch 500</code>)</i>", parse_mode="HTML")
-        return
-
-    bet = int(parts[1])
-    if bet < 10 or bet > 100000:
-        await message.answer("⚠️ Bet must be between 10 and 100,000 coins.", parse_mode="HTML")
-        return
-
-    stmt = select(User).where(User.id == user_id)
-    res = await db.execute(stmt)
-    user = res.scalar_one_or_none()
-
-    if not user or user.coins < bet:
-        user_coins = user.coins if user else 0
-        await message.answer(f"❌ You do not have enough coins! Balance: 💰 <code>{user_coins:,} coins</code>.", parse_mode="HTML")
-        return
-
-    user.coins -= bet
-    await db.flush()
-
-    icons = ["💎", "👑", "⭐", "🍒", "🪙", "⚡", "🍀"]
-    weights = [4, 8, 15, 25, 30, 20, 18]
-
-    grid = [random.choices(icons, weights=weights, k=1)[0] for _ in range(9)]
-    
-    counts = {}
-    for sym in grid:
-        counts[sym] = counts.get(sym, 0) + 1
-
-    max_count = max(counts.values())
-    top_sym = max(counts, key=counts.get)
-
-    if max_count >= 5:
-        multiplier = 8.0
-        win_title = f"MEGA 5-MATCH {top_sym}! 🌟"
-    elif max_count == 4:
-        multiplier = 4.0
-        win_title = f"LUCKY 4-MATCH {top_sym}! ✨"
-    elif max_count == 3:
-        multiplier = 2.5
-        win_title = f"MATCH 3 {top_sym}! 🎉"
-    else:
-        multiplier = 0.0
-        win_title = "NO MATCH! 💀"
-
-    win_amt = int(bet * multiplier)
-    net_profit = win_amt - bet
-
-    if win_amt > 0:
-        user.coins += win_amt
-        try:
-            from utils.trainer_level import log_transaction
-            await log_transaction(user_id, win_amt, "SCRATCH_WIN", f"Scratch card {win_title}", db)
-        except Exception:
-            pass
-    else:
-        try:
-            from utils.trainer_level import log_transaction
-            await log_transaction(user_id, -bet, "SCRATCH_LOSS", "Lost Scratch Card", db)
-        except Exception:
-            pass
-
-    await db.commit()
-
-    sender_name = html.escape(user.nickname or user.username or message.from_user.first_name or "Trainer")
-
-    card_str = (
-        f"┌───────────┐\n"
-        f"│ {grid[0]} │ {grid[1]} │ {grid[2]} │\n"
-        f"├───────────┤\n"
-        f"│ {grid[3]} │ {grid[4]} │ {grid[5]} │\n"
-        f"├───────────┤\n"
-        f"│ {grid[6]} │ {grid[7]} │ {grid[8]} │\n"
-        f"└───────────┘"
-    )
-
-    msg = await message.answer("🎟️ <b>SCRATCH CARD</b> 🎟️\n───────────────\n<i>Scratching the card...</i> 🪙✨", parse_mode="HTML")
-    await asyncio.sleep(0.6)
-
-    result_text = (
-        f"🎟️ <b>SCRATCH CARD RESULT</b> 🎟️\n"
-        f"───────────────\n"
-        f"<code>{card_str}</code>\n\n"
-        f"<b>{win_title}</b>\n"
-        f"<blockquote>👤 Trainer: <b>{sender_name}</b>\n"
-        f"💰 Multiplier: <b>{multiplier}x</b>\n"
-        f"💵 Payout: <b>+{win_amt:,} coins</b> (Net: <code>{'+' if net_profit >= 0 else ''}{net_profit:,}</code>)\n"
-        f"💳 Balance: <code>💰 {user.coins:,} coins</code></blockquote>"
-    )
-    builder = InlineKeyboardBuilder()
-    builder.row(create_styled_button(text="🎟️ Scratch Again", key="games", callback_data="btn_launch_scratch", style="primary"))
-    await msg.edit_text(result_text, reply_markup=builder.as_markup(), parse_mode="HTML")
-
 
 def generate_hint(name: str) -> str:
     revealed_indices = set()
@@ -1217,68 +1119,69 @@ async def start_auto_scribble_game(chat_id: int, bot: Bot, db: AsyncSession):
         raise e
 
 async def start_auto_nameguess_game(chat_id: int, bot: Bot, db: AsyncSession):
-    # Set a synchronous lock to prevent overlapping auto-starts in the same chat
     active_games[chat_id] = {
         "type": "initializing",
         "created_at": time.time()
     }
     
     try:
-        # Select random Pokémon
         stmt = select(Pokemon).order_by(func.random()).limit(1)
         res = await db.execute(stmt)
         pokemon = res.scalar_one_or_none()
 
         if not pokemon:
-            # Clean up lock
             if chat_id in active_games and active_games[chat_id].get("type") == "initializing":
                 del active_games[chat_id]
             return
 
         name = pokemon.name.lower()
+        initial_hint = generate_hint(name)
 
         active_games[chat_id] = {
             "type": "nameguess",
             "answer": name,
+            "pokemon_name": pokemon.name,
             "created_at": time.time(),
             "is_auto": True
         }
 
+        type_info = f" | Type: <b>{pokemon.type1}{'/' + pokemon.type2 if pokemon.type2 else ''}</b>" if getattr(pokemon, 'type1', None) else ""
+        gen_info = f" | Gen: <b>{pokemon.generation}</b>" if getattr(pokemon, 'generation', None) else ""
+
         text = (
             f"⚡ <b>POKÉMON NAME GUESS</b> ⚡\n"
-            f"◈ ────────────────── ◈\n"
+            f"◈ ────────────────────────── ◈\n"
             f"🧠 <i>Who's That Pokémon?</i>\n\n"
-            f"💭 Type the correct name in chat to win!\n"
+            f"🔍 <b>Clue:</b> <code>{initial_hint}</code>{type_info}{gen_info}\n"
             f"⏳ <b>Time Limit:</b> <code>60 seconds</code>\n"
-            f"🎁 <b>Reward:</b> <code>100-200 coins</code>\n"
-            f"◈ ────────────────── ◈"
+            f"🎁 <b>Reward:</b> <code>+150 to 250 coins</code>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"<i>Type the correct name in chat to win!</i>"
         )
         
-        # Add inline buttons
         builder = InlineKeyboardBuilder()
         builder.row(
-            create_styled_button(text="🔍 Hint", key="hint", callback_data="nameguess_hint"),
+            create_styled_button(text="🔍 Get Hint", key="hint", callback_data="nameguess_hint"),
             create_styled_button(text="🚫 Stop Game", key="cancel", style="danger", callback_data="nameguess_stop")
         )
         
-        sent_msg = await bot.send_photo(
+        sent_msg = await send_safe_media(
+            bot=bot,
             chat_id=chat_id,
-            photo=pokemon.image_url,
+            media_type="photo",
+            media_value=pokemon.image_url,
             caption=text,
             reply_markup=builder.as_markup(),
             parse_mode="HTML"
         )
         
         active_games[chat_id]["message_id"] = sent_msg.message_id
-        
-        # Start background timeout task
         asyncio.create_task(nameguess_timeout_task(chat_id, sent_msg.message_id, bot))
         
     except Exception as e:
-        # Clean up lock on error
         if chat_id in active_games and active_games[chat_id].get("type") == "initializing":
             del active_games[chat_id]
-        raise e
+        print(f"Error in start_auto_nameguess_game: {e}")
 
 # Settings are now dynamically managed by utils.settings cache & DB
 
@@ -1722,10 +1625,24 @@ async def check_game_answers(message: Message, db: AsyncSession):
     if game["type"] == "trivia":
         return
 
-    guess = message.text.strip().lower()
-    correct_answer = game["answer"]
+    import re
+    def normalize_poke_name(val: str) -> str:
+        return re.sub(r'[^a-z0-9]', '', val.lower())
 
-    if guess == correct_answer:
+    guess = message.text.strip().lower()
+    correct_answer = game["answer"].lower()
+
+    norm_guess = normalize_poke_name(guess)
+    norm_correct = normalize_poke_name(correct_answer)
+    norm_base = normalize_poke_name(correct_answer.split('-')[0])
+
+    is_match = (
+        guess == correct_answer or
+        (norm_guess and norm_guess == norm_correct) or
+        (len(norm_guess) >= 3 and norm_guess == norm_base)
+    )
+
+    if is_match:
         from aiogram.types import ReactionTypeEmoji
         try:
             await message.react(reaction=[ReactionTypeEmoji(emoji="🎉")])
@@ -1745,7 +1662,7 @@ async def check_game_answers(message: Message, db: AsyncSession):
             db.add(user)
             await db.flush()
 
-        # Determine reward (increased by 50 coins)
+        # Determine reward
         if game.get("type") == "nameguess":
             if message.chat.type in ["group", "supergroup"] and game.get("is_auto"):
                 reward = random.randint(150, 250)
@@ -1758,6 +1675,12 @@ async def check_game_answers(message: Message, db: AsyncSession):
                 reward = 150
 
         user.coins += reward
+        try:
+            from utils.trainer_level import log_transaction
+            await log_transaction(user_id, reward, "NAMEGUESS_WIN" if game.get("type") == "nameguess" else "SCRIBBLE_WIN", f"Won {game.get('type', 'game').title()} ({correct_answer.title()})", db)
+        except Exception:
+            pass
+
         await db.commit()
 
         # Clear active game and delete prompt/hint messages
@@ -1767,21 +1690,22 @@ async def check_game_answers(message: Message, db: AsyncSession):
         else:
             await cleanup_scribble_messages(message.bot, chat_id, game)
 
+        ans_display = game.get("pokemon_name") or correct_answer.title()
         # Format victory message in clean card style with blockquotes
         if game.get("type") == "nameguess":
             text = (
                 f"🎉 <b>Correct!</b>\n"
                 f"───────────────\n"
-                f"<blockquote>🧠 <b>Pokémon</b>: {correct_answer.title()}\n"
-                f"💰 <b>Earned</b>: +{reward} coins\n"
+                f"<blockquote>🧠 <b>Pokémon</b>: <b>{ans_display}</b>\n"
+                f"💰 <b>Earned</b>: <b>+{reward} coins</b>\n"
                 f"👥 <b>Winner</b>: {message.from_user.mention_html()}</blockquote>"
             )
         else:
             text = (
                 f"🎉 <b>Correct!</b>\n"
                 f"───────────────\n"
-                f"<blockquote>🛑 <b>Word</b>: {correct_answer.title()}\n"
-                f"💰 <b>Earned</b>: +{reward} coins\n"
+                f"<blockquote>🛑 <b>Word</b>: <b>{ans_display}</b>\n"
+                f"💰 <b>Earned</b>: <b>+{reward} coins</b>\n"
                 f"👥 <b>Winner</b>: {message.from_user.mention_html()}</blockquote>"
             )
 
@@ -2154,34 +2078,33 @@ async def cb_nameguess_hint(callback: CallbackQuery):
     chat_id = callback.message.chat.id
     
     if chat_id not in active_games:
-        await callback.answer("⚠️ No active nameguess game in this chat.", show_alert=True)
+        await callback.answer("⚠️ No active NameGuess game in this chat.", show_alert=True)
         return
         
     game = active_games[chat_id]
     if game.get("type") != "nameguess":
-        await callback.answer("⚠️ No active nameguess game in this chat.", show_alert=True)
+        await callback.answer("⚠️ No active NameGuess game in this chat.", show_alert=True)
         return
         
     # Check if hint already exists to avoid spamming
     if "hint_text" in game:
         hint_text = game["hint_text"]
-        await callback.answer(f"💡 Hint already sent: {hint_text}", show_alert=True)
+        await callback.answer(f"💡 Hint already revealed: {hint_text}", show_alert=True)
         return
         
     # Generate hint
     hint_text = generate_hint(game["answer"])
     game["hint_text"] = hint_text
     
-    # Send the hint message (replying to the photo message)
     hint_msg = await callback.message.reply(
-        f"💡 **Nameguess Hint**\n"
+        f"💡 <b>NameGuess Hint Revealed:</b>\n"
         f"───────────────\n"
-        f"👉 `{hint_text}`",
-        parse_mode="Markdown"
+        f"👉 <code>{hint_text}</code>",
+        parse_mode="HTML"
     )
     
     game["hint_message_id"] = hint_msg.message_id
-    await callback.answer("Hint generated!")
+    await callback.answer("💡 Hint revealed in chat!")
 
 
 @router.callback_query(F.data == "nameguess_stop")
@@ -2190,12 +2113,12 @@ async def cb_nameguess_stop(callback: CallbackQuery):
     user_id = callback.from_user.id
     
     if chat_id not in active_games:
-        await callback.answer("⚠️ No active nameguess game to stop.", show_alert=True)
+        await callback.answer("⚠️ No active NameGuess game to stop.", show_alert=True)
         return
         
     game = active_games[chat_id]
     if game.get("type") != "nameguess":
-        await callback.answer("⚠️ No active nameguess game to stop.", show_alert=True)
+        await callback.answer("⚠️ No active NameGuess game to stop.", show_alert=True)
         return
 
     # Check permission
@@ -2217,25 +2140,25 @@ async def cb_nameguess_stop(callback: CallbackQuery):
         await callback.answer("❌ Only group administrators or bot owners can stop the game.", show_alert=True)
         return
         
-    # Clean up the game state
     del active_games[chat_id]
-    
-    # Delete the prompt photo and hint messages
     await cleanup_nameguess_messages(callback.bot, chat_id, game)
     
-    # Send game stopped notification
-    await callback.message.answer(f"🛑 **Nameguess game stopped** by {callback.from_user.first_name}.")
+    ans_display = game.get("pokemon_name") or game["answer"].title()
+    await callback.message.answer(
+        f"🛑 <b>NameGuess game stopped</b> by {html.escape(callback.from_user.first_name)}.\n"
+        f"💡 The Pokémon was: <b>{ans_display}</b>",
+        parse_mode="HTML"
+    )
     await callback.answer("Game stopped!")
 
 
-@router.message(Command("nameguess"))
-@router.message(Command("guess"))
+@router.message(Command("nameguess", "guess"))
 async def cmd_nameguess(message: Message, db: AsyncSession):
     chat_id = message.chat.id
     user_id = message.from_user.id
             
     if chat_id in active_games:
-        await message.answer("⚠️ There is already an active trivia or scribble game in this chat! Answer it first.")
+        await message.answer("⚠️ There is already an active game (trivia/scribble/nameguess) in this chat! Answer it first.")
         return
 
     # Select random Pokémon
@@ -2244,49 +2167,63 @@ async def cmd_nameguess(message: Message, db: AsyncSession):
     pokemon = res.scalar_one_or_none()
 
     if not pokemon:
-        await message.answer("❌ Error initiating nameguess. Try again.")
+        await message.answer("❌ Error initiating NameGuess. No Pokémon found in database.")
         return
 
     name = pokemon.name.lower()
+    initial_hint = generate_hint(name)
 
     active_games[chat_id] = {
         "type": "nameguess",
         "answer": name,
+        "pokemon_name": pokemon.name,
         "created_at": time.time(),
         "is_auto": False
     }
 
+    type_info = f" | Type: <b>{pokemon.type1}{'/' + pokemon.type2 if pokemon.type2 else ''}</b>" if getattr(pokemon, 'type1', None) else ""
+    gen_info = f" | Gen: <b>{pokemon.generation}</b>" if getattr(pokemon, 'generation', None) else ""
+
     text = (
-        f"🧠 **Guess The Pokémon!**\n"
-        f"───────────────\n"
-        f"💭 **Think you know this Pokémon?**\n"
-        f"⌛ **You have 60 seconds!**\n"
-        f"💰 **Reward**: `150 coins`"
+        f"💡 <b>POKÉMON NAMEGUESS QUIZ</b> 💡\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"🧠 <i>Who's That Pokémon?</i>\n\n"
+        f"🔍 <b>Initial Clue:</b> <code>{initial_hint}</code>{type_info}{gen_info}\n"
+        f"⏳ <b>Time Limit:</b> <code>60 seconds</code>\n"
+        f"💰 <b>Reward:</b> <code>+150 to 250 coins</code>\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"<i>Type your answer directly in chat to win!</i>"
     )
     
-    # Add inline buttons
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="🔍 Hint", callback_data="nameguess_hint"),
-        InlineKeyboardButton(text="🚫 Stop Game", callback_data="nameguess_stop")
+        create_styled_button(text="🔍 Get Hint", key="hint", callback_data="nameguess_hint"),
+        create_styled_button(text="🚫 Stop Game", key="cancel", style="danger", callback_data="nameguess_stop")
     )
 
     try:
-        sent_msg = await message.answer_photo(
-            photo=pokemon.image_url,
+        sent_msg = await send_safe_media(
+            bot=message.bot,
+            chat_id=chat_id,
+            media_type="photo",
+            media_value=pokemon.image_url,
             caption=text,
             reply_markup=builder.as_markup(),
-            parse_mode="Markdown"
+            parse_mode="HTML",
+            message_to_reply=message
         )
         active_games[chat_id]["message_id"] = sent_msg.message_id
-        
-        # Start background timeout task
         asyncio.create_task(nameguess_timeout_task(chat_id, sent_msg.message_id, message.bot))
     except Exception as e:
         if chat_id in active_games:
             del active_games[chat_id]
-        print(f"Error sending nameguess photo: {e}")
-        await message.answer("❌ Error initiating nameguess. Make sure the bot has permission to send photos.")
+        print(f"Error initiating nameguess: {e}")
+        await message.answer("❌ Error initiating NameGuess. Please try again.")
+
+@router.callback_query(F.data.in_({"play_nameguess", "btn_launch_nameguess"}))
+async def cb_play_nameguess(callback: CallbackQuery, db: AsyncSession):
+    await callback.answer()
+    await cmd_nameguess(callback.message, db)
 
 # ==========================================
 # ADMIN SCRIBBLE TOGGLE & TRIVIA CALLBACKS

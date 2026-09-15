@@ -33,14 +33,13 @@ def get_games_hub_keyboard(main_bot_username: str = None) -> InlineKeyboardBuild
     )
     builder.row(
         create_styled_button(text="🎳 Bowling", key="games", callback_data="btn_launch_bowling", style="primary"),
-        create_styled_button(text="🎟️ Scratch Card", key="games", callback_data="btn_launch_scratch", style="primary")
+        create_styled_button(text="✊ Rock Paper Scissors", key="games", callback_data="btn_launch_rps", style="primary")
     )
     builder.row(
-        create_styled_button(text="✊ Rock Paper Scissors", key="games", callback_data="btn_launch_rps", style="primary"),
-        create_styled_button(text="✏️ Scribble", key="games", callback_data="btn_launch_scribble", style="primary")
+        create_styled_button(text="✏️ Scribble", key="games", callback_data="btn_launch_scribble", style="primary"),
+        create_styled_button(text="💡 NameGuess", key="games", callback_data="btn_launch_nameguess", style="success")
     )
     builder.row(
-        create_styled_button(text="💡 NameGuess", key="games", callback_data="btn_launch_nameguess", style="success"),
         create_styled_button(text="💰 Balance & Wallet", key="profile", callback_data="btn_check_balance", style="success")
     )
 
@@ -238,21 +237,6 @@ async def cmd_games_start(message: Message, db: AsyncSession):
         )
         return
 
-    if arg in ["scratch", "scratchcard"]:
-        builder = InlineKeyboardBuilder()
-        builder.row(create_styled_button(text="🎟️ Scratch Card", key="games", callback_data="btn_launch_scratch", style="primary"))
-        builder.row(create_styled_button(text="🎰 Games Hub", key="games", callback_data="btn_open_games_hub", style="primary"))
-        await message.answer(
-            f"🎟️ <b>Lucky Scratch Card</b>\n"
-            f"◈ ────────────────────────── ◈\n"
-            f"Scratch 3 matching symbols to win up to 8x multiplier!\n\n"
-            f"📌 <b>Format:</b> <code>/scratch &lt;bet&gt;</code>\n"
-            f"• Example: <code>/scratch 500</code>",
-            reply_markup=builder.as_markup(),
-            parse_mode="HTML"
-        )
-        return
-
     if arg in ["coinflip", "cf", "flip"]:
         await message.answer(
             f"🪙 <b>Coinflip Duel</b>\n"
@@ -394,7 +378,6 @@ async def cmd_games_help(message: Message):
         f"• 🏀 <b>Basketball:</b> <code>/basketball &lt;bet&gt;</code> - Score clean basket for 2x.\n"
         f"• ⚽ <b>Football:</b> <code>/football &lt;bet&gt;</code> - Score penalty past keeper for 1.8x.\n"
         f"• 🎳 <b>Bowling:</b> <code>/bowling &lt;bet&gt;</code> - Roll STRIKE for 3.5x or SPARE for 1.5x.\n"
-        f"• 🎟️ <b>Scratch Card:</b> <code>/scratch &lt;bet&gt;</code> - Match 3 icons for up to 8x.\n"
         f"• 🪙 <b>Coinflip:</b> <code>/coinflip &lt;bet&gt; &lt;h/t&gt;</code> - 50/50 flip to double your bet.\n"
         f"• ✊ <b>RPS:</b> <code>/rps &lt;bet&gt; &lt;rock/paper/scissors&gt;</code> - Rock Paper Scissors.\n"
         f"• ✏️ <b>Scribble:</b> <code>/scribble</code> - Unscramble Pokémon names in groups.\n"
@@ -429,12 +412,10 @@ async def cb_launch_slots(callback: CallbackQuery):
     )
 
 @router.callback_query(F.data == "btn_launch_spin")
-async def cb_launch_spin(callback: CallbackQuery):
+async def cb_launch_spin(callback: CallbackQuery, db: AsyncSession):
     await callback.answer()
-    await callback.message.answer(
-        "🎡 <b>Fortune Spin:</b>\nType <code>/spin</code> to spin the hourly wheel for rewards!",
-        parse_mode="HTML"
-    )
+    from handlers.games import cmd_spin
+    await cmd_spin(callback.message, db)
 
 @router.callback_query(F.data == "btn_launch_dice")
 async def cb_launch_dice(callback: CallbackQuery):
@@ -476,14 +457,6 @@ async def cb_launch_bowling(callback: CallbackQuery):
         parse_mode="HTML"
     )
 
-@router.callback_query(F.data == "btn_launch_scratch")
-async def cb_launch_scratch(callback: CallbackQuery):
-    await callback.answer()
-    await callback.message.answer(
-        "🎟️ <b>Lucky Scratch Card:</b>\nType <code>/scratch &lt;bet_amount&gt;</code> to scratch a card!\nExample: <code>/scratch 500</code>",
-        parse_mode="HTML"
-    )
-
 @router.callback_query(F.data == "btn_launch_rps")
 async def cb_launch_rps(callback: CallbackQuery):
     await callback.answer()
@@ -493,17 +466,13 @@ async def cb_launch_rps(callback: CallbackQuery):
     )
 
 @router.callback_query(F.data == "btn_launch_scribble")
-async def cb_launch_scribble(callback: CallbackQuery):
+async def cb_launch_scribble(callback: CallbackQuery, db: AsyncSession):
     await callback.answer()
-    await callback.message.answer(
-        "✏️ <b>Scribble:</b>\nType <code>/scribble</code> to start a drawing game in your group!",
-        parse_mode="HTML"
-    )
+    from handlers.games import cmd_scribble
+    await cmd_scribble(callback.message, db)
 
 @router.callback_query(F.data == "btn_launch_nameguess")
-async def cb_launch_nameguess(callback: CallbackQuery):
+async def cb_launch_nameguess(callback: CallbackQuery, db: AsyncSession):
     await callback.answer()
-    await callback.message.answer(
-        "💡 <b>NameGuess Quiz:</b>\nType <code>/nameguess</code> to start guessing Pokémon names!",
-        parse_mode="HTML"
-    )
+    from handlers.games import cmd_nameguess
+    await cmd_nameguess(callback.message, db)

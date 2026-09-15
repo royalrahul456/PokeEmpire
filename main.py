@@ -191,7 +191,6 @@ async def register_games_bot_commands(bot: Bot):
         BotCommand(command="basketball", description="🏀 Basketball Free Throw"),
         BotCommand(command="football", description="⚽ Football Penalty Shootout"),
         BotCommand(command="bowling", description="🎳 Bowling Strike Alley"),
-        BotCommand(command="scratch", description="🎟️ Lucky Scratch Card"),
         BotCommand(command="coinflip", description="🪙 Flip Coin 50/50"),
         BotCommand(command="rps", description="✊ Play Rock Paper Scissors"),
         BotCommand(command="scribble", description="✏️ Play Drawing & Guessing"),

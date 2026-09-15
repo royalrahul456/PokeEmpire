@@ -221,7 +221,7 @@ async def cmd_spin(message: Message, db: AsyncSession):
 
     now = datetime.utcnow()
     if user.last_spin_at:
-        cooldown = timedelta(hours=4)
+        cooldown = timedelta(hours=1)
         elapsed = now - user.last_spin_at
         if elapsed < cooldown:
             remaining = cooldown - elapsed
@@ -534,6 +534,483 @@ async def cmd_rps(message: Message, db: AsyncSession):
     await msg.edit_text("✊✋✌️ Dueling... ✊✋✌️\n───────────────\n💥 *SHOOT!* 💥")
     await asyncio.sleep(0.5)
     await msg.edit_text(text, parse_mode="HTML")
+
+@router.message(Command("dice", "roll"))
+async def cmd_dice(message: Message, db: AsyncSession):
+    user_id = message.from_user.id
+    parts = message.text.split()
+    if len(parts) < 2 or not parts[1].isdigit():
+        await message.answer("⚠️ <b>Dice Duel Format:</b> <code>/dice &lt;bet_amount&gt;</code>\n<i>(e.g., <code>/dice 500</code>)</i>", parse_mode="HTML")
+        return
+
+    bet = int(parts[1])
+    if bet < 10 or bet > 100000:
+        await message.answer("⚠️ Bet must be between 10 and 100,000 coins.", parse_mode="HTML")
+        return
+
+    stmt = select(User).where(User.id == user_id)
+    res = await db.execute(stmt)
+    user = res.scalar_one_or_none()
+
+    if not user or user.coins < bet:
+        user_coins = user.coins if user else 0
+        await message.answer(f"❌ You do not have enough coins! Balance: 💰 <code>{user_coins:,} coins</code>.", parse_mode="HTML")
+        return
+
+    user.coins -= bet
+    await db.flush()
+
+    sender_name = html.escape(user.nickname or user.username or message.from_user.first_name or "Trainer")
+
+    await message.answer(f"🎲 <b>Dice Duel</b> against PokeArena AI!\n👤 <b>{sender_name}</b> throws first:", parse_mode="HTML")
+    user_dice_msg = await message.answer_dice(emoji="🎲")
+    await asyncio.sleep(2.5)
+    user_roll = user_dice_msg.dice.value
+
+    await message.answer("🤖 <b>PokeArena AI</b> throws:", parse_mode="HTML")
+    bot_dice_msg = await message.answer_dice(emoji="🎲")
+    await asyncio.sleep(2.5)
+    bot_roll = bot_dice_msg.dice.value
+
+    if user_roll > bot_roll:
+        win_amt = bet * 2
+        user.coins += win_amt
+        try:
+            from utils.trainer_level import log_transaction
+            await log_transaction(user_id, bet, "DICE_WIN", f"Won Dice Duel ({user_roll} vs {bot_roll})", db)
+        except Exception:
+            pass
+        result_text = (
+            f"🎲 <b>DICE DUEL VICTORY!</b> 🎲\n"
+            f"───────────────\n"
+            f"<blockquote>👤 You rolled: <b>{user_roll}</b> 🎲\n"
+            f"🤖 Bot rolled: <b>{bot_roll}</b> 🎲\n"
+            f"🎉 Result: <b>Victory!</b>\n"
+            f"💰 Won: <b>+{win_amt:,} coins</b> (Net: <code>+{bet:,}</code>)\n"
+            f"💳 Balance: <code>💰 {user.coins:,} coins</code></blockquote>"
+        )
+    elif user_roll == bot_roll:
+        user.coins += bet
+        result_text = (
+            f"🎲 <b>DICE DUEL DRAW!</b> 🎲\n"
+            f"───────────────\n"
+            f"<blockquote>👤 You rolled: <b>{user_roll}</b> 🎲\n"
+            f"🤖 Bot rolled: <b>{bot_roll}</b> 🎲\n"
+            f"🤝 Result: <b>Tie / Draw!</b>\n"
+            f"💰 Refunded: <b>+{bet:,} coins</b>\n"
+            f"💳 Balance: <code>💰 {user.coins:,} coins</code></blockquote>"
+        )
+    else:
+        try:
+            from utils.trainer_level import log_transaction
+            await log_transaction(user_id, -bet, "DICE_LOSS", f"Lost Dice Duel ({user_roll} vs {bot_roll})", db)
+        except Exception:
+            pass
+        result_text = (
+            f"🎲 <b>DICE DUEL DEFEAT!</b> 🎲\n"
+            f"───────────────\n"
+            f"<blockquote>👤 You rolled: <b>{user_roll}</b> 🎲\n"
+            f"🤖 Bot rolled: <b>{bot_roll}</b> 🎲\n"
+            f"💀 Result: <b>Defeat!</b>\n"
+            f"💰 Lost: <b>-{bet:,} coins</b>\n"
+            f"💳 Balance: <code>💰 {user.coins:,} coins</code></blockquote>"
+        )
+
+    await db.commit()
+    builder = InlineKeyboardBuilder()
+    builder.row(create_styled_button(text="🎲 Roll Again", key="games", callback_data="btn_launch_dice", style="primary"))
+    await message.answer(result_text, reply_markup=builder.as_markup(), parse_mode="HTML")
+
+@router.message(Command("darts", "dart"))
+async def cmd_darts(message: Message, db: AsyncSession):
+    user_id = message.from_user.id
+    parts = message.text.split()
+    if len(parts) < 2 or not parts[1].isdigit():
+        await message.answer("⚠️ <b>Darts Format:</b> <code>/darts &lt;bet_amount&gt;</code>\n<i>(e.g., <code>/darts 500</code>)</i>", parse_mode="HTML")
+        return
+
+    bet = int(parts[1])
+    if bet < 10 or bet > 100000:
+        await message.answer("⚠️ Bet must be between 10 and 100,000 coins.", parse_mode="HTML")
+        return
+
+    stmt = select(User).where(User.id == user_id)
+    res = await db.execute(stmt)
+    user = res.scalar_one_or_none()
+
+    if not user or user.coins < bet:
+        user_coins = user.coins if user else 0
+        await message.answer(f"❌ You do not have enough coins! Balance: 💰 <code>{user_coins:,} coins</code>.", parse_mode="HTML")
+        return
+
+    user.coins -= bet
+    await db.flush()
+
+    sender_name = html.escape(user.nickname or user.username or message.from_user.first_name or "Trainer")
+    await message.answer(f"🎯 <b>{sender_name}</b> throws a dart at the target!", parse_mode="HTML")
+    dice_msg = await message.answer_dice(emoji="🎯")
+    await asyncio.sleep(2.5)
+    score = dice_msg.dice.value
+
+    if score == 6:
+        multiplier = 3.0
+        label = "🎯 BULLSEYE! DEAD CENTER!"
+    elif score in (4, 5):
+        multiplier = 1.5
+        label = "✨ INNER RING HIT!"
+    elif score in (2, 3):
+        multiplier = 0.5
+        label = "🔘 OUTER RING HIT (Partial refund)"
+    else:
+        multiplier = 0.0
+        label = "💨 COMPLETE MISS! Off-target."
+
+    win_amt = int(bet * multiplier)
+    net_profit = win_amt - bet
+
+    if win_amt > 0:
+        user.coins += win_amt
+        try:
+            from utils.trainer_level import log_transaction
+            await log_transaction(user_id, win_amt, "DARTS_WIN", f"Won Darts ({multiplier}x)", db)
+        except Exception:
+            pass
+    else:
+        try:
+            from utils.trainer_level import log_transaction
+            await log_transaction(user_id, -bet, "DARTS_LOSS", "Lost Darts", db)
+        except Exception:
+            pass
+
+    await db.commit()
+
+    result_text = (
+        f"🎯 <b>DARTS RESULT</b> 🎯\n"
+        f"───────────────\n"
+        f"🎯 <b>{label}</b> (Score: <b>{score}/6</b>)\n\n"
+        f"<blockquote>👤 Trainer: <b>{sender_name}</b>\n"
+        f"💰 Multiplier: <b>{multiplier}x</b>\n"
+        f"💵 Payout: <b>+{win_amt:,} coins</b> (Net: <code>{'+' if net_profit >= 0 else ''}{net_profit:,}</code>)\n"
+        f"💳 Balance: <code>💰 {user.coins:,} coins</code></blockquote>"
+    )
+    builder = InlineKeyboardBuilder()
+    builder.row(create_styled_button(text="🎯 Throw Again", key="games", callback_data="btn_launch_darts", style="primary"))
+    await message.answer(result_text, reply_markup=builder.as_markup(), parse_mode="HTML")
+
+@router.message(Command("basketball", "basket", "bb"))
+async def cmd_basketball(message: Message, db: AsyncSession):
+    user_id = message.from_user.id
+    parts = message.text.split()
+    if len(parts) < 2 or not parts[1].isdigit():
+        await message.answer("⚠️ <b>Basketball Format:</b> <code>/basketball &lt;bet_amount&gt;</code>\n<i>(e.g., <code>/basketball 500</code>)</i>", parse_mode="HTML")
+        return
+
+    bet = int(parts[1])
+    if bet < 10 or bet > 100000:
+        await message.answer("⚠️ Bet must be between 10 and 100,000 coins.", parse_mode="HTML")
+        return
+
+    stmt = select(User).where(User.id == user_id)
+    res = await db.execute(stmt)
+    user = res.scalar_one_or_none()
+
+    if not user or user.coins < bet:
+        user_coins = user.coins if user else 0
+        await message.answer(f"❌ You do not have enough coins! Balance: 💰 <code>{user_coins:,} coins</code>.", parse_mode="HTML")
+        return
+
+    user.coins -= bet
+    await db.flush()
+
+    sender_name = html.escape(user.nickname or user.username or message.from_user.first_name or "Trainer")
+    await message.answer(f"🏀 <b>{sender_name}</b> shoots for the hoop!", parse_mode="HTML")
+    dice_msg = await message.answer_dice(emoji="🏀")
+    await asyncio.sleep(2.5)
+    score = dice_msg.dice.value
+
+    if score in (4, 5):
+        multiplier = 2.0
+        label = "🏀 SWISH! BASKET SCORED! 🎉"
+    else:
+        multiplier = 0.0
+        label = "❌ MISSED THE HOOP! 💀"
+
+    win_amt = int(bet * multiplier)
+    net_profit = win_amt - bet
+
+    if win_amt > 0:
+        user.coins += win_amt
+        try:
+            from utils.trainer_level import log_transaction
+            await log_transaction(user_id, win_amt, "BASKETBALL_WIN", "Won Basketball Shot", db)
+        except Exception:
+            pass
+    else:
+        try:
+            from utils.trainer_level import log_transaction
+            await log_transaction(user_id, -bet, "BASKETBALL_LOSS", "Lost Basketball Shot", db)
+        except Exception:
+            pass
+
+    await db.commit()
+
+    result_text = (
+        f"🏀 <b>BASKETBALL SHOT RESULT</b> 🏀\n"
+        f"───────────────\n"
+        f"<b>{label}</b>\n\n"
+        f"<blockquote>👤 Trainer: <b>{sender_name}</b>\n"
+        f"💰 Multiplier: <b>{multiplier}x</b>\n"
+        f"💵 Payout: <b>+{win_amt:,} coins</b> (Net: <code>{'+' if net_profit >= 0 else ''}{net_profit:,}</code>)\n"
+        f"💳 Balance: <code>💰 {user.coins:,} coins</code></blockquote>"
+    )
+    builder = InlineKeyboardBuilder()
+    builder.row(create_styled_button(text="🏀 Shoot Again", key="games", callback_data="btn_launch_basket", style="primary"))
+    await message.answer(result_text, reply_markup=builder.as_markup(), parse_mode="HTML")
+
+@router.message(Command("football", "soccer", "goal"))
+async def cmd_football(message: Message, db: AsyncSession):
+    user_id = message.from_user.id
+    parts = message.text.split()
+    if len(parts) < 2 or not parts[1].isdigit():
+        await message.answer("⚠️ <b>Football Penalty Format:</b> <code>/football &lt;bet_amount&gt;</code>\n<i>(e.g., <code>/football 500</code>)</i>", parse_mode="HTML")
+        return
+
+    bet = int(parts[1])
+    if bet < 10 or bet > 100000:
+        await message.answer("⚠️ Bet must be between 10 and 100,000 coins.", parse_mode="HTML")
+        return
+
+    stmt = select(User).where(User.id == user_id)
+    res = await db.execute(stmt)
+    user = res.scalar_one_or_none()
+
+    if not user or user.coins < bet:
+        user_coins = user.coins if user else 0
+        await message.answer(f"❌ You do not have enough coins! Balance: 💰 <code>{user_coins:,} coins</code>.", parse_mode="HTML")
+        return
+
+    user.coins -= bet
+    await db.flush()
+
+    sender_name = html.escape(user.nickname or user.username or message.from_user.first_name or "Trainer")
+    await message.answer(f"⚽ <b>{sender_name}</b> steps up for a penalty kick!", parse_mode="HTML")
+    dice_msg = await message.answer_dice(emoji="⚽")
+    await asyncio.sleep(2.5)
+    score = dice_msg.dice.value
+
+    if score in (3, 4, 5):
+        multiplier = 1.8
+        label = "⚽ GOOOOAL! BACK OF THE NET! 🚀"
+    else:
+        multiplier = 0.0
+        label = "🧤 SAVED BY KEEPER / WIDE! 💀"
+
+    win_amt = int(bet * multiplier)
+    net_profit = win_amt - bet
+
+    if win_amt > 0:
+        user.coins += win_amt
+        try:
+            from utils.trainer_level import log_transaction
+            await log_transaction(user_id, win_amt, "FOOTBALL_WIN", "Scored Football Penalty", db)
+        except Exception:
+            pass
+    else:
+        try:
+            from utils.trainer_level import log_transaction
+            await log_transaction(user_id, -bet, "FOOTBALL_LOSS", "Missed Football Penalty", db)
+        except Exception:
+            pass
+
+    await db.commit()
+
+    result_text = (
+        f"⚽ <b>PENALTY SHOOTOUT RESULT</b> ⚽\n"
+        f"───────────────\n"
+        f"<b>{label}</b>\n\n"
+        f"<blockquote>👤 Trainer: <b>{sender_name}</b>\n"
+        f"💰 Multiplier: <b>{multiplier}x</b>\n"
+        f"💵 Payout: <b>+{win_amt:,} coins</b> (Net: <code>{'+' if net_profit >= 0 else ''}{net_profit:,}</code>)\n"
+        f"💳 Balance: <code>💰 {user.coins:,} coins</code></blockquote>"
+    )
+    builder = InlineKeyboardBuilder()
+    builder.row(create_styled_button(text="⚽ Kick Again", key="games", callback_data="btn_launch_football", style="primary"))
+    await message.answer(result_text, reply_markup=builder.as_markup(), parse_mode="HTML")
+
+@router.message(Command("bowling", "bowl"))
+async def cmd_bowling(message: Message, db: AsyncSession):
+    user_id = message.from_user.id
+    parts = message.text.split()
+    if len(parts) < 2 or not parts[1].isdigit():
+        await message.answer("⚠️ <b>Bowling Format:</b> <code>/bowling &lt;bet_amount&gt;</code>\n<i>(e.g., <code>/bowling 500</code>)</i>", parse_mode="HTML")
+        return
+
+    bet = int(parts[1])
+    if bet < 10 or bet > 100000:
+        await message.answer("⚠️ Bet must be between 10 and 100,000 coins.", parse_mode="HTML")
+        return
+
+    stmt = select(User).where(User.id == user_id)
+    res = await db.execute(stmt)
+    user = res.scalar_one_or_none()
+
+    if not user or user.coins < bet:
+        user_coins = user.coins if user else 0
+        await message.answer(f"❌ You do not have enough coins! Balance: 💰 <code>{user_coins:,} coins</code>.", parse_mode="HTML")
+        return
+
+    user.coins -= bet
+    await db.flush()
+
+    sender_name = html.escape(user.nickname or user.username or message.from_user.first_name or "Trainer")
+    await message.answer(f"🎳 <b>{sender_name}</b> rolls the bowling ball down the lane!", parse_mode="HTML")
+    dice_msg = await message.answer_dice(emoji="🎳")
+    await asyncio.sleep(2.5)
+    score = dice_msg.dice.value
+
+    if score == 6:
+        multiplier = 3.5
+        label = "🎳 STRIKE! ALL PINS DOWN! 💥"
+    elif score in (4, 5):
+        multiplier = 1.5
+        label = "✨ SPARE! Great hit!"
+    elif score in (2, 3):
+        multiplier = 0.5
+        label = "🎳 Partial Knockdown (Partial refund)"
+    else:
+        multiplier = 0.0
+        label = "💨 GUTTER BALL! 0 Pins. 💀"
+
+    win_amt = int(bet * multiplier)
+    net_profit = win_amt - bet
+
+    if win_amt > 0:
+        user.coins += win_amt
+        try:
+            from utils.trainer_level import log_transaction
+            await log_transaction(user_id, win_amt, "BOWLING_WIN", f"Bowling result ({score}/6)", db)
+        except Exception:
+            pass
+    else:
+        try:
+            from utils.trainer_level import log_transaction
+            await log_transaction(user_id, -bet, "BOWLING_LOSS", "Lost Bowling", db)
+        except Exception:
+            pass
+
+    await db.commit()
+
+    result_text = (
+        f"🎳 <b>BOWLING RESULT</b> 🎳\n"
+        f"───────────────\n"
+        f"<b>{label}</b> (Pins: <b>{score}/6</b>)\n\n"
+        f"<blockquote>👤 Trainer: <b>{sender_name}</b>\n"
+        f"💰 Multiplier: <b>{multiplier}x</b>\n"
+        f"💵 Payout: <b>+{win_amt:,} coins</b> (Net: <code>{'+' if net_profit >= 0 else ''}{net_profit:,}</code>)\n"
+        f"💳 Balance: <code>💰 {user.coins:,} coins</code></blockquote>"
+    )
+    builder = InlineKeyboardBuilder()
+    builder.row(create_styled_button(text="🎳 Bowl Again", key="games", callback_data="btn_launch_bowling", style="primary"))
+    await message.answer(result_text, reply_markup=builder.as_markup(), parse_mode="HTML")
+
+@router.message(Command("scratch", "scratchcard"))
+async def cmd_scratch(message: Message, db: AsyncSession):
+    user_id = message.from_user.id
+    parts = message.text.split()
+    if len(parts) < 2 or not parts[1].isdigit():
+        await message.answer("⚠️ <b>Scratch Card Format:</b> <code>/scratch &lt;bet_amount&gt;</code>\n<i>(e.g., <code>/scratch 500</code>)</i>", parse_mode="HTML")
+        return
+
+    bet = int(parts[1])
+    if bet < 10 or bet > 100000:
+        await message.answer("⚠️ Bet must be between 10 and 100,000 coins.", parse_mode="HTML")
+        return
+
+    stmt = select(User).where(User.id == user_id)
+    res = await db.execute(stmt)
+    user = res.scalar_one_or_none()
+
+    if not user or user.coins < bet:
+        user_coins = user.coins if user else 0
+        await message.answer(f"❌ You do not have enough coins! Balance: 💰 <code>{user_coins:,} coins</code>.", parse_mode="HTML")
+        return
+
+    user.coins -= bet
+    await db.flush()
+
+    icons = ["💎", "👑", "⭐", "🍒", "🪙", "⚡", "🍀"]
+    weights = [4, 8, 15, 25, 30, 20, 18]
+
+    grid = [random.choices(icons, weights=weights, k=1)[0] for _ in range(9)]
+    
+    counts = {}
+    for sym in grid:
+        counts[sym] = counts.get(sym, 0) + 1
+
+    max_count = max(counts.values())
+    top_sym = max(counts, key=counts.get)
+
+    if max_count >= 5:
+        multiplier = 8.0
+        win_title = f"MEGA 5-MATCH {top_sym}! 🌟"
+    elif max_count == 4:
+        multiplier = 4.0
+        win_title = f"LUCKY 4-MATCH {top_sym}! ✨"
+    elif max_count == 3:
+        multiplier = 2.5
+        win_title = f"MATCH 3 {top_sym}! 🎉"
+    else:
+        multiplier = 0.0
+        win_title = "NO MATCH! 💀"
+
+    win_amt = int(bet * multiplier)
+    net_profit = win_amt - bet
+
+    if win_amt > 0:
+        user.coins += win_amt
+        try:
+            from utils.trainer_level import log_transaction
+            await log_transaction(user_id, win_amt, "SCRATCH_WIN", f"Scratch card {win_title}", db)
+        except Exception:
+            pass
+    else:
+        try:
+            from utils.trainer_level import log_transaction
+            await log_transaction(user_id, -bet, "SCRATCH_LOSS", "Lost Scratch Card", db)
+        except Exception:
+            pass
+
+    await db.commit()
+
+    sender_name = html.escape(user.nickname or user.username or message.from_user.first_name or "Trainer")
+
+    card_str = (
+        f"┌───────────┐\n"
+        f"│ {grid[0]} │ {grid[1]} │ {grid[2]} │\n"
+        f"├───────────┤\n"
+        f"│ {grid[3]} │ {grid[4]} │ {grid[5]} │\n"
+        f"├───────────┤\n"
+        f"│ {grid[6]} │ {grid[7]} │ {grid[8]} │\n"
+        f"└───────────┘"
+    )
+
+    msg = await message.answer("🎟️ <b>SCRATCH CARD</b> 🎟️\n───────────────\n<i>Scratching the card...</i> 🪙✨", parse_mode="HTML")
+    await asyncio.sleep(0.6)
+
+    result_text = (
+        f"🎟️ <b>SCRATCH CARD RESULT</b> 🎟️\n"
+        f"───────────────\n"
+        f"<code>{card_str}</code>\n\n"
+        f"<b>{win_title}</b>\n"
+        f"<blockquote>👤 Trainer: <b>{sender_name}</b>\n"
+        f"💰 Multiplier: <b>{multiplier}x</b>\n"
+        f"💵 Payout: <b>+{win_amt:,} coins</b> (Net: <code>{'+' if net_profit >= 0 else ''}{net_profit:,}</code>)\n"
+        f"💳 Balance: <code>💰 {user.coins:,} coins</code></blockquote>"
+    )
+    builder = InlineKeyboardBuilder()
+    builder.row(create_styled_button(text="🎟️ Scratch Again", key="games", callback_data="btn_launch_scratch", style="primary"))
+    await msg.edit_text(result_text, reply_markup=builder.as_markup(), parse_mode="HTML")
+
 
 def generate_hint(name: str) -> str:
     revealed_indices = set()

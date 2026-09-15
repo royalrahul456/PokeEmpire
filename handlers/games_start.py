@@ -24,12 +24,24 @@ def get_games_hub_keyboard(main_bot_username: str = None) -> InlineKeyboardBuild
         create_styled_button(text="🎡 Spin Wheel", key="games", callback_data="btn_launch_spin", style="success")
     )
     builder.row(
+        create_styled_button(text="🎲 Dice Duel", key="games", callback_data="btn_launch_dice", style="primary"),
+        create_styled_button(text="🎯 Darts Target", key="games", callback_data="btn_launch_darts", style="primary")
+    )
+    builder.row(
+        create_styled_button(text="🏀 Basketball", key="games", callback_data="btn_launch_basket", style="primary"),
+        create_styled_button(text="⚽ Football", key="games", callback_data="btn_launch_football", style="primary")
+    )
+    builder.row(
+        create_styled_button(text="🎳 Bowling", key="games", callback_data="btn_launch_bowling", style="primary"),
+        create_styled_button(text="🎟️ Scratch Card", key="games", callback_data="btn_launch_scratch", style="primary")
+    )
+    builder.row(
         create_styled_button(text="✊ Rock Paper Scissors", key="games", callback_data="btn_launch_rps", style="primary"),
         create_styled_button(text="✏️ Scribble", key="games", callback_data="btn_launch_scribble", style="primary")
     )
     builder.row(
         create_styled_button(text="💡 NameGuess", key="games", callback_data="btn_launch_nameguess", style="success"),
-        create_styled_button(text="💰 Balance", key="profile", callback_data="btn_check_balance", style="success")
+        create_styled_button(text="💰 Balance & Wallet", key="profile", callback_data="btn_check_balance", style="success")
     )
 
     main_username = main_bot_username or getattr(config, "MAIN_BOT_USERNAME", "pokeempirebot")
@@ -43,6 +55,219 @@ def get_games_hub_keyboard(main_bot_username: str = None) -> InlineKeyboardBuild
 @router.message(CommandStart())
 async def cmd_games_start(message: Message, db: AsyncSession):
     user_name = html.escape(message.from_user.first_name or "Trainer")
+    parts = message.text.split(maxsplit=1)
+    arg = parts[1].strip().lower() if len(parts) > 1 else ""
+
+    if arg == "mines":
+        builder = InlineKeyboardBuilder()
+        builder.row(create_styled_button(text="💣 Play Mines", key="games", callback_data="btn_launch_mines", style="danger"))
+        builder.row(create_styled_button(text="🎰 Games Hub", key="games", callback_data="btn_open_games_hub", style="primary"))
+        await message.answer(
+            f"💣 <b>Mines Mini-Game</b>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"Navigate the minefield and cash out before detonating a bomb!\n\n"
+            f"📌 <b>Format:</b> <code>/mines &lt;bet&gt; [mines_count]</code>\n"
+            f"• Mines count: 1 to 24 (default: 3)\n"
+            f"• Example: <code>/mines 500 3</code>\n\n"
+            f"<i>Type the command above to start playing!</i>",
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
+        return
+
+    if arg in ["slot", "slots", "casino"]:
+        builder = InlineKeyboardBuilder()
+        builder.row(create_styled_button(text="🎰 Play Slots", key="games", callback_data="btn_launch_slots", style="primary"))
+        builder.row(create_styled_button(text="🎰 Games Hub", key="games", callback_data="btn_open_games_hub", style="primary"))
+        await message.answer(
+            f"🎰 <b>Slot Machine Casino</b>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"Match 3 symbols to trigger jackpots up to 10x your bet!\n\n"
+            f"📌 <b>Format:</b> <code>/slot &lt;bet&gt;</code>\n"
+            f"• Example: <code>/slot 500</code>\n\n"
+            f"<i>Type the command above to roll the reels!</i>",
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
+        return
+
+    if arg in ["spin", "wheel"]:
+        builder = InlineKeyboardBuilder()
+        builder.row(create_styled_button(text="🎡 Spin Fortune Wheel", key="games", callback_data="btn_launch_spin", style="success"))
+        builder.row(create_styled_button(text="🎰 Games Hub", key="games", callback_data="btn_open_games_hub", style="primary"))
+        await message.answer(
+            f"🎡 <b>Hourly Fortune Wheel</b>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"Spin the fortune wheel once every hour for free coins!\n\n"
+            f"📌 <b>Format:</b> <code>/spin</code>",
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
+        return
+
+    if arg in ["ttc", "xo", "tictactoe"]:
+        builder = InlineKeyboardBuilder()
+        builder.row(create_styled_button(text="❌ Play Tic-Tac-Toe", key="games", callback_data="btn_launch_xo", style="primary"))
+        builder.row(create_styled_button(text="🎰 Games Hub", key="games", callback_data="btn_open_games_hub", style="primary"))
+        await message.answer(
+            f"❌ <b>Tic-Tac-Toe (XO Duel)</b>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"Challenge an AI bot in DM or challenge players in group chats!\n\n"
+            f"📌 <b>Format:</b> <code>/ttc &lt;bet&gt;</code>\n"
+            f"• Example: <code>/ttc 200</code>",
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
+        return
+
+    if arg in ["rps", "rockpaperscissors"]:
+        builder = InlineKeyboardBuilder()
+        builder.row(create_styled_button(text="✊ Play RPS", key="games", callback_data="btn_launch_rps", style="primary"))
+        builder.row(create_styled_button(text="🎰 Games Hub", key="games", callback_data="btn_open_games_hub", style="primary"))
+        await message.answer(
+            f"✊ <b>Rock Paper Scissors</b>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"Play rock, paper, or scissors against the bot!\n\n"
+            f"📌 <b>Format:</b> <code>/rps &lt;bet&gt; &lt;rock/paper/scissors&gt;</code>\n"
+            f"• Example: <code>/rps 100 rock</code>",
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
+        return
+
+    if arg in ["scribble", "unscramble"]:
+        builder = InlineKeyboardBuilder()
+        builder.row(create_styled_button(text="✏️ Start Scribble", key="games", callback_data="btn_launch_scribble", style="primary"))
+        builder.row(create_styled_button(text="🎰 Games Hub", key="games", callback_data="btn_open_games_hub", style="primary"))
+        await message.answer(
+            f"✏️ <b>Scribble / Unscramble</b>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"Unscramble Pokémon names and guess fast for coin rewards!\n\n"
+            f"📌 <b>Format:</b> <code>/scribble</code>",
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
+        return
+
+    if arg in ["nameguess", "guess"]:
+        builder = InlineKeyboardBuilder()
+        builder.row(create_styled_button(text="💡 Start NameGuess", key="games", callback_data="btn_launch_nameguess", style="success"))
+        builder.row(create_styled_button(text="🎰 Games Hub", key="games", callback_data="btn_open_games_hub", style="primary"))
+        await message.answer(
+            f"💡 <b>Pokémon NameGuess Quiz</b>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"Guess the hidden Pokémon name from hints!\n\n"
+            f"📌 <b>Format:</b> <code>/nameguess</code>",
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
+        return
+
+    if arg in ["dice", "roll"]:
+        builder = InlineKeyboardBuilder()
+        builder.row(create_styled_button(text="🎲 Roll Dice", key="games", callback_data="btn_launch_dice", style="primary"))
+        builder.row(create_styled_button(text="🎰 Games Hub", key="games", callback_data="btn_open_games_hub", style="primary"))
+        await message.answer(
+            f"🎲 <b>Dice Duel vs AI</b>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"Roll a higher dice than the AI to win 2x your bet!\n\n"
+            f"📌 <b>Format:</b> <code>/dice &lt;bet&gt;</code>\n"
+            f"• Example: <code>/dice 500</code>",
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
+        return
+
+    if arg in ["darts", "dart"]:
+        builder = InlineKeyboardBuilder()
+        builder.row(create_styled_button(text="🎯 Throw Dart", key="games", callback_data="btn_launch_darts", style="primary"))
+        builder.row(create_styled_button(text="🎰 Games Hub", key="games", callback_data="btn_open_games_hub", style="primary"))
+        await message.answer(
+            f"🎯 <b>Darts Target Challenge</b>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"Hit the bullseye for 3x jackpot or inner rings for 1.5x!\n\n"
+            f"📌 <b>Format:</b> <code>/darts &lt;bet&gt;</code>\n"
+            f"• Example: <code>/darts 500</code>",
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
+        return
+
+    if arg in ["basket", "basketball", "bb"]:
+        builder = InlineKeyboardBuilder()
+        builder.row(create_styled_button(text="🏀 Shoot Basket", key="games", callback_data="btn_launch_basket", style="primary"))
+        builder.row(create_styled_button(text="🎰 Games Hub", key="games", callback_data="btn_open_games_hub", style="primary"))
+        await message.answer(
+            f"🏀 <b>Basketball Free Throw</b>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"Score a clean basket to win 2x your bet!\n\n"
+            f"📌 <b>Format:</b> <code>/basketball &lt;bet&gt;</code>\n"
+            f"• Example: <code>/basketball 500</code>",
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
+        return
+
+    if arg in ["football", "soccer", "goal"]:
+        builder = InlineKeyboardBuilder()
+        builder.row(create_styled_button(text="⚽ Kick Penalty", key="games", callback_data="btn_launch_football", style="primary"))
+        builder.row(create_styled_button(text="🎰 Games Hub", key="games", callback_data="btn_open_games_hub", style="primary"))
+        await message.answer(
+            f"⚽ <b>Football Penalty Shootout</b>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"Score a penalty goal past the keeper to win 1.8x your bet!\n\n"
+            f"📌 <b>Format:</b> <code>/football &lt;bet&gt;</code>\n"
+            f"• Example: <code>/football 500</code>",
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
+        return
+
+    if arg in ["bowling", "bowl"]:
+        builder = InlineKeyboardBuilder()
+        builder.row(create_styled_button(text="🎳 Roll Bowling", key="games", callback_data="btn_launch_bowling", style="primary"))
+        builder.row(create_styled_button(text="🎰 Games Hub", key="games", callback_data="btn_open_games_hub", style="primary"))
+        await message.answer(
+            f"🎳 <b>Bowling Strike Alley</b>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"Roll a STRIKE for 3.5x payout or SPARE for 1.5x!\n\n"
+            f"📌 <b>Format:</b> <code>/bowling &lt;bet&gt;</code>\n"
+            f"• Example: <code>/bowling 500</code>",
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
+        return
+
+    if arg in ["scratch", "scratchcard"]:
+        builder = InlineKeyboardBuilder()
+        builder.row(create_styled_button(text="🎟️ Scratch Card", key="games", callback_data="btn_launch_scratch", style="primary"))
+        builder.row(create_styled_button(text="🎰 Games Hub", key="games", callback_data="btn_open_games_hub", style="primary"))
+        await message.answer(
+            f"🎟️ <b>Lucky Scratch Card</b>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"Scratch 3 matching symbols to win up to 8x multiplier!\n\n"
+            f"📌 <b>Format:</b> <code>/scratch &lt;bet&gt;</code>\n"
+            f"• Example: <code>/scratch 500</code>",
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
+        return
+
+    if arg in ["coinflip", "cf", "flip"]:
+        await message.answer(
+            f"🪙 <b>Coinflip Duel</b>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"Pick heads or tails to double your bet!\n\n"
+            f"📌 <b>Format:</b> <code>/coinflip &lt;bet&gt; &lt;heads/tails&gt;</code>\n"
+            f"• Example: <code>/coinflip 500 heads</code>",
+            parse_mode="HTML"
+        )
+        return
+
+    if arg in ["balance", "bal", "wallet"]:
+        await cmd_balance(message, db)
+        return
+
     welcome_text = (
         f"🎮 <b>Welcome to PokeArena Games Center!</b> 🎮\n"
         f"◈ ────────────────────────── ◈\n"
@@ -160,13 +385,21 @@ async def cmd_games_help(message: Message):
     help_text = (
         f"📖 <b>PokeArena Games Guide & Rules</b> 📖\n"
         f"◈ ────────────────────────── ◈\n"
-        f"• 💣 <b>Mines:</b> <code>/mines &lt;bet&gt;</code> - Pick safe tiles to increase multiplier. Cash out before hitting a mine!\n"
-        f"• ❌ <b>Tic-Tac-Toe:</b> <code>/ttc &lt;bet&gt;</code> - Challenge another player to a 3x3 duel.\n"
-        f"• 🎰 <b>Slots:</b> <code>/slot &lt;bet&gt;</code> - Match 3 icons for jackpot multipliers up to 10x.\n"
-        f"• 🎡 <b>Spin Wheel:</b> <code>/spin</code> - Free spin every hour for coins & gems.\n"
-        f"• ✊ <b>RPS:</b> <code>/rps &lt;bet&gt;</code> - Classic Rock Paper Scissors vs players.\n"
-        f"• ✏️ <b>Scribble:</b> <code>/scribble</code> - Group drawing game. Guess drawn words for coins!\n"
-        f"• 💡 <b>NameGuess:</b> <code>/nameguess</code> - Identify Pokémon names from anagrams."
+        f"• 💣 <b>Mines:</b> <code>/mines &lt;bet&gt; [count]</code> - Pick safe tiles. Cash out before detonating!\n"
+        f"• ❌ <b>Tic-Tac-Toe:</b> <code>/ttc &lt;bet&gt;</code> - 3x3 duel against AI or players.\n"
+        f"• 🎰 <b>Slots:</b> <code>/slot &lt;bet&gt;</code> - Match 3 symbols for up to 10x jackpot.\n"
+        f"• 🎡 <b>Spin Wheel:</b> <code>/spin</code> - Hourly free spin for coins & gems.\n"
+        f"• 🎲 <b>Dice Duel:</b> <code>/dice &lt;bet&gt;</code> - Roll higher than AI to win 2x.\n"
+        f"• 🎯 <b>Darts:</b> <code>/darts &lt;bet&gt;</code> - Hit Bullseye for 3x or inner ring for 1.5x.\n"
+        f"• 🏀 <b>Basketball:</b> <code>/basketball &lt;bet&gt;</code> - Score clean basket for 2x.\n"
+        f"• ⚽ <b>Football:</b> <code>/football &lt;bet&gt;</code> - Score penalty past keeper for 1.8x.\n"
+        f"• 🎳 <b>Bowling:</b> <code>/bowling &lt;bet&gt;</code> - Roll STRIKE for 3.5x or SPARE for 1.5x.\n"
+        f"• 🎟️ <b>Scratch Card:</b> <code>/scratch &lt;bet&gt;</code> - Match 3 icons for up to 8x.\n"
+        f"• 🪙 <b>Coinflip:</b> <code>/coinflip &lt;bet&gt; &lt;h/t&gt;</code> - 50/50 flip to double your bet.\n"
+        f"• ✊ <b>RPS:</b> <code>/rps &lt;bet&gt; &lt;rock/paper/scissors&gt;</code> - Rock Paper Scissors.\n"
+        f"• ✏️ <b>Scribble:</b> <code>/scribble</code> - Unscramble Pokémon names in groups.\n"
+        f"• 💡 <b>NameGuess:</b> <code>/nameguess</code> - Identify Pokémon from anagrams.\n"
+        f"• 💰 <b>Balance:</b> <code>/balance</code> - Check your synchronized wallet."
     )
     kb = get_games_hub_keyboard(getattr(config, "MAIN_BOT_USERNAME", None))
     await message.answer(help_text, reply_markup=kb.as_markup(), parse_mode="HTML")
@@ -203,11 +436,59 @@ async def cb_launch_spin(callback: CallbackQuery):
         parse_mode="HTML"
     )
 
+@router.callback_query(F.data == "btn_launch_dice")
+async def cb_launch_dice(callback: CallbackQuery):
+    await callback.answer()
+    await callback.message.answer(
+        "🎲 <b>Dice Duel:</b>\nType <code>/dice &lt;bet_amount&gt;</code> to roll vs AI!\nExample: <code>/dice 500</code>",
+        parse_mode="HTML"
+    )
+
+@router.callback_query(F.data == "btn_launch_darts")
+async def cb_launch_darts(callback: CallbackQuery):
+    await callback.answer()
+    await callback.message.answer(
+        "🎯 <b>Darts Target:</b>\nType <code>/darts &lt;bet_amount&gt;</code> to throw a dart!\nExample: <code>/darts 500</code>",
+        parse_mode="HTML"
+    )
+
+@router.callback_query(F.data == "btn_launch_basket")
+async def cb_launch_basket(callback: CallbackQuery):
+    await callback.answer()
+    await callback.message.answer(
+        "🏀 <b>Basketball Free Throw:</b>\nType <code>/basketball &lt;bet_amount&gt;</code> to shoot!\nExample: <code>/basketball 500</code>",
+        parse_mode="HTML"
+    )
+
+@router.callback_query(F.data == "btn_launch_football")
+async def cb_launch_football(callback: CallbackQuery):
+    await callback.answer()
+    await callback.message.answer(
+        "⚽ <b>Football Penalty:</b>\nType <code>/football &lt;bet_amount&gt;</code> to kick a penalty!\nExample: <code>/football 500</code>",
+        parse_mode="HTML"
+    )
+
+@router.callback_query(F.data == "btn_launch_bowling")
+async def cb_launch_bowling(callback: CallbackQuery):
+    await callback.answer()
+    await callback.message.answer(
+        "🎳 <b>Bowling Alley:</b>\nType <code>/bowling &lt;bet_amount&gt;</code> to roll for a strike!\nExample: <code>/bowling 500</code>",
+        parse_mode="HTML"
+    )
+
+@router.callback_query(F.data == "btn_launch_scratch")
+async def cb_launch_scratch(callback: CallbackQuery):
+    await callback.answer()
+    await callback.message.answer(
+        "🎟️ <b>Lucky Scratch Card:</b>\nType <code>/scratch &lt;bet_amount&gt;</code> to scratch a card!\nExample: <code>/scratch 500</code>",
+        parse_mode="HTML"
+    )
+
 @router.callback_query(F.data == "btn_launch_rps")
 async def cb_launch_rps(callback: CallbackQuery):
     await callback.answer()
     await callback.message.answer(
-        "✊ <b>Rock Paper Scissors:</b>\nType <code>/rps &lt;bet_amount&gt;</code> to challenge a player!",
+        "✊ <b>Rock Paper Scissors:</b>\nType <code>/rps &lt;bet_amount&gt; &lt;rock/paper/scissors&gt;</code> to play!\nExample: <code>/rps 100 rock</code>",
         parse_mode="HTML"
     )
 

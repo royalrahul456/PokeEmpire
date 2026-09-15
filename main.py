@@ -207,22 +207,34 @@ def apply_auto_reply_patch():
 
     async def patched_answer(self: Message, *args, **kwargs):
         if self.chat.type != "private":
-            return await self.reply(*args, **kwargs)
+            try:
+                return await self.reply(*args, **kwargs)
+            except Exception:
+                return await original_answer(self, *args, **kwargs)
         return await original_answer(self, *args, **kwargs)
 
     async def patched_answer_photo(self: Message, *args, **kwargs):
         if self.chat.type != "private":
-            return await self.reply_photo(*args, **kwargs)
+            try:
+                return await self.reply_photo(*args, **kwargs)
+            except Exception:
+                return await original_answer_photo(self, *args, **kwargs)
         return await original_answer_photo(self, *args, **kwargs)
 
     async def patched_answer_video(self: Message, *args, **kwargs):
         if self.chat.type != "private":
-            return await self.reply_video(*args, **kwargs)
+            try:
+                return await self.reply_video(*args, **kwargs)
+            except Exception:
+                return await original_answer_video(self, *args, **kwargs)
         return await original_answer_video(self, *args, **kwargs)
 
     async def patched_answer_animation(self: Message, *args, **kwargs):
         if self.chat.type != "private":
-            return await self.reply_animation(*args, **kwargs)
+            try:
+                return await self.reply_animation(*args, **kwargs)
+            except Exception:
+                return await original_answer_animation(self, *args, **kwargs)
         return await original_answer_animation(self, *args, **kwargs)
 
     Message.answer = patched_answer
@@ -230,6 +242,14 @@ def apply_auto_reply_patch():
     Message.answer_video = patched_answer_video
     Message.answer_animation = patched_answer_animation
     logger.info("Applied global auto-reply monkey patch to Message class for group chats.")
+
+async def _bg_sync_retroactive_levels():
+    try:
+        from utils.trainer_level import sync_retroactive_levels
+        async with SessionLocal() as db:
+            await sync_retroactive_levels(db)
+    except Exception as e:
+        logger.warning(f"Background retroactive level sync exception: {e}")
 
 async def main():
     # Start web health check server FIRST so Render detects port immediately
@@ -252,10 +272,8 @@ async def main():
     async with SessionLocal() as db:
         await init_pokemon_cache(db)
 
-    # Retroactively calculate trainer levels for old players
-    from utils.trainer_level import sync_retroactive_levels
-    async with SessionLocal() as db:
-        await sync_retroactive_levels(db)
+    # Launch retroactive level sync in background so polling starts immediately
+    asyncio.create_task(_bg_sync_retroactive_levels())
 
     # Load dynamic admins and uploaders from database
     from database.models import GlobalSetting
@@ -386,6 +404,8 @@ async def main():
         await register_bot_commands(bot)
         await register_games_bot_commands(games_bot)
         
+        ALLOWED_UPDATES = ["message", "edited_message", "callback_query", "chat_member", "my_chat_member", "inline_query"]
+
         async def run_main_bot():
             retry_count = 0
             while True:
@@ -395,7 +415,7 @@ async def main():
                         await bot.delete_webhook(drop_pending_updates=True)
                     except Exception as wh_err:
                         logger.warning(f"Could not delete webhook for Main Bot: {wh_err}")
-                    await dp.start_polling(bot, skip_updates=False)
+                    await dp.start_polling(bot, allowed_updates=ALLOWED_UPDATES, handle_signals=True)
                     break
                 except Exception as e:
                     retry_count += 1
@@ -412,7 +432,7 @@ async def main():
                         await games_bot.delete_webhook(drop_pending_updates=True)
                     except Exception as wh_err:
                         logger.warning(f"Could not delete webhook for Games Bot: {wh_err}")
-                    await dp_games.start_polling(games_bot, skip_updates=False)
+                    await dp_games.start_polling(games_bot, allowed_updates=ALLOWED_UPDATES, handle_signals=False)
                     break
                 except Exception as e:
                     retry_count += 1
@@ -421,10 +441,16 @@ async def main():
                     await asyncio.sleep(5)
 
         try:
-            await asyncio.gather(run_main_bot(), run_games_bot())
+            await asyncio.gather(run_main_bot(), run_games_bot(), return_exceptions=True)
         finally:
-            await bot.session.close()
-            await games_bot.session.close()
+            try:
+                await bot.session.close()
+            except Exception:
+                pass
+            try:
+                await games_bot.session.close()
+            except Exception:
+                pass
     else:
         logger.info("⚡ Single-Bot Mode active: All gameplay and mini-games handled on PokeEmpire.")
         dp.include_router(admin.router)
@@ -446,6 +472,7 @@ async def main():
         logger.info("Bot handlers and routers registered.")
         await register_bot_commands(bot)
         
+        ALLOWED_UPDATES = ["message", "edited_message", "callback_query", "chat_member", "my_chat_member", "inline_query"]
         try:
             retry_count = 0
             while True:
@@ -455,7 +482,7 @@ async def main():
                         await bot.delete_webhook(drop_pending_updates=True)
                     except Exception as wh_err:
                         logger.warning(f"Could not delete webhook: {wh_err}")
-                    await dp.start_polling(bot, skip_updates=False)
+                    await dp.start_polling(bot, allowed_updates=ALLOWED_UPDATES, handle_signals=True)
                     break
                 except Exception as e:
                     retry_count += 1
@@ -463,7 +490,10 @@ async def main():
                     logger.info("Retrying connection in 5 seconds...")
                     await asyncio.sleep(5)
         finally:
-            await bot.session.close()
+            try:
+                await bot.session.close()
+            except Exception:
+                pass
 
 if __name__ == "__main__":
     try:

@@ -52,22 +52,34 @@ def apply_auto_reply_patch():
 
     async def patched_answer(self: Message, *args, **kwargs):
         if self.chat.type != "private":
-            return await self.reply(*args, **kwargs)
+            try:
+                return await self.reply(*args, **kwargs)
+            except Exception:
+                return await original_answer(self, *args, **kwargs)
         return await original_answer(self, *args, **kwargs)
 
     async def patched_answer_photo(self: Message, *args, **kwargs):
         if self.chat.type != "private":
-            return await self.reply_photo(*args, **kwargs)
+            try:
+                return await self.reply_photo(*args, **kwargs)
+            except Exception:
+                return await original_answer_photo(self, *args, **kwargs)
         return await original_answer_photo(self, *args, **kwargs)
 
     async def patched_answer_video(self: Message, *args, **kwargs):
         if self.chat.type != "private":
-            return await self.reply_video(*args, **kwargs)
+            try:
+                return await self.reply_video(*args, **kwargs)
+            except Exception:
+                return await original_answer_video(self, *args, **kwargs)
         return await original_answer_video(self, *args, **kwargs)
 
     async def patched_answer_animation(self: Message, *args, **kwargs):
         if self.chat.type != "private":
-            return await self.reply_animation(*args, **kwargs)
+            try:
+                return await self.reply_animation(*args, **kwargs)
+            except Exception:
+                return await original_answer_animation(self, *args, **kwargs)
         return await original_answer_animation(self, *args, **kwargs)
 
     Message.answer = patched_answer
@@ -172,11 +184,16 @@ async def main():
         logger.warning(f"Could not fetch bot info: {e}")
 
     # Start Polling Loop
+    ALLOWED_UPDATES = ["message", "edited_message", "callback_query", "chat_member", "my_chat_member", "inline_query"]
     try:
         retry_count = 0
         while True:
             try:
-                await dp.start_polling(bot, skip_updates=False)
+                try:
+                    await bot.delete_webhook(drop_pending_updates=True)
+                except Exception as wh_err:
+                    logger.warning(f"Could not delete webhook: {wh_err}")
+                await dp.start_polling(bot, allowed_updates=ALLOWED_UPDATES)
                 break
             except Exception as e:
                 retry_count += 1
@@ -184,7 +201,10 @@ async def main():
                 logger.info("Retrying connection in 5 seconds...")
                 await asyncio.sleep(5)
     finally:
-        await bot.session.close()
+        try:
+            await bot.session.close()
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     try:

@@ -12,12 +12,12 @@ except ImportError:
 load_dotenv()
 
 # Bot Setup
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-GAMES_BOT_TOKEN = os.getenv("GAMES_BOT_TOKEN", "")
-GAMES_BOT_USERNAME = os.getenv("GAMES_BOT_USERNAME", "@PokeXArenaBot")
-MAIN_BOT_USERNAME = os.getenv("MAIN_BOT_USERNAME", "@pokeempirebot")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip().strip('"').strip("'")
+GAMES_BOT_TOKEN = os.getenv("GAMES_BOT_TOKEN", "").strip().strip('"').strip("'")
+GAMES_BOT_USERNAME = os.getenv("GAMES_BOT_USERNAME", "@PokeXArenaBot").strip().strip('"').strip("'")
+MAIN_BOT_USERNAME = os.getenv("MAIN_BOT_USERNAME", "@pokeempirebot").strip().strip('"').strip("'")
 
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://royalrahul456.github.io/PokeEmpire/webapp/")
+WEBAPP_URL = os.getenv("WEBAPP_URL", "https://royalrahul456.github.io/PokeEmpire/webapp/").strip().strip('"').strip("'")
 
 # Default Supabase IPv4 Pooler PostgreSQL URL (Transaction Mode on port 6543 for unlimited connections)
 SUPABASE_DB_URL = "postgresql://postgres.dlxlqrerxplqevvutgsn:rahulmahadevpachpute@aws-0-ap-southeast-2.pooler.supabase.com:6543/postgres"

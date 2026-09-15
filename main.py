@@ -390,7 +390,11 @@ async def main():
             retry_count = 0
             while True:
                 try:
-                    logger.info("Main Bot (PokeEmpire) polling started.")
+                    logger.info("Main Bot (PokeEmpire) clearing webhook and starting polling...")
+                    try:
+                        await bot.delete_webhook(drop_pending_updates=True)
+                    except Exception as wh_err:
+                        logger.warning(f"Could not delete webhook for Main Bot: {wh_err}")
                     await dp.start_polling(bot, skip_updates=False)
                     break
                 except Exception as e:
@@ -403,7 +407,11 @@ async def main():
             retry_count = 0
             while True:
                 try:
-                    logger.info("Games Bot (PokeArena) polling started.")
+                    logger.info("Games Bot (PokeArena) clearing webhook and starting polling...")
+                    try:
+                        await games_bot.delete_webhook(drop_pending_updates=True)
+                    except Exception as wh_err:
+                        logger.warning(f"Could not delete webhook for Games Bot: {wh_err}")
                     await dp_games.start_polling(games_bot, skip_updates=False)
                     break
                 except Exception as e:
@@ -442,7 +450,11 @@ async def main():
             retry_count = 0
             while True:
                 try:
-                    logger.info("PokeEmpire Bot polling started.")
+                    logger.info("PokeEmpire Bot clearing webhook and starting polling...")
+                    try:
+                        await bot.delete_webhook(drop_pending_updates=True)
+                    except Exception as wh_err:
+                        logger.warning(f"Could not delete webhook: {wh_err}")
                     await dp.start_polling(bot, skip_updates=False)
                     break
                 except Exception as e:

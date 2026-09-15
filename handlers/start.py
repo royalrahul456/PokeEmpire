@@ -29,8 +29,10 @@ import random
 
 router = Router()
 
-# State for cover customization
+# State for cover customization, battles, and renames
 active_cover_updates = {}
+active_battles = {}
+active_renames = {}
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, db: AsyncSession):

@@ -326,16 +326,30 @@ def patch_bot_emojis(bot: Bot):
             return await original_make_request(bot_instance, method, timeout=timeout)
         except TelegramBadRequest as e:
             err_str = str(e).lower()
-            if "custom_emoji" in err_str or "entity_bounds_invalid" in err_str or "cannot_use_custom_emoji" in err_str or "can't use custom emoji" in err_str:
-                logger.warning(f"Telegram API rejected custom emojis for this message. Retrying with fallback: {e}")
-                # Strip tg-emoji tags for this message retry only
+            if (
+                "custom_emoji" in err_str 
+                or "entity_bounds_invalid" in err_str 
+                or "cannot_use_custom_emoji" in err_str 
+                or "can't use custom emoji" in err_str
+                or "can't parse entities" in err_str
+                or "failed to parse entities" in err_str
+                or "tag" in err_str
+            ):
+                logger.warning(f"Telegram API parsing/emoji issue. Retrying with stripped fallback: {e}")
+                # 1st fallback: strip tg-emoji tags
                 if isinstance(method, (SendMessage, EditMessageText)):
                     if method.text:
                         method.text = strip_tg_emojis(method.text)
                 elif isinstance(method, (SendPhoto, SendVideo, SendAnimation, SendAudio, SendDocument, EditMessageCaption)):
                     if method.caption:
                         method.caption = strip_tg_emojis(method.caption)
-                return await original_make_request(bot_instance, method, timeout=timeout)
+                try:
+                    return await original_make_request(bot_instance, method, timeout=timeout)
+                except TelegramBadRequest as e2:
+                    # 2nd fallback: disable parse_mode entirely (send as plain text)
+                    logger.warning(f"Retrying message with parse_mode=None fallback: {e2}")
+                    method.parse_mode = None
+                    return await original_make_request(bot_instance, method, timeout=timeout)
             raise e
         
     bot.session.make_request = new_make_request

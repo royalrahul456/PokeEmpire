@@ -2879,12 +2879,12 @@ async def cmd_broadcast(message: Message, db: AsyncSession):
 
 @router.message(Command("fine", ignore_mention=True))
 async def cmd_fine(message: Message, db: AsyncSession):
-    """Issues a fine penalty deducting 20% of the target user's current coins."""
-    if not await is_user_admin(message):
-        await message.answer("❌ Denied. Only group administrators and bot moderators can issue fines.")
+    """Issues a fine penalty deducting 20% of the target user's current coins (Bot Administrators only)."""
+    if not message.from_user or message.from_user.id not in config.ADMIN_IDS:
+        await message.answer("❌ Denied. Only Bot Administrators can issue fines.")
         return
 
-    admin_name = html.escape(message.from_user.first_name or "Admin")
+    admin_name = html.escape(message.from_user.first_name or "Bot Admin")
     target_user_obj = None
     reason = "Rule violation / Misconduct"
     target_id = None

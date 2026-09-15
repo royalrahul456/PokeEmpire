@@ -140,7 +140,7 @@ async def register_bot_commands(bot: Bot):
         BotCommand(command="daily", description="📅 Claim daily bonus coins"),
         BotCommand(command="games", description="🎮 Play Mini-Games on PokeArena"),
         BotCommand(command="streak", description="🔥 View Catch Streak stats"),
-        BotCommand(command="fine", description="🚨 Issue a 20% fine penalty (Admin)"),
+        BotCommand(command="fine", description="🚨 Issue a 20% fine penalty (Bot Admin only)"),
         BotCommand(command="shop", description="🛒 Open Coin Shop"),
         BotCommand(command="redeem", description="🎟️ Claim a promo/gift code"),
         BotCommand(command="gen", description="🔑 Generate a redeem code (Owner only)"),
@@ -200,7 +200,7 @@ async def register_games_bot_commands(bot: Bot):
         BotCommand(command="rps", description="✊ Play Rock Paper Scissors"),
         BotCommand(command="scribble", description="✏️ Play Drawing & Guessing"),
         BotCommand(command="nameguess", description="💡 Play Pokémon Name Quiz"),
-        BotCommand(command="fine", description="🚨 Fine user 20% balance (Admin)"),
+        BotCommand(command="fine", description="🚨 Fine user 20% balance (Bot Admin only)"),
         BotCommand(command="help", description="📖 How to Play Mini-Games"),
     ]
     try:

@@ -27,8 +27,8 @@ def get_games_redirect_keyboard() -> InlineKeyboardBuilder:
     "btn_launch_rps", "btn_launch_scribble", "btn_launch_nameguess", "btn_open_games_hub",
     "btn_launch_dice", "btn_launch_darts", "btn_launch_basket", "btn_launch_football",
     "btn_launch_bowling", "btn_launch_silhouette", "btn_launch_unown", "btn_launch_voltorb",
-    "btn_launch_typematch", "btn_launch_blitz",
-    "play_silhouette", "play_unown", "play_voltorb", "play_typematch", "play_blitz"
+    "btn_launch_typematch", "btn_launch_blitz", "btn_launch_coinflip", "btn_check_streak",
+    "play_silhouette", "play_unown", "play_voltorb", "play_typematch", "play_blitz", "play_coinflip"
 }))
 async def cb_redirect_games(callback: CallbackQuery):
     await callback.answer()
@@ -46,6 +46,8 @@ async def cb_redirect_games(callback: CallbackQuery):
         "btn_launch_basket": "basket",
         "btn_launch_football": "football",
         "btn_launch_bowling": "bowling",
+        "btn_launch_coinflip": "coinflip", "play_coinflip": "coinflip",
+        "btn_check_streak": "streak",
         "btn_launch_silhouette": "silhouette", "play_silhouette": "silhouette",
         "btn_launch_unown": "blitz", "play_unown": "blitz",
         "btn_launch_typematch": "blitz", "play_typematch": "blitz",

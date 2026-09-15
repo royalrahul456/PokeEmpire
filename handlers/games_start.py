@@ -15,11 +15,14 @@ router = Router()
 def get_welcome_tab_keyboard(main_bot_username: str = None) -> InlineKeyboardBuilder:
     builder = InlineKeyboardBuilder()
     builder.row(
-        create_styled_button(text="🎮 View All Mini-Games (Games Tab)", key="games", callback_data="btn_open_games_hub", style="primary")
+        create_styled_button(text="🎮 View All Mini-Games (/games)", key="games", callback_data="btn_open_games_hub", style="primary")
     )
     builder.row(
-        create_styled_button(text="💰 Balance & Wallet", key="profile", callback_data="btn_check_balance", style="success"),
-        create_styled_button(text="🎡 Hourly Spin", key="games", callback_data="btn_launch_spin", style="success")
+        create_styled_button(text="💰 Balance (/bal)", key="profile", callback_data="btn_check_balance", style="success"),
+        create_styled_button(text="🎡 Hourly Spin (/spin)", key="games", callback_data="btn_launch_spin", style="success")
+    )
+    builder.row(
+        create_styled_button(text="🔥 Daily Streak (/streak)", key="games", callback_data="btn_check_streak", style="danger")
     )
     main_username = main_bot_username or getattr(config, "MAIN_BOT_USERNAME", "pokeempirebot")
     clean_username = main_username.replace("@", "")
@@ -32,35 +35,39 @@ def get_games_hub_keyboard(main_bot_username: str = None) -> InlineKeyboardBuild
     builder = InlineKeyboardBuilder()
     
     builder.row(
-        create_styled_button(text="👤 Silhouette", key="games", callback_data="btn_launch_silhouette", style="primary"),
-        create_styled_button(text="⚡ Type Blitz", key="games", callback_data="btn_launch_typematch", style="primary")
+        create_styled_button(text="👤 Silhouette (/whothat)", key="games", callback_data="btn_launch_silhouette", style="primary"),
+        create_styled_button(text="⚡ Type Blitz (/blitz)", key="games", callback_data="btn_launch_typematch", style="primary")
     )
     builder.row(
-        create_styled_button(text="⚡ Voltorb Lock", key="games", callback_data="btn_launch_voltorb", style="danger"),
-        create_styled_button(text="💣 Mines", key="games", callback_data="btn_launch_mines", style="danger")
+        create_styled_button(text="⚡ Voltorb Lock (/voltorb)", key="games", callback_data="btn_launch_voltorb", style="danger"),
+        create_styled_button(text="💣 Mines (/mines)", key="games", callback_data="btn_launch_mines", style="danger")
     )
     builder.row(
-        create_styled_button(text="❌ Tic-Tac-Toe", key="games", callback_data="btn_launch_xo", style="primary"),
-        create_styled_button(text="🎡 Spin Wheel", key="games", callback_data="btn_launch_spin", style="success")
+        create_styled_button(text="❌ Tic-Tac-Toe (/ttc)", key="games", callback_data="btn_launch_xo", style="primary"),
+        create_styled_button(text="🎡 Spin Wheel (/spin)", key="games", callback_data="btn_launch_spin", style="success")
     )
     builder.row(
-        create_styled_button(text="🎲 Dice Duel", key="games", callback_data="btn_launch_dice", style="primary"),
-        create_styled_button(text="🎯 Darts", key="games", callback_data="btn_launch_darts", style="primary")
+        create_styled_button(text="🎲 Dice Duel (/dice)", key="games", callback_data="btn_launch_dice", style="primary"),
+        create_styled_button(text="🎯 Darts (/darts)", key="games", callback_data="btn_launch_darts", style="primary")
     )
     builder.row(
-        create_styled_button(text="🏀 Basketball", key="games", callback_data="btn_launch_basket", style="primary"),
-        create_styled_button(text="⚽ Football", key="games", callback_data="btn_launch_football", style="primary")
+        create_styled_button(text="🏀 Basketball (/basketball)", key="games", callback_data="btn_launch_basket", style="primary"),
+        create_styled_button(text="⚽ Football (/football)", key="games", callback_data="btn_launch_football", style="primary")
     )
     builder.row(
-        create_styled_button(text="🎳 Bowling", key="games", callback_data="btn_launch_bowling", style="primary"),
-        create_styled_button(text="✊ RPS", key="games", callback_data="btn_launch_rps", style="primary")
+        create_styled_button(text="🎳 Bowling (/bowling)", key="games", callback_data="btn_launch_bowling", style="primary"),
+        create_styled_button(text="🪙 Coinflip (/coinflip)", key="games", callback_data="btn_launch_coinflip", style="primary")
     )
     builder.row(
-        create_styled_button(text="✏️ Scribble", key="games", callback_data="btn_launch_scribble", style="primary"),
-        create_styled_button(text="💡 NameGuess", key="games", callback_data="btn_launch_nameguess", style="success")
+        create_styled_button(text="✊ RPS (/rps)", key="games", callback_data="btn_launch_rps", style="primary"),
+        create_styled_button(text="✏️ Scribble (/scribble)", key="games", callback_data="btn_launch_scribble", style="primary")
     )
     builder.row(
-        create_styled_button(text="💰 Balance", key="profile", callback_data="btn_check_balance", style="success"),
+        create_styled_button(text="💡 NameGuess (/nameguess)", key="games", callback_data="btn_launch_nameguess", style="success"),
+        create_styled_button(text="🔥 Streak (/streak)", key="games", callback_data="btn_check_streak", style="danger")
+    )
+    builder.row(
+        create_styled_button(text="💰 Balance (/bal)", key="profile", callback_data="btn_check_balance", style="success"),
         create_styled_button(text="🔙 Welcome Menu", key="back", callback_data="btn_open_welcome_tab", style="primary")
     )
 
@@ -625,6 +632,23 @@ async def cb_launch_voltorb(callback: CallbackQuery, db: AsyncSession):
         return
     from handlers.games import cmd_voltorb
     await cmd_voltorb(callback.message, db)
+
+@router.callback_query(F.data.in_({"btn_launch_coinflip", "btn_launch_flip"}))
+async def cb_launch_coinflip(callback: CallbackQuery):
+    await callback.answer()
+    if callback.message.chat.type == "private":
+        await callback.message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
+    await callback.message.answer(
+        "🪙 <b>Coinflip Duel:</b>\nType <code>/coinflip &lt;bet_amount&gt; &lt;heads/tails&gt;</code> to play!\nExample: <code>/coinflip 500 heads</code>",
+        parse_mode="HTML"
+    )
+
+@router.callback_query(F.data == "btn_check_streak")
+async def cb_check_streak(callback: CallbackQuery, db: AsyncSession):
+    await callback.answer()
+    from handlers.games import cmd_streak
+    await cmd_streak(callback.message, db)
 
 @router.message(Command("fine", ignore_mention=True))
 async def cmd_arena_fine(message: Message, db: AsyncSession):

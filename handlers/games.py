@@ -9,7 +9,10 @@ from datetime import datetime, timedelta
 import io
 import re
 import aiohttp
-from PIL import Image
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
 from aiogram import Router, F, Bot
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, BufferedInputFile
@@ -943,6 +946,8 @@ def generate_hint(name: str) -> str:
     return " ".join(hint_parts)
 
 async def get_silhouette_bytes(image_url: str) -> bytes | None:
+    if Image is None:
+        return None
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(image_url, timeout=aiohttp.ClientTimeout(total=8)) as resp:

@@ -94,8 +94,10 @@ async def register_games_bot_commands(bot: Bot):
         BotCommand(command="start", description="🎮 Launch PokeArena Games Center"),
         BotCommand(command="games", description="🎰 Open Games Hub"),
         BotCommand(command="balance", description="💰 Check your Coins & Gems"),
+        BotCommand(command="bal", description="💳 Wallet Quick Balance"),
+        BotCommand(command="streak", description="🔥 Daily Catch Streak"),
         BotCommand(command="whothat", description="👤 The Silhouette Trial"),
-        BotCommand(command="unown", description="👁️ The Unown Cipher (Word Guess)"),
+        BotCommand(command="blitz", description="⚡ Type Matchup Blitz"),
         BotCommand(command="voltorb", description="⚡ The Voltorb Lock (Num Guess)"),
         BotCommand(command="mines", description="💣 Play Mines Game"),
         BotCommand(command="ttc", description="❌ Play Tic-Tac-Toe PvP Duel"),
@@ -103,6 +105,7 @@ async def register_games_bot_commands(bot: Bot):
         BotCommand(command="rps", description="✊ Play Rock Paper Scissors"),
         BotCommand(command="scribble", description="✏️ Play Drawing & Guessing"),
         BotCommand(command="nameguess", description="💡 Play Pokémon Name Quiz"),
+        BotCommand(command="fine", description="🚨 Fine user 20% balance (Admin)"),
         BotCommand(command="help", description="📖 How to Play Mini-Games"),
     ]
     try:

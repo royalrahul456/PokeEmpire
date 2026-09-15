@@ -885,61 +885,58 @@ async def get_silhouette_bytes(image_url: str) -> bytes | None:
         print(f"Error generating silhouette: {e}")
     return None
 
-UNOWN_CIPHER_WORDS = {
-    3: [
-        ("MEW", "Mythical Psychic Pokémon"),
-        ("MUK", "Poison Sludge Pokémon"),
-        ("AXW", "Dragon Tusk Pokémon (Axew)"),
-        ("NAT", "Psychic/Flying Bird Pokémon (Natu)"),
-        ("ABR", "Psi Psychic Pokémon (Abra)"),
-    ],
-    4: [
-        ("ONIX", "Rock Snake Pokémon"),
-        ("JYNX", "Human Shape Ice/Psychic Pokémon"),
-        ("MEOW", "Scratch Cat Pokémon (Meowth)"),
-        ("SEEL", "Sea Lion Water Pokémon"),
-        ("ABRA", "Psi Psychic Pokémon"),
-        ("HYNO", "Hypnosis Psychic Pokémon (Hypno)"),
-        ("KABU", "Shellfish Rock Pokémon (Kabuto)"),
-        ("POLI", "Tadpole Water Pokémon (Poliwag)"),
-        ("AROK", "Cobra Poison Pokémon (Arbok)"),
-        ("DROW", "Hypnosis Psychic Pokémon (Drowzee)"),
-    ],
-    5: [
-        ("EEVEE", "Evolution Pokémon with many evolutions"),
-        ("DITTO", "Transform Pokémon"),
-        ("PICHU", "Tiny Mouse Electric Pokémon"),
-        ("LUGIA", "Diving Legendary Psychic/Flying Pokémon"),
-        ("HO-OH", "Rainbow Legendary Fire/Flying Pokémon"),
-        ("ABSOL", "Disaster Dark Pokémon"),
-        ("RALTS", "Feeling Psychic/Fairy Pokémon"),
-        ("SHINX", "Flash Electric Pokémon"),
-        ("RIOLU", "Emanation Fighting Pokémon"),
-        ("ZORUA", "Tricky Fox Dark Pokémon"),
-        ("DEWOT", "Discipline Water Pokémon (Dewott)"),
-        ("EELEK", "EleFish Electric Pokémon (Eelektrik)"),
-        ("INKAY", "Revolving Dark/Psychic Pokémon"),
-        ("GOOMY", "Soft Dragon Pokémon"),
-        ("ROWLE", "Grass Quill Pokémon (Rowlet)"),
-        ("TOXEL", "Baby Electric/Poison Pokémon"),
-        ("TINKA", "Metalsmith Fairy/Steel Pokémon (Tinkatink)"),
-    ]
+# ========================================================
+# TYPE MATCHUP BLITZ (THE ELEMENTAL ADVANTAGE MATRIX)
+# ========================================================
+POKEMON_TYPES = [
+    "Normal", "Fire", "Water", "Grass", "Electric", "Ice",
+    "Fighting", "Poison", "Ground", "Flying", "Psychic", "Bug",
+    "Rock", "Ghost", "Dragon", "Steel", "Dark", "Fairy"
+]
+
+TYPE_ATTACK_CHART = {
+    "Normal": {"Rock": 0.5, "Ghost": 0.0, "Steel": 0.5},
+    "Fire": {"Fire": 0.5, "Water": 0.5, "Grass": 2.0, "Ice": 2.0, "Bug": 2.0, "Rock": 0.5, "Dragon": 0.5, "Steel": 2.0},
+    "Water": {"Fire": 2.0, "Water": 0.5, "Grass": 0.5, "Ground": 2.0, "Rock": 2.0, "Dragon": 0.5},
+    "Grass": {"Fire": 0.5, "Water": 2.0, "Grass": 0.5, "Poison": 0.5, "Ground": 2.0, "Flying": 0.5, "Bug": 0.5, "Rock": 2.0, "Dragon": 0.5, "Steel": 0.5},
+    "Electric": {"Water": 2.0, "Electric": 0.5, "Grass": 0.5, "Ground": 0.0, "Flying": 2.0, "Dragon": 0.5},
+    "Ice": {"Fire": 0.5, "Water": 0.5, "Grass": 2.0, "Ice": 0.5, "Ground": 2.0, "Flying": 2.0, "Dragon": 2.0, "Steel": 0.5},
+    "Fighting": {"Normal": 2.0, "Ice": 2.0, "Poison": 0.5, "Flying": 0.5, "Psychic": 0.5, "Bug": 0.5, "Rock": 2.0, "Ghost": 0.0, "Dark": 2.0, "Steel": 2.0, "Fairy": 0.5},
+    "Poison": {"Grass": 2.0, "Poison": 0.5, "Ground": 0.5, "Rock": 0.5, "Ghost": 0.5, "Steel": 0.0, "Fairy": 2.0},
+    "Ground": {"Fire": 2.0, "Electric": 2.0, "Grass": 0.5, "Poison": 2.0, "Flying": 0.0, "Bug": 0.5, "Rock": 2.0, "Steel": 2.0},
+    "Flying": {"Electric": 0.5, "Grass": 2.0, "Fighting": 2.0, "Bug": 2.0, "Rock": 0.5, "Steel": 0.5},
+    "Psychic": {"Fighting": 2.0, "Poison": 2.0, "Psychic": 0.5, "Dark": 0.0, "Steel": 0.5},
+    "Bug": {"Fire": 0.5, "Grass": 2.0, "Fighting": 0.5, "Poison": 0.5, "Flying": 0.5, "Psychic": 2.0, "Ghost": 0.5, "Dark": 2.0, "Steel": 0.5, "Fairy": 0.5},
+    "Rock": {"Fire": 2.0, "Ice": 2.0, "Fighting": 0.5, "Ground": 0.5, "Flying": 2.0, "Bug": 2.0, "Steel": 0.5},
+    "Ghost": {"Normal": 0.0, "Psychic": 2.0, "Ghost": 2.0, "Dark": 0.5},
+    "Dragon": {"Dragon": 2.0, "Steel": 0.5, "Fairy": 0.0},
+    "Steel": {"Fire": 0.5, "Water": 0.5, "Electric": 0.5, "Ice": 2.0, "Rock": 2.0, "Steel": 0.5, "Fairy": 2.0},
+    "Dark": {"Fighting": 0.5, "Psychic": 2.0, "Ghost": 2.0, "Dark": 0.5, "Fairy": 0.5},
+    "Fairy": {"Fire": 0.5, "Fighting": 2.0, "Poison": 0.5, "Dragon": 2.0, "Dark": 2.0, "Steel": 0.5}
 }
 
-def generate_unown_cipher(word: str) -> str:
-    n = len(word)
-    chars = list(word.upper())
-    if n <= 3:
-        # e.g., M _ W -> show first and last or middle
-        return f"[ {chars[0]}  _  _ ]" if random.random() < 0.5 else f"[ _  {chars[1]}  _ ]"
-    elif n == 4:
-        # e.g., _ N _ X
-        idx1, idx2 = sorted(random.sample(range(4), 2))
-        return " ".join([chars[i] if i in (idx1, idx2) else "_" for i in range(4)])
-    else: # 5
-        # e.g., E _ V _ _
-        revealed = set(random.sample(range(n), 2))
-        return " ".join([chars[i] if i in revealed else "_" for i in range(n)])
+def calculate_type_multiplier(atk_type: str, def_t1: str, def_t2: str = None) -> float:
+    t1 = def_t1.title() if def_t1 else "Normal"
+    m1 = TYPE_ATTACK_CHART.get(atk_type.title(), {}).get(t1, 1.0)
+    m2 = 1.0
+    if def_t2:
+        t2 = def_t2.title()
+        m2 = TYPE_ATTACK_CHART.get(atk_type.title(), {}).get(t2, 1.0)
+    return m1 * m2
+
+def get_super_effective_types(def_t1: str, def_t2: str = None) -> list[str]:
+    valid = []
+    for atk in POKEMON_TYPES:
+        if calculate_type_multiplier(atk, def_t1, def_t2) > 1.0:
+            valid.append(atk.lower())
+    return valid
+
+def get_resistant_immune_types(atk_type: str) -> list[str]:
+    valid = []
+    for def_t in POKEMON_TYPES:
+        if calculate_type_multiplier(atk_type, def_t) < 1.0:
+            valid.append(def_t.lower())
+    return valid
 
 async def cleanup_scribble_messages(bot: Bot, chat_id: int, game: dict):
     if "message_id" in game:
@@ -977,7 +974,7 @@ async def cleanup_silhouette_messages(bot: Bot, chat_id: int, game: dict):
         except Exception:
             pass
 
-async def cleanup_unown_messages(bot: Bot, chat_id: int, game: dict):
+async def cleanup_typematch_messages(bot: Bot, chat_id: int, game: dict):
     if "message_id" in game:
         try:
             await bot.delete_message(chat_id=chat_id, message_id=game["message_id"])
@@ -1019,17 +1016,18 @@ async def silhouette_timeout_task(chat_id: int, message_id: int, bot: Bot):
             except Exception:
                 pass
 
-async def unown_timeout_task(chat_id: int, message_id: int, bot: Bot):
+async def typematch_timeout_task(chat_id: int, message_id: int, bot: Bot):
     await asyncio.sleep(60)
     if chat_id in active_games:
         game = active_games[chat_id]
-        if game.get("type") == "unown" and game.get("message_id") == message_id:
+        if game.get("type") == "typematch" and game.get("message_id") == message_id:
             del active_games[chat_id]
-            await cleanup_unown_messages(bot, chat_id, game)
+            await cleanup_typematch_messages(bot, chat_id, game)
             try:
+                ans_list = ", ".join(t.title() for t in game.get("valid_answers", []))
                 msg = await bot.send_message(
                     chat_id=chat_id,
-                    text=f"⏳ <b>Unown Cipher Collapsed!</b>\nThe ancient glyph matrix faded into the ruins.\n💡 Decrypted Word was: <b>{game['display_name']}</b>",
+                    text=f"⏳ <b>Type Matchup Simulation Expired!</b>\nBattle Academy combat timer ended.\n💡 Valid Elemental Counters were: <b>{ans_list}</b>",
                     parse_mode="HTML"
                 )
                 asyncio.create_task(delete_message_after(msg, 60))
@@ -1817,7 +1815,59 @@ async def check_game_answers(message: Message, db: AsyncSession):
                 asyncio.create_task(delete_message_after(h_msg, 15))
                 return
 
-    # Handle Text Guess Matching (Scribble, Nameguess, Silhouette, Unown)
+    # Handle Type Matchup Blitz Guessing
+    if game["type"] == "typematch":
+        guess_raw = message.text.strip().lower()
+        valid_answers = game.get("valid_answers", [])
+        if guess_raw in valid_answers:
+            from aiogram.types import ReactionTypeEmoji
+            try:
+                await message.react(reaction=[ReactionTypeEmoji(emoji="🎉")])
+            except Exception:
+                pass
+
+            user_id = message.from_user.id
+            nickname = message.from_user.first_name
+
+            stmt = select(User).where(User.id == user_id)
+            res = await db.execute(stmt)
+            user = res.scalar_one_or_none()
+
+            if not user:
+                user = User(id=user_id, username=message.from_user.username, nickname=nickname)
+                db.add(user)
+                await db.flush()
+
+            reward = random.randint(350, 500)
+            user.coins += reward
+            try:
+                from utils.trainer_level import log_transaction
+                await log_transaction(user_id, reward, "TYPEMATCH_WIN", f"Won Type Matchup Blitz ({guess_raw.title()})", db)
+            except Exception:
+                pass
+
+            await db.commit()
+
+            del active_games[chat_id]
+            await cleanup_typematch_messages(message.bot, chat_id, game)
+
+            all_valid_str = ", ".join(t.title() for t in valid_answers)
+            vic_card = (
+                f"⚡ <b>ELEMENTAL ADVANTAGE STRUCK!</b> ⚡\n"
+                f"◈ ────────────────────────── ◈\n"
+                f"🎯 <b>Winning Counter:</b> <b>{guess_raw.title()}</b>\n"
+                f"💡 <b>All Valid Types:</b> <code>{all_valid_str}</code>\n"
+                f"💰 <b>Earned:</b> <b>+{reward} coins</b>\n"
+                f"👥 <b>Master Tactician:</b> {message.from_user.mention_html()}\n"
+                f"◈ ────────────────────────── ◈"
+            )
+            v_msg = await message.reply(vic_card, parse_mode="HTML")
+            asyncio.create_task(delete_message_after(v_msg, 60))
+            return
+        else:
+            return
+
+    # Handle Text Guess Matching (Scribble, Nameguess, Silhouette)
     import re
     def normalize_poke_name(val: str) -> str:
         return re.sub(r'[^a-z0-9]', '', val.lower())
@@ -1857,14 +1907,6 @@ async def check_game_answers(message: Message, db: AsyncSession):
         gtype = game.get("type")
         if gtype == "silhouette":
             reward = random.randint(250, 450)
-        elif gtype == "unown":
-            length = game.get("length", 4)
-            if length <= 3:
-                reward = 250
-            elif length == 4:
-                reward = 450
-            else:
-                reward = random.randint(750, 1000)
         elif gtype == "nameguess":
             if message.chat.type in ["group", "supergroup"] and game.get("is_auto"):
                 reward = random.randint(150, 250)
@@ -1888,8 +1930,6 @@ async def check_game_answers(message: Message, db: AsyncSession):
         del active_games[chat_id]
         if gtype == "silhouette":
             await cleanup_silhouette_messages(message.bot, chat_id, game)
-        elif gtype == "unown":
-            await cleanup_unown_messages(message.bot, chat_id, game)
         elif gtype == "nameguess":
             await cleanup_nameguess_messages(message.bot, chat_id, game)
         else:
@@ -1903,15 +1943,6 @@ async def check_game_answers(message: Message, db: AsyncSession):
                 f"<blockquote>👤 <b>Pokémon</b>: <b>{ans_display}</b>\n"
                 f"💰 <b>Earned</b>: <b>+{reward} coins</b>\n"
                 f"👥 <b>Field Master</b>: {message.from_user.mention_html()}</blockquote>"
-            )
-        elif gtype == "unown":
-            text = (
-                f"🎉 <b>UNOWN CIPHER DECRYPTED!</b> 🎉\n"
-                f"───────────────\n"
-                f"<blockquote>👁️ <b>Decrypted Word</b>: <b>{ans_display}</b>\n"
-                f"📜 <b>Category</b>: <b>{game.get('category', 'Ruins of Alph Inscription')}</b>\n"
-                f"💰 <b>Earned</b>: <b>+{reward} coins</b>\n"
-                f"👥 <b>Cipher Master</b>: {message.from_user.mention_html()}</blockquote>"
             )
         elif gtype == "nameguess":
             text = (
@@ -2626,41 +2657,46 @@ async def cb_play_silhouette(callback: CallbackQuery, db: AsyncSession):
 
 
 # ==========================================
-# 2. WORD GUESS (THE UNOWN CIPHER)
+# 2. TYPE MATCHUP BLITZ (THE ELEMENTAL ADVANTAGE)
 # ==========================================
 
-@router.callback_query(F.data == "unown_hint")
-async def cb_unown_hint(callback: CallbackQuery):
+@router.callback_query(F.data == "typematch_hint")
+async def cb_typematch_hint(callback: CallbackQuery):
     chat_id = callback.message.chat.id
-    if chat_id not in active_games or active_games[chat_id].get("type") != "unown":
-        await callback.answer("⚠️ No active Unown Cipher in this chat.", show_alert=True)
+    if chat_id not in active_games or active_games[chat_id].get("type") != "typematch":
+        await callback.answer("⚠️ No active Type Matchup Blitz in this chat.", show_alert=True)
         return
         
     game = active_games[chat_id]
-    if "hint_text" in game:
-        await callback.answer(f"💡 Hint already revealed: {game['hint_text']}", show_alert=True)
+    if game.get("hint_given"):
+        await callback.answer("💡 Hint already revealed in chat!", show_alert=True)
         return
         
-    word = game["answer"].upper()
-    hint_text = f"Letters: {len(word)} | Category: {game.get('category', 'Ruins Inscription')} | Starts with: {word[0]}"
-    game["hint_text"] = hint_text
+    valid_list = game.get("valid_answers", [])
+    if not valid_list:
+        await callback.answer("⚠️ No valid counters found.", show_alert=True)
+        return
+
+    sample_type = random.choice(valid_list)
+    hint_text = f"Total valid counter types: <b>{len(valid_list)}</b> | One valid counter starts with: <b>{sample_type[0].upper()}...</b>"
+    game["hint_given"] = True
     
     hint_msg = await callback.message.reply(
-        f"👁️ <b>Unown Cipher Resonance Hint:</b>\n"
+        f"💡 <b>Battle Academy Tactical Hint:</b>\n"
         f"───────────────\n"
-        f"👉 <code>{hint_text}</code>",
+        f"👉 {hint_text}",
         parse_mode="HTML"
     )
     game["hint_message_id"] = hint_msg.message_id
-    await callback.answer("👁️ Ancient psychic resonance decoded!")
+    await callback.answer("💡 Tactical scan complete! Hint revealed.")
 
-@router.callback_query(F.data == "unown_stop")
-async def cb_unown_stop(callback: CallbackQuery):
+@router.callback_query(F.data == "typematch_stop")
+async def cb_typematch_stop(callback: CallbackQuery):
     chat_id = callback.message.chat.id
     user_id = callback.from_user.id
     
-    if chat_id not in active_games or active_games[chat_id].get("type") != "unown":
-        await callback.answer("⚠️ No active Unown game to stop.", show_alert=True)
+    if chat_id not in active_games or active_games[chat_id].get("type") != "typematch":
+        await callback.answer("⚠️ No active Type Matchup Blitz to stop.", show_alert=True)
         return
         
     game = active_games[chat_id]
@@ -2682,17 +2718,18 @@ async def cb_unown_stop(callback: CallbackQuery):
         return
         
     del active_games[chat_id]
-    await cleanup_unown_messages(callback.bot, chat_id, game)
+    await cleanup_typematch_messages(callback.bot, chat_id, game)
     
+    ans_list = ", ".join(t.title() for t in game.get("valid_answers", []))
     await callback.message.answer(
-        f"🛑 <b>Unown Cipher game stopped</b> by {html.escape(callback.from_user.first_name)}.\n"
-        f"💡 Decrypted Word was: <b>{game['display_name']}</b>",
+        f"🛑 <b>Type Matchup Blitz stopped</b> by {html.escape(callback.from_user.first_name)}.\n"
+        f"💡 Valid Elemental Counters were: <b>{ans_list}</b>",
         parse_mode="HTML"
     )
-    await callback.answer("Cipher closed!")
+    await callback.answer("Combat simulation aborted!")
 
-@router.message(Command("unown", "wordguess", "cipher"))
-async def cmd_unown(message: Message, db: AsyncSession):
+@router.message(Command("blitz", "typematch", "typeblitz", "matchup", "unown", ignore_mention=True))
+async def cmd_typematch(message: Message, db: AsyncSession):
     if message.chat.type == "private":
         await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
         return
@@ -2702,63 +2739,106 @@ async def cmd_unown(message: Message, db: AsyncSession):
         await message.answer("⚠️ There is already an active game running in this chat! Complete or stop it first.")
         return
 
-    # Choose difficulty length (3, 4, or 5 letters)
-    chosen_len = random.choice([3, 4, 5])
-    pool = UNOWN_CIPHER_WORDS.get(chosen_len, UNOWN_CIPHER_WORDS[4])
-    word, category = random.choice(pool)
-    cipher_glyph = generate_unown_cipher(word)
+    # Choose scenario mode (Offensive vs Defensive)
+    mode = random.choice(["offensive", "defensive"])
 
-    rewards_map = {3: 250, 4: 450, 5: 850}
-    reward_val = rewards_map.get(chosen_len, 450)
+    # Query a random Pokémon
+    stmt = select(Pokemon).where(Pokemon.type1.isnot(None)).order_by(func.random()).limit(1)
+    res = await db.execute(stmt)
+    pokemon = res.scalar_one_or_none()
+
+    if not pokemon:
+        await message.answer("❌ Error initiating Type Matchup Blitz. No Pokémon data available.")
+        return
+
+    p_name = pokemon.name.title()
+    p_t1 = pokemon.type1.title()
+    p_t2 = pokemon.type2.title() if pokemon.type2 else None
+    types_str = f"{p_t1}/{p_t2}" if p_t2 else p_t1
+
+    if mode == "offensive":
+        valid_answers = get_super_effective_types(p_t1, p_t2)
+        if not valid_answers:
+            valid_answers = ["normal", "fighting", "ground"]
+        
+        scenario_title = f"Wild {p_name} ({types_str})"
+        text = (
+            f"⚡ <b>TYPE MATCHUP BLITZ — OFFENSIVE STRIKE</b> ⚡\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"🏟️ <i>Indigo Plateau Battle Academy Simulation</i>\n\n"
+            f"A wild <b>{p_name}</b> ({types_str}) appeared in the arena!\n"
+            f"🎯 <b>Objective:</b> Name an attack type that is <b>SUPER-EFFECTIVE</b> against {p_name}!\n\n"
+            f"⏳ <b>Time Limit:</b> <code>60 seconds</code>\n"
+            f"💰 <b>Reward:</b> <code>+350 to 500 coins</code>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"<i>Type the super-effective type name directly in chat to strike!</i>"
+        )
+    else:
+        # Defensive Mode
+        atk_type = random.choice(POKEMON_TYPES)
+        valid_answers = get_resistant_immune_types(atk_type)
+        if not valid_answers:
+            valid_answers = ["steel", "dragon", "fire"]
+
+        scenario_title = f"Incoming {atk_type}-type Attack toward {p_name}"
+        text = (
+            f"🛡️ <b>TYPE MATCHUP BLITZ — DEFENSIVE COUNTER</b> 🛡️\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"🏟️ <i>Indigo Plateau Battle Academy Simulation</i>\n\n"
+            f"An incoming <b>{atk_type}-type</b> attack is heading toward {p_name} ({types_str})!\n"
+            f"🛡️ <b>Objective:</b> Name any Pokémon type that <b>RESISTS</b> or is <b>IMMUNE</b> to {atk_type}!\n\n"
+            f"⏳ <b>Time Limit:</b> <code>60 seconds</code>\n"
+            f"💰 <b>Reward:</b> <code>+350 to 500 coins</code>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"<i>Type any resistant or immune type directly in chat to defend!</i>"
+        )
 
     active_games[chat_id] = {
-        "type": "unown",
-        "answer": word.lower(),
-        "display_name": word.upper(),
-        "category": category,
-        "clue": cipher_glyph,
-        "length": chosen_len,
+        "type": "typematch",
+        "mode": mode,
+        "valid_answers": valid_answers,
+        "scenario_title": scenario_title,
+        "hint_given": False,
         "created_at": time.time(),
         "is_auto": False
     }
 
-    text = (
-        f"👁️ <b>THE UNOWN CIPHER MATRIX</b> 👁️\n"
-        f"◈ ────────────────────────── ◈\n"
-        f"📜 <i>Ruins of Alph Linguistic Chamber</i>\n"
-        f"Mysterious psychic glyphs have surfaced on the ancient chamber walls!\n\n"
-        f"🔠 <b>Cipher Glyph ({chosen_len} Letters):</b>\n"
-        f"<blockquote><code>{cipher_glyph}</code></blockquote>\n"
-        f"📌 <b>Category:</b> <i>{category}</i>\n"
-        f"⏳ <b>Time Limit:</b> <code>60 seconds</code>\n"
-        f"💰 <b>Reward:</b> <code>+{reward_val} coins</code>\n"
-        f"◈ ────────────────────────── ◈\n"
-        f"<i>Type the decrypted word directly in chat to claim the bounty!</i>"
-    )
-
     builder = InlineKeyboardBuilder()
     builder.row(
-        create_styled_button(text="🔮 Channel Unown (Hint)", key="hint", callback_data="unown_hint"),
-        create_styled_button(text="🚫 Seal Cipher", key="cancel", style="danger", callback_data="unown_stop")
+        create_styled_button(text="💡 Tactical Hint", key="hint", callback_data="typematch_hint"),
+        create_styled_button(text="🚫 Abort Battle", key="cancel", style="danger", callback_data="typematch_stop")
     )
 
     try:
-        sent_msg = await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        if pokemon.image_url:
+            sent_msg = await send_safe_media(
+                bot=message.bot,
+                chat_id=chat_id,
+                media_type="photo",
+                media_value=pokemon.image_url,
+                caption=text,
+                reply_markup=builder.as_markup(),
+                parse_mode="HTML",
+                message_to_reply=message
+            )
+        else:
+            sent_msg = await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+            
         active_games[chat_id]["message_id"] = sent_msg.message_id
-        asyncio.create_task(unown_timeout_task(chat_id, sent_msg.message_id, message.bot))
+        asyncio.create_task(typematch_timeout_task(chat_id, sent_msg.message_id, message.bot))
     except Exception as e:
         if chat_id in active_games:
             del active_games[chat_id]
-        print(f"Error launching unown: {e}")
-        await message.answer("❌ Error initiating Unown Cipher. Please try again.")
+        print(f"Error launching typematch: {e}")
+        await message.answer("❌ Error initiating Type Matchup Blitz. Please try again.")
 
-@router.callback_query(F.data.in_({"play_unown", "btn_launch_unown"}))
-async def cb_play_unown(callback: CallbackQuery, db: AsyncSession):
+@router.callback_query(F.data.in_({"play_typematch", "btn_launch_typematch", "play_unown", "btn_launch_unown"}))
+async def cb_play_typematch(callback: CallbackQuery, db: AsyncSession):
     await callback.answer()
     if callback.message.chat.type == "private":
         await callback.message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
         return
-    await cmd_unown(callback.message, db)
+    await cmd_typematch(callback.message, db)
 
 
 # ==========================================

@@ -27,7 +27,8 @@ def get_games_redirect_keyboard() -> InlineKeyboardBuilder:
     "btn_launch_rps", "btn_launch_scribble", "btn_launch_nameguess", "btn_open_games_hub",
     "btn_launch_dice", "btn_launch_darts", "btn_launch_basket", "btn_launch_football",
     "btn_launch_bowling", "btn_launch_silhouette", "btn_launch_unown", "btn_launch_voltorb",
-    "play_silhouette", "play_unown", "play_voltorb"
+    "btn_launch_typematch", "btn_launch_blitz",
+    "play_silhouette", "play_unown", "play_voltorb", "play_typematch", "play_blitz"
 }))
 async def cb_redirect_games(callback: CallbackQuery):
     await callback.answer()
@@ -46,7 +47,9 @@ async def cb_redirect_games(callback: CallbackQuery):
         "btn_launch_football": "football",
         "btn_launch_bowling": "bowling",
         "btn_launch_silhouette": "silhouette", "play_silhouette": "silhouette",
-        "btn_launch_unown": "unown", "play_unown": "unown",
+        "btn_launch_unown": "blitz", "play_unown": "blitz",
+        "btn_launch_typematch": "blitz", "play_typematch": "blitz",
+        "btn_launch_blitz": "blitz", "play_blitz": "blitz",
         "btn_launch_voltorb": "voltorb", "play_voltorb": "voltorb",
     }
     target_arg = cb_arg_map.get(callback.data, "hub")

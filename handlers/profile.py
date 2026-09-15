@@ -667,7 +667,7 @@ async def cmd_achievements(message: Message, db: AsyncSession):
     text = "\n".join(lines)
     await message.answer(text, parse_mode="HTML")
 
-@router.message(Command("balance", "bal", "coins", "wallet"))
+@router.message(Command("balance", "bal", "coins", "wallet", ignore_mention=True))
 async def cmd_balance(message: Message, db: AsyncSession):
     try:
         user_id = message.from_user.id
@@ -698,7 +698,7 @@ async def cmd_balance(message: Message, db: AsyncSession):
         print(f"Error in cmd_balance: {e}")
         await message.answer("❌ An error occurred while retrieving your balance.")
 
-@router.message(Command("streak", "streaks"))
+@router.message(Command("streak", "streaks", ignore_mention=True))
 async def cmd_streak(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     

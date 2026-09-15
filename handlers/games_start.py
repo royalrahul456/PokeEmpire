@@ -33,7 +33,7 @@ def get_games_hub_keyboard(main_bot_username: str = None) -> InlineKeyboardBuild
     
     builder.row(
         create_styled_button(text="👤 Silhouette", key="games", callback_data="btn_launch_silhouette", style="primary"),
-        create_styled_button(text="👁️ Unown Cipher", key="games", callback_data="btn_launch_unown", style="primary")
+        create_styled_button(text="⚡ Type Blitz", key="games", callback_data="btn_launch_typematch", style="primary")
     )
     builder.row(
         create_styled_button(text="⚡ Voltorb Lock", key="games", callback_data="btn_launch_voltorb", style="danger"),
@@ -72,7 +72,8 @@ def get_games_hub_keyboard(main_bot_username: str = None) -> InlineKeyboardBuild
         
     return builder
 
-@router.message(CommandStart())
+@router.message(CommandStart(ignore_mention=True))
+@router.message(Command("start", ignore_mention=True))
 async def cmd_games_start(message: Message, db: AsyncSession):
     user_name = html.escape(message.from_user.first_name or "Trainer")
     parts = message.text.split(maxsplit=1)
@@ -271,15 +272,15 @@ async def cmd_games_start(message: Message, db: AsyncSession):
         )
         return
 
-    if arg in ["unown", "wordguess", "cipher"]:
+    if arg in ["blitz", "typematch", "typeblitz", "matchup", "unown", "wordguess", "cipher"]:
         builder = InlineKeyboardBuilder()
-        builder.row(create_styled_button(text="👁️ Start Unown Cipher", key="games", callback_data="btn_launch_unown", style="primary"))
+        builder.row(create_styled_button(text="⚡ Start Type Blitz", key="games", callback_data="btn_launch_typematch", style="primary"))
         builder.row(create_styled_button(text="🎰 Games Hub", key="games", callback_data="btn_open_games_hub", style="primary"))
         await message.answer(
-            f"👁️ <b>The Unown Cipher Matrix</b>\n"
+            f"⚡ <b>Type Matchup Blitz (The Elemental Advantage)</b>\n"
             f"◈ ────────────────────────── ◈\n"
-            f"Decipher mysterious 3, 4, or 5-letter ancient inscriptions from the Ruins of Alph!\n\n"
-            f"📌 <b>Format:</b> <code>/unown</code> or <code>/cipher</code>",
+            f"Indigo Plateau Battle Academy combat simulation! React with super-effective attacks or defensive resistances.\n\n"
+            f"📌 <b>Format:</b> <code>/blitz</code> or <code>/typematch</code>",
             reply_markup=builder.as_markup(),
             parse_mode="HTML"
         )
@@ -327,7 +328,7 @@ async def cmd_games_start(message: Message, db: AsyncSession):
     kb = get_welcome_tab_keyboard(getattr(config, "MAIN_BOT_USERNAME", None))
     await message.answer(welcome_text, reply_markup=kb.as_markup(), parse_mode="HTML")
 
-@router.message(Command("games"))
+@router.message(Command("games", ignore_mention=True))
 async def cmd_games_hub(message: Message):
     hub_text = (
         f"🎰 <b>PokeArena — Mini-Games Tab</b> 🎰\n"
@@ -337,7 +338,7 @@ async def cmd_games_hub(message: Message):
     kb = get_games_hub_keyboard(getattr(config, "MAIN_BOT_USERNAME", None))
     await message.answer(hub_text, reply_markup=kb.as_markup(), parse_mode="HTML")
 
-@router.message(Command("balance", "bal"))
+@router.message(Command("balance", "bal", "coins", "wallet", ignore_mention=True))
 async def cmd_balance(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     user_name = html.escape(message.from_user.first_name or "Trainer")
@@ -458,13 +459,13 @@ async def cb_open_welcome_tab(callback: CallbackQuery, db: AsyncSession):
     except Exception:
         await callback.message.answer(welcome_text, reply_markup=kb.as_markup(), parse_mode="HTML")
 
-@router.message(Command("help"))
+@router.message(Command("help", ignore_mention=True))
 async def cmd_games_help(message: Message):
     help_text = (
         f"📖 <b>PokeArena Games Guide & Rules</b> 📖\n"
         f"◈ ────────────────────────── ◈\n"
         f"• 👤 <b>Silhouette:</b> <code>/whothat</code> - Identify Pokémon shadow outline.\n"
-        f"• 👁️ <b>Unown Cipher:</b> <code>/unown</code> - Decrypt ancient 3/4/5-letter word cipher.\n"
+        f"• ⚡ <b>Type Blitz:</b> <code>/blitz</code> or <code>/typematch</code> - Name super-effective or resistant counters.\n"
         f"• ⚡ <b>Voltorb Lock:</b> <code>/voltorb</code> - Hack 1–50 security PIN in 6 attempts.\n"
         f"• 💣 <b>Mines:</b> <code>/mines &lt;bet&gt; [count]</code> - Pick safe tiles before detonating.\n"
         f"• ❌ <b>Tic-Tac-Toe:</b> <code>/ttc &lt;bet&gt;</code> - 3x3 duel against AI or players.\n"
@@ -478,7 +479,7 @@ async def cmd_games_help(message: Message):
         f"• ✊ <b>RPS:</b> <code>/rps &lt;bet&gt; &lt;rock/paper/scissors&gt;</code> - Rock Paper Scissors.\n"
         f"• ✏️ <b>Scribble:</b> <code>/scribble</code> - Unscramble Pokémon names in groups.\n"
         f"• 💡 <b>NameGuess:</b> <code>/nameguess</code> - Identify Pokémon from anagrams.\n"
-        f"• 💰 <b>Balance:</b> <code>/balance</code> - Check your synchronized wallet."
+        f"• 💰 <b>Balance:</b> <code>/balance</code> or <code>/bal</code> - Check your synchronized wallet."
     )
     kb = get_games_hub_keyboard(getattr(config, "MAIN_BOT_USERNAME", None))
     await message.answer(help_text, reply_markup=kb.as_markup(), parse_mode="HTML")
@@ -607,14 +608,14 @@ async def cb_launch_silhouette(callback: CallbackQuery, db: AsyncSession):
     from handlers.games import cmd_silhouette
     await cmd_silhouette(callback.message, db)
 
-@router.callback_query(F.data == "btn_launch_unown")
-async def cb_launch_unown(callback: CallbackQuery, db: AsyncSession):
+@router.callback_query(F.data.in_({"btn_launch_typematch", "btn_launch_unown"}))
+async def cb_launch_typematch(callback: CallbackQuery, db: AsyncSession):
     await callback.answer()
     if callback.message.chat.type == "private":
         await callback.message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
         return
-    from handlers.games import cmd_unown
-    await cmd_unown(callback.message, db)
+    from handlers.games import cmd_typematch
+    await cmd_typematch(callback.message, db)
 
 @router.callback_query(F.data == "btn_launch_voltorb")
 async def cb_launch_voltorb(callback: CallbackQuery, db: AsyncSession):
@@ -624,3 +625,13 @@ async def cb_launch_voltorb(callback: CallbackQuery, db: AsyncSession):
         return
     from handlers.games import cmd_voltorb
     await cmd_voltorb(callback.message, db)
+
+@router.message(Command("fine", ignore_mention=True))
+async def cmd_arena_fine(message: Message, db: AsyncSession):
+    from handlers.admin import cmd_fine
+    await cmd_fine(message, db)
+
+@router.message(Command("streak", "streaks", ignore_mention=True))
+async def cmd_arena_streak(message: Message, db: AsyncSession):
+    from handlers.games import cmd_streak
+    await cmd_streak(message, db)

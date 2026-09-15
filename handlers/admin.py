@@ -2876,3 +2876,108 @@ async def cmd_broadcast(message: Message, db: AsyncSession):
         await status_msg.edit_text(report_text, parse_mode="HTML")
     except Exception:
         await message.answer(report_text, parse_mode="HTML")
+
+@router.message(Command("fine", ignore_mention=True))
+async def cmd_fine(message: Message, db: AsyncSession):
+    """Issues a fine penalty deducting 20% of the target user's current coins."""
+    if not await is_user_admin(message):
+        await message.answer("❌ Denied. Only group administrators and bot moderators can issue fines.")
+        return
+
+    admin_name = html.escape(message.from_user.first_name or "Admin")
+    target_user_obj = None
+    reason = "Rule violation / Misconduct"
+    target_id = None
+    target_name = "Trainer"
+
+    # Case 1: Reply to a message
+    if message.reply_to_message and message.reply_to_message.from_user:
+        replied = message.reply_to_message.from_user
+        if replied.is_bot:
+            await message.answer("❌ You cannot fine a bot!")
+            return
+        if replied.id == message.from_user.id and message.from_user.id not in config.OWNER_IDS:
+            await message.answer("❌ You cannot fine yourself!")
+            return
+        
+        parts = message.text.split(maxsplit=1)
+        if len(parts) > 1 and parts[1].strip():
+            reason = html.escape(parts[1].strip())
+            
+        stmt = select(User).where(User.id == replied.id)
+        res = await db.execute(stmt)
+        target_user_obj = res.scalar_one_or_none()
+        target_id = replied.id
+        target_name = html.escape(replied.first_name or "Trainer")
+
+    # Case 2: Mention or ID in text
+    else:
+        parts = message.text.split()
+        if len(parts) < 2:
+            await message.answer(
+                "⚠️ <b>Fine Command Format:</b>\n"
+                "• Reply to a user's message with: <code>/fine [reason]</code>\n"
+                "• Or type: <code>/fine @username [reason]</code>\n"
+                "• Or type: <code>/fine &lt;user_id&gt; [reason]</code>\n\n"
+                "<i>Fines deduct 20% of the target's current coin balance.</i>",
+                parse_mode="HTML"
+            )
+            return
+
+        target_arg = parts[1].strip()
+        reason_parts = parts[2:]
+        if reason_parts:
+            reason = html.escape(" ".join(reason_parts))
+
+        if target_arg.isdigit():
+            target_id = int(target_arg)
+            stmt = select(User).where(User.id == target_id)
+            res = await db.execute(stmt)
+            target_user_obj = res.scalar_one_or_none()
+            target_name = html.escape(target_user_obj.nickname or "Trainer") if target_user_obj else f"User {target_id}"
+        else:
+            clean_uname = target_arg.lstrip("@").lower()
+            stmt = select(User).where(func.lower(User.username) == clean_uname)
+            res = await db.execute(stmt)
+            target_user_obj = res.scalar_one_or_none()
+            if target_user_obj:
+                target_id = target_user_obj.id
+                target_name = html.escape(target_user_obj.nickname or target_user_obj.username or "Trainer")
+            else:
+                await message.answer(f"❌ Could not find trainer <code>@{clean_uname}</code> in database.")
+                return
+
+    if not target_user_obj:
+        await message.answer("❌ This user has no registered account or data in PokeEmpire.")
+        return
+
+    if target_user_obj.coins <= 0:
+        await message.answer(f"⚠️ <b>{target_name}</b> currently has <b>0 coins</b>. No fine could be collected.", parse_mode="HTML")
+        return
+
+    # Calculate 20% fine
+    fine_amount = max(1, int(target_user_obj.coins * 0.20))
+    target_user_obj.coins = max(0, target_user_obj.coins - fine_amount)
+
+    try:
+        from utils.trainer_level import log_transaction
+        await log_transaction(target_id, -fine_amount, "FINE", f"Fined 20% by {admin_name}. Reason: {reason}", db)
+    except Exception:
+        pass
+
+    await db.commit()
+
+    fine_card = (
+        f"🚨 <b>OFFICIAL TRAINER FINE ISSUED</b> 🚨\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"👮‍♂️ <b>Issued by:</b> <b>{admin_name}</b>\n"
+        f"👤 <b>Target:</b> <b>{target_name}</b> (<code>{target_id}</code>)\n"
+        f"💸 <b>Penalty Rate:</b> <code>20% of Coin Balance</code>\n"
+        f"💰 <b>Amount Fined:</b> <code>-{fine_amount:,} coins</code>\n"
+        f"💳 <b>Remaining Balance:</b> <code>{target_user_obj.coins:,} coins</code>\n"
+        f"📝 <b>Reason:</b> <i>{reason}</i>\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"<i>Please follow community rules and sportsmanship!</i>"
+    )
+    await message.answer(fine_card, parse_mode="HTML")
+

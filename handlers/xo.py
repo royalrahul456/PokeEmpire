@@ -11,7 +11,7 @@ from sqlalchemy import select
 import html
 from database.models import User
 from database.database import SessionLocal
-from keyboards.inline import create_styled_button
+from keyboards.inline import create_styled_button, get_official_group_keyboard, GROUP_ONLY_GAMES_NOTICE
 from utils.settings import send_cover_media
 
 router = Router()
@@ -203,6 +203,10 @@ async def delete_message_after(message: Message, delay: int):
 
 @router.message(Command("xo", "ttc", "tictactoe"))
 async def cmd_xo(message: Message, db: AsyncSession):
+    if message.chat.type == "private":
+        await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
+
     user_id = message.from_user.id
     parts = message.text.split()
     

@@ -30,7 +30,12 @@ from utils.settings import (
     set_nameguess_status,
     send_safe_media
 )
-from keyboards.inline import get_back_to_hub_keyboard, create_styled_button
+from keyboards.inline import (
+    get_back_to_hub_keyboard, 
+    create_styled_button, 
+    get_official_group_keyboard, 
+    GROUP_ONLY_GAMES_NOTICE
+)
 
 router = Router()
 
@@ -212,6 +217,10 @@ async def cmd_claim(message: Message, db: AsyncSession):
 
 @router.message(Command("spin", "wheel"))
 async def cmd_spin(message: Message, db: AsyncSession):
+    if message.chat.type == "private":
+        await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
+
     import html
     user_id = message.from_user.id
     nickname = message.from_user.first_name
@@ -268,6 +277,10 @@ async def cmd_spin(message: Message, db: AsyncSession):
     await msg.edit_text(wheels[2], parse_mode="HTML")
 @router.message(Command("coinflip", "cf", "flip"))
 async def cmd_coinflip(message: Message, db: AsyncSession):
+    if message.chat.type == "private":
+        await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
+
     user_id = message.from_user.id
 
     parts = message.text.split()
@@ -340,6 +353,10 @@ async def cmd_coinflip(message: Message, db: AsyncSession):
 
 @router.message(Command("rps"))
 async def cmd_rps(message: Message, db: AsyncSession):
+    if message.chat.type == "private":
+        await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
+
     user_id = message.from_user.id
 
     parts = message.text.split()
@@ -429,6 +446,10 @@ async def cmd_rps(message: Message, db: AsyncSession):
 
 @router.message(Command("dice", "roll"))
 async def cmd_dice(message: Message, db: AsyncSession):
+    if message.chat.type == "private":
+        await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
+
     user_id = message.from_user.id
     parts = message.text.split()
     if len(parts) < 2 or not parts[1].isdigit():
@@ -473,7 +494,7 @@ async def cmd_dice(message: Message, db: AsyncSession):
         except Exception:
             pass
         result_text = (
-            f"🎲 <b>DICE DUEL VICTORY!</b> 🎲\n"
+            f"🎲 <b>DICE DUEL RESULT</b> 🎲\n"
             f"───────────────\n"
             f"<blockquote>👤 You rolled: <b>{user_roll}</b> 🎲\n"
             f"🤖 Bot rolled: <b>{bot_roll}</b> 🎲\n"
@@ -482,14 +503,13 @@ async def cmd_dice(message: Message, db: AsyncSession):
             f"💳 Balance: <code>💰 {user.coins:,} coins</code></blockquote>"
         )
     elif user_roll == bot_roll:
-        user.coins += bet
+        user.coins += bet  # Refund bet
         result_text = (
-            f"🎲 <b>DICE DUEL DRAW!</b> 🎲\n"
+            f"🎲 <b>DICE DUEL RESULT</b> 🎲\n"
             f"───────────────\n"
             f"<blockquote>👤 You rolled: <b>{user_roll}</b> 🎲\n"
             f"🤖 Bot rolled: <b>{bot_roll}</b> 🎲\n"
-            f"🤝 Result: <b>Tie / Draw!</b>\n"
-            f"💰 Refunded: <b>+{bet:,} coins</b>\n"
+            f"🤝 Result: <b>Tie / Draw!</b> (Bet refunded)\n"
             f"💳 Balance: <code>💰 {user.coins:,} coins</code></blockquote>"
         )
     else:
@@ -499,7 +519,7 @@ async def cmd_dice(message: Message, db: AsyncSession):
         except Exception:
             pass
         result_text = (
-            f"🎲 <b>DICE DUEL DEFEAT!</b> 🎲\n"
+            f"🎲 <b>DICE DUEL RESULT</b> 🎲\n"
             f"───────────────\n"
             f"<blockquote>👤 You rolled: <b>{user_roll}</b> 🎲\n"
             f"🤖 Bot rolled: <b>{bot_roll}</b> 🎲\n"
@@ -515,6 +535,10 @@ async def cmd_dice(message: Message, db: AsyncSession):
 
 @router.message(Command("darts", "dart"))
 async def cmd_darts(message: Message, db: AsyncSession):
+    if message.chat.type == "private":
+        await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
+
     user_id = message.from_user.id
     parts = message.text.split()
     if len(parts) < 2 or not parts[1].isdigit():
@@ -591,6 +615,10 @@ async def cmd_darts(message: Message, db: AsyncSession):
 
 @router.message(Command("basketball", "basket", "bb"))
 async def cmd_basketball(message: Message, db: AsyncSession):
+    if message.chat.type == "private":
+        await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
+
     user_id = message.from_user.id
     parts = message.text.split()
     if len(parts) < 2 or not parts[1].isdigit():
@@ -661,6 +689,10 @@ async def cmd_basketball(message: Message, db: AsyncSession):
 
 @router.message(Command("football", "soccer", "goal"))
 async def cmd_football(message: Message, db: AsyncSession):
+    if message.chat.type == "private":
+        await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
+
     user_id = message.from_user.id
     parts = message.text.split()
     if len(parts) < 2 or not parts[1].isdigit():
@@ -731,6 +763,10 @@ async def cmd_football(message: Message, db: AsyncSession):
 
 @router.message(Command("bowling", "bowl"))
 async def cmd_bowling(message: Message, db: AsyncSession):
+    if message.chat.type == "private":
+        await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
+
     user_id = message.from_user.id
     parts = message.text.split()
     if len(parts) < 2 or not parts[1].isdigit():
@@ -1569,6 +1605,10 @@ async def initiate_trivia_game(chat_id: int, db: AsyncSession, is_auto: bool = F
 
 @router.message(Command("trivia"))
 async def cmd_trivia(message: Message, db: AsyncSession):
+    if message.chat.type == "private":
+        await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
+
     chat_id = message.chat.id
     user_id = message.from_user.id
 
@@ -1606,6 +1646,10 @@ async def cmd_trivia(message: Message, db: AsyncSession):
 @router.message(Command("scribble"))
 @router.message(Command("unscramble"))
 async def cmd_scribble(message: Message, db: AsyncSession):
+    if message.chat.type == "private":
+        await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
+
     chat_id = message.chat.id
 
     if chat_id in active_games:
@@ -1970,13 +2014,17 @@ async def cb_dm_games(callback: CallbackQuery, db: AsyncSession):
 
 @router.callback_query(F.data == "play_mines")
 async def cb_play_mines(callback: CallbackQuery):
+    await callback.answer()
+    if callback.message.chat.type == "private":
+        await callback.message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
     text = (
         f"💣 **MINES GAME** 💣\n"
         f"───────────────\n"
         f"Test your luck in a 5x5 grid! Place a bet, choose how many mines (1-24) to hide, and reveal tiles. "
         f"Each diamond you find increases your multiplier. Cash out before hitting a mine!\n\n"
         f"👉 **To start playing, send**:\n"
-        f"• `/mines <bet> [mines_count]` in DM\n"
+        f"• `/mines <bet> [mines_count]` in group\n"
         f"  _(e.g. <code>/mines 100 3</code> starts a game with a 100 coin bet and 3 hidden mines)_\n\n"
         f"⚠️ Default mines count is 3. Bets must be between 10 and 100,000 coins."
     )
@@ -1989,7 +2037,6 @@ async def cb_play_mines(callback: CallbackQuery):
             await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
         except Exception:
             pass
-    await callback.answer()
 
 @router.callback_query(F.data == "play_daily")
 async def cb_play_daily(callback: CallbackQuery, db: AsyncSession):
@@ -2037,6 +2084,10 @@ async def cb_play_daily(callback: CallbackQuery, db: AsyncSession):
 
 @router.callback_query(F.data == "play_spin")
 async def cb_play_spin(callback: CallbackQuery, db: AsyncSession):
+    await callback.answer()
+    if callback.message.chat.type == "private":
+        await callback.message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
     user_id = callback.from_user.id
     nickname = callback.from_user.first_name
 
@@ -2092,6 +2143,10 @@ async def cb_play_spin(callback: CallbackQuery, db: AsyncSession):
 
 @router.callback_query(F.data == "play_trivia")
 async def cb_play_trivia(callback: CallbackQuery, db: AsyncSession):
+    await callback.answer()
+    if callback.message.chat.type == "private":
+        await callback.message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
     chat_id = callback.message.chat.id
 
     if chat_id in active_games:
@@ -2112,6 +2167,10 @@ async def cb_play_trivia(callback: CallbackQuery, db: AsyncSession):
 
 @router.callback_query(F.data == "play_scribble")
 async def cb_play_scribble(callback: CallbackQuery, db: AsyncSession):
+    await callback.answer()
+    if callback.message.chat.type == "private":
+        await callback.message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
     chat_id = callback.message.chat.id
 
     if chat_id in active_games:
@@ -2331,6 +2390,10 @@ async def cb_nameguess_stop(callback: CallbackQuery):
 
 @router.message(Command("nameguess", "guess"))
 async def cmd_nameguess(message: Message, db: AsyncSession):
+    if message.chat.type == "private":
+        await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
+
     chat_id = message.chat.id
     user_id = message.from_user.id
             
@@ -2400,6 +2463,9 @@ async def cmd_nameguess(message: Message, db: AsyncSession):
 @router.callback_query(F.data.in_({"play_nameguess", "btn_launch_nameguess"}))
 async def cb_play_nameguess(callback: CallbackQuery, db: AsyncSession):
     await callback.answer()
+    if callback.message.chat.type == "private":
+        await callback.message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
     await cmd_nameguess(callback.message, db)
 
 
@@ -2471,6 +2537,10 @@ async def cb_silhouette_stop(callback: CallbackQuery):
 
 @router.message(Command("whothat", "silhouette", "shadow"))
 async def cmd_silhouette(message: Message, db: AsyncSession):
+    if message.chat.type == "private":
+        await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
+
     chat_id = message.chat.id
     if chat_id in active_games:
         await message.answer("⚠️ There is already an active game running in this chat! Complete or stop it first.")
@@ -2549,6 +2619,9 @@ async def cmd_silhouette(message: Message, db: AsyncSession):
 @router.callback_query(F.data.in_({"play_silhouette", "btn_launch_silhouette"}))
 async def cb_play_silhouette(callback: CallbackQuery, db: AsyncSession):
     await callback.answer()
+    if callback.message.chat.type == "private":
+        await callback.message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
     await cmd_silhouette(callback.message, db)
 
 
@@ -2620,6 +2693,10 @@ async def cb_unown_stop(callback: CallbackQuery):
 
 @router.message(Command("unown", "wordguess", "cipher"))
 async def cmd_unown(message: Message, db: AsyncSession):
+    if message.chat.type == "private":
+        await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
+
     chat_id = message.chat.id
     if chat_id in active_games:
         await message.answer("⚠️ There is already an active game running in this chat! Complete or stop it first.")
@@ -2678,6 +2755,9 @@ async def cmd_unown(message: Message, db: AsyncSession):
 @router.callback_query(F.data.in_({"play_unown", "btn_launch_unown"}))
 async def cb_play_unown(callback: CallbackQuery, db: AsyncSession):
     await callback.answer()
+    if callback.message.chat.type == "private":
+        await callback.message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
     await cmd_unown(callback.message, db)
 
 
@@ -2724,6 +2804,10 @@ async def cb_voltorb_stop(callback: CallbackQuery):
 
 @router.message(Command("voltorb", "numguess", "vault"))
 async def cmd_voltorb(message: Message, db: AsyncSession):
+    if message.chat.type == "private":
+        await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
+
     chat_id = message.chat.id
     if chat_id in active_games:
         await message.answer("⚠️ There is already an active game running in this chat! Complete or stop it first.")
@@ -2772,6 +2856,9 @@ async def cmd_voltorb(message: Message, db: AsyncSession):
 @router.callback_query(F.data.in_({"play_voltorb", "btn_launch_voltorb"}))
 async def cb_play_voltorb(callback: CallbackQuery, db: AsyncSession):
     await callback.answer()
+    if callback.message.chat.type == "private":
+        await callback.message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
     await cmd_voltorb(callback.message, db)
 
 

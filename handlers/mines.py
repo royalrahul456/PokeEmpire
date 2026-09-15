@@ -10,7 +10,7 @@ from sqlalchemy import select
 from database.models import User
 import config
 
-from keyboards.inline import create_styled_button
+from keyboards.inline import create_styled_button, get_official_group_keyboard, GROUP_ONLY_GAMES_NOTICE
 
 router = Router()
 
@@ -81,6 +81,10 @@ def get_mines_keyboard(user_id: int, game: dict) -> InlineKeyboardMarkup:
 
 @router.message(Command("mines"))
 async def cmd_mines(message: Message, db: AsyncSession):
+    if message.chat.type == "private":
+        await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
+
     user_id = message.from_user.id
 
     parts = message.text.split()

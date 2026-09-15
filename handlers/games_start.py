@@ -8,7 +8,7 @@ import config
 import html
 from database.models import User
 from utils.trainer_level import get_trainer_title, get_xp_required_for_next_level
-from keyboards.inline import create_styled_button
+from keyboards.inline import create_styled_button, get_official_group_keyboard, GROUP_ONLY_GAMES_NOTICE
 
 router = Router()
 
@@ -486,6 +486,9 @@ async def cmd_games_help(message: Message):
 @router.callback_query(F.data == "btn_launch_mines")
 async def cb_launch_mines(callback: CallbackQuery):
     await callback.answer()
+    if callback.message.chat.type == "private":
+        await callback.message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
     await callback.message.answer(
         "💣 <b>Mines Game:</b>\nType <code>/mines &lt;bet_amount&gt;</code> to start a game!\nExample: <code>/mines 1000</code>",
         parse_mode="HTML"
@@ -494,6 +497,9 @@ async def cb_launch_mines(callback: CallbackQuery):
 @router.callback_query(F.data == "btn_launch_xo")
 async def cb_launch_xo(callback: CallbackQuery):
     await callback.answer()
+    if callback.message.chat.type == "private":
+        await callback.message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
     await callback.message.answer(
         "❌ <b>Tic-Tac-Toe (XO):</b>\nType <code>/ttc &lt;bet_amount&gt;</code> in a group or reply to an opponent!",
         parse_mode="HTML"
@@ -502,12 +508,18 @@ async def cb_launch_xo(callback: CallbackQuery):
 @router.callback_query(F.data == "btn_launch_spin")
 async def cb_launch_spin(callback: CallbackQuery, db: AsyncSession):
     await callback.answer()
+    if callback.message.chat.type == "private":
+        await callback.message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
     from handlers.games import cmd_spin
     await cmd_spin(callback.message, db)
 
 @router.callback_query(F.data == "btn_launch_dice")
 async def cb_launch_dice(callback: CallbackQuery):
     await callback.answer()
+    if callback.message.chat.type == "private":
+        await callback.message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
     await callback.message.answer(
         "🎲 <b>Dice Duel:</b>\nType <code>/dice &lt;bet_amount&gt;</code> to roll vs AI!\nExample: <code>/dice 500</code>",
         parse_mode="HTML"
@@ -516,6 +528,9 @@ async def cb_launch_dice(callback: CallbackQuery):
 @router.callback_query(F.data == "btn_launch_darts")
 async def cb_launch_darts(callback: CallbackQuery):
     await callback.answer()
+    if callback.message.chat.type == "private":
+        await callback.message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
     await callback.message.answer(
         "🎯 <b>Darts Target:</b>\nType <code>/darts &lt;bet_amount&gt;</code> to throw a dart!\nExample: <code>/darts 500</code>",
         parse_mode="HTML"
@@ -524,6 +539,9 @@ async def cb_launch_darts(callback: CallbackQuery):
 @router.callback_query(F.data == "btn_launch_basket")
 async def cb_launch_basket(callback: CallbackQuery):
     await callback.answer()
+    if callback.message.chat.type == "private":
+        await callback.message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
     await callback.message.answer(
         "🏀 <b>Basketball Free Throw:</b>\nType <code>/basketball &lt;bet_amount&gt;</code> to shoot!\nExample: <code>/basketball 500</code>",
         parse_mode="HTML"
@@ -532,6 +550,9 @@ async def cb_launch_basket(callback: CallbackQuery):
 @router.callback_query(F.data == "btn_launch_football")
 async def cb_launch_football(callback: CallbackQuery):
     await callback.answer()
+    if callback.message.chat.type == "private":
+        await callback.message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
     await callback.message.answer(
         "⚽ <b>Football Penalty:</b>\nType <code>/football &lt;bet_amount&gt;</code> to kick a penalty!\nExample: <code>/football 500</code>",
         parse_mode="HTML"
@@ -540,6 +561,9 @@ async def cb_launch_football(callback: CallbackQuery):
 @router.callback_query(F.data == "btn_launch_bowling")
 async def cb_launch_bowling(callback: CallbackQuery):
     await callback.answer()
+    if callback.message.chat.type == "private":
+        await callback.message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
     await callback.message.answer(
         "🎳 <b>Bowling Alley:</b>\nType <code>/bowling &lt;bet_amount&gt;</code> to roll for a strike!\nExample: <code>/bowling 500</code>",
         parse_mode="HTML"
@@ -548,6 +572,9 @@ async def cb_launch_bowling(callback: CallbackQuery):
 @router.callback_query(F.data == "btn_launch_rps")
 async def cb_launch_rps(callback: CallbackQuery):
     await callback.answer()
+    if callback.message.chat.type == "private":
+        await callback.message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
     await callback.message.answer(
         "✊ <b>Rock Paper Scissors:</b>\nType <code>/rps &lt;bet_amount&gt; &lt;rock/paper/scissors&gt;</code> to play!\nExample: <code>/rps 100 rock</code>",
         parse_mode="HTML"
@@ -556,29 +583,44 @@ async def cb_launch_rps(callback: CallbackQuery):
 @router.callback_query(F.data == "btn_launch_scribble")
 async def cb_launch_scribble(callback: CallbackQuery, db: AsyncSession):
     await callback.answer()
+    if callback.message.chat.type == "private":
+        await callback.message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
     from handlers.games import cmd_scribble
     await cmd_scribble(callback.message, db)
 
 @router.callback_query(F.data == "btn_launch_nameguess")
 async def cb_launch_nameguess(callback: CallbackQuery, db: AsyncSession):
     await callback.answer()
+    if callback.message.chat.type == "private":
+        await callback.message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
     from handlers.games import cmd_nameguess
     await cmd_nameguess(callback.message, db)
 
 @router.callback_query(F.data == "btn_launch_silhouette")
 async def cb_launch_silhouette(callback: CallbackQuery, db: AsyncSession):
     await callback.answer()
+    if callback.message.chat.type == "private":
+        await callback.message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
     from handlers.games import cmd_silhouette
     await cmd_silhouette(callback.message, db)
 
 @router.callback_query(F.data == "btn_launch_unown")
 async def cb_launch_unown(callback: CallbackQuery, db: AsyncSession):
     await callback.answer()
+    if callback.message.chat.type == "private":
+        await callback.message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
     from handlers.games import cmd_unown
     await cmd_unown(callback.message, db)
 
 @router.callback_query(F.data == "btn_launch_voltorb")
 async def cb_launch_voltorb(callback: CallbackQuery, db: AsyncSession):
     await callback.answer()
+    if callback.message.chat.type == "private":
+        await callback.message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
+        return
     from handlers.games import cmd_voltorb
     await cmd_voltorb(callback.message, db)

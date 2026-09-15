@@ -142,6 +142,8 @@ else:
 UPDATES_CHANNEL = os.getenv("UPDATES_CHANNEL", "@pokeempireupdates")
 DATABASE_CHANNEL = os.getenv("DATABASE_CHANNEL", "@pokeempiredatabase")
 AUCTION_CHANNEL = os.getenv("AUCTION_CHANNEL", "@PokeEmpireAuctions")
+SUPPORT_GROUP = os.getenv("SUPPORT_GROUP", "@pokeempireunion")
+SUPPORT_GROUP_URL = os.getenv("SUPPORT_GROUP_URL", "https://t.me/pokeempireunion")
 
 # Telegram Custom Emoji IDs for Native Inline Buttons (configurable)
 CUSTOM_EMOJI_IDS = {

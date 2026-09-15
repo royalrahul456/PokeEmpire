@@ -297,3 +297,18 @@ def get_uploader_menu_keyboard() -> InlineKeyboardMarkup:
         create_styled_button(text="View Media IDs", key="tools", callback_data="owner_medialist")
     )
     return builder.as_markup()
+
+GROUP_ONLY_GAMES_NOTICE = (
+    "⚠️ <b>Games are only available in our official group!</b>\n\n"
+    "To play mini-games, compete in PvP duels, and win Coins & Gems, please join our official group chat below:"
+)
+
+def get_official_group_keyboard() -> InlineKeyboardMarkup:
+    """Returns an inline keyboard with a direct button to join the official group."""
+    builder = InlineKeyboardBuilder()
+    group_url = getattr(config, "SUPPORT_GROUP_URL", "https://t.me/pokeempireunion")
+    builder.row(
+        create_styled_button(text="👥 Join Official GC", key="support", url=group_url, style="primary")
+    )
+    return builder.as_markup()
+

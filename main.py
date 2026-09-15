@@ -22,6 +22,10 @@ from handlers import (
     catch,
     admin,
     games_redirect,
+    games_start,
+    games,
+    xo,
+    mines,
     shop,
     trade,
     battle,
@@ -171,6 +175,28 @@ async def register_bot_commands(bot: Bot):
     except Exception as e:
         logger.error(f"Failed to reset chat menu button: {e}")
 
+async def register_games_bot_commands(bot: Bot):
+    from aiogram.types import BotCommand
+    commands = [
+        BotCommand(command="start", description="🎮 Launch PokeArena Games Center"),
+        BotCommand(command="games", description="🎰 Open Games Hub"),
+        BotCommand(command="balance", description="💰 Check your Coins & Gems"),
+        BotCommand(command="bal", description="💰 Check your Coins & Gems"),
+        BotCommand(command="mines", description="💣 Play Mines Game"),
+        BotCommand(command="ttc", description="❌ Play Tic-Tac-Toe PvP Duel"),
+        BotCommand(command="slot", description="🎰 Play Slot Machine Casino"),
+        BotCommand(command="spin", description="🎡 Free Hourly Fortune Wheel"),
+        BotCommand(command="rps", description="✊ Play Rock Paper Scissors"),
+        BotCommand(command="scribble", description="✏️ Play Drawing & Guessing"),
+        BotCommand(command="nameguess", description="💡 Play Pokémon Name Quiz"),
+        BotCommand(command="help", description="📖 How to Play Mini-Games"),
+    ]
+    try:
+        await bot.set_my_commands(commands)
+        logger.info("✅ Registered PokeArena games bot commands menu successfully")
+    except Exception as e:
+        logger.warning(f"Failed to register PokeArena bot commands: {e}")
+
 def apply_auto_reply_patch():
     from aiogram.types import Message
     
@@ -216,7 +242,6 @@ async def main():
     check_and_copy_sqlite_db()
 
     logger.info("Initializing PokeEmpire Spawn Bot engine...")
-
 
     # Initialize Database tables and seeds
     await init_db()
@@ -295,61 +320,138 @@ async def main():
 
     # Register Middlewares
     dp.update.outer_middleware(DbSessionMiddleware())
-    
-    # Group Activity Middleware must run before membership & antispam checks
-    # so that banned words and flood spams are deleted/fined immediately for all users.
     dp.message.outer_middleware(GroupActivityMiddleware())
-    
-    # Enforce membership checks on messages and callbacks - DISABLED
-    # dp.message.outer_middleware(MembershipMiddleware())
-    # dp.callback_query.outer_middleware(MembershipMiddleware())
-    
-    # Throttle commands and button clicks
     dp.message.outer_middleware(AntiSpamMiddleware())
     dp.callback_query.outer_middleware(AntiSpamMiddleware())
 
-    # Register Handler Routers
-    dp.include_router(admin.router)
-    dp.include_router(start.router)
-    dp.include_router(profile.router)
-    dp.include_router(catch.router)
-    dp.include_router(games_redirect.router)
-    dp.include_router(shop.router)
-    dp.include_router(trade.router)
-    dp.include_router(battle.router)
-    dp.include_router(redeem.router)
-    dp.include_router(auction.router)
-    dp.include_router(quests.router)
-    dp.include_router(guilds.router)
-    dp.include_router(mystery_events.router)
-
-    logger.info("Bot handlers and routers registered.")
-
-    # Register bot menu commands
-    await register_bot_commands(bot)
-    
-    # Start a dummy HTTP server in the background for Render health checks
-    await start_dummy_server()
+    # Check if dual bot configuration is active
+    is_dual_bot = bool(
+        config.GAMES_BOT_TOKEN 
+        and config.GAMES_BOT_TOKEN != config.BOT_TOKEN 
+        and config.GAMES_BOT_TOKEN != "YOUR_BOT_TOKEN_HERE"
+    )
 
     # Start the Auction settlement background loop worker task
     from handlers.auction import auction_settlement_worker
     asyncio.create_task(auction_settlement_worker(bot))
 
-    
-    # Start polling updates with proxy failure resilience
-    try:
-        retry_count = 0
-        while True:
-            try:
-                await dp.start_polling(bot, skip_updates=False)
-                break
-            except Exception as e:
-                retry_count += 1
-                logger.error(f"Connection failed at startup (attempt {retry_count}): {e}")
-                logger.info("Retrying connection in 5 seconds...")
-                await asyncio.sleep(5)
-    finally:
-        await bot.session.close()
+    if is_dual_bot:
+        logger.info("🚀 Dual-Bot Mode active: Starting PokeEmpire (Main) + PokeArena (Games) concurrently.")
+        
+        # Main bot handles RPG gameplay and redirects game commands to PokeArena
+        dp.include_router(admin.router)
+        dp.include_router(start.router)
+        dp.include_router(profile.router)
+        dp.include_router(catch.router)
+        dp.include_router(games_redirect.router)
+        dp.include_router(shop.router)
+        dp.include_router(trade.router)
+        dp.include_router(battle.router)
+        dp.include_router(redeem.router)
+        dp.include_router(auction.router)
+        dp.include_router(quests.router)
+        dp.include_router(guilds.router)
+        dp.include_router(mystery_events.router)
+        
+        # Setup Games bot
+        if config.TELEGRAM_PROXY:
+            from aiogram.client.session.aiohttp import AiohttpSession
+            games_session = AiohttpSession(proxy=config.TELEGRAM_PROXY)
+            games_bot = Bot(
+                token=config.GAMES_BOT_TOKEN,
+                session=games_session,
+                default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
+            )
+        else:
+            games_bot = Bot(
+                token=config.GAMES_BOT_TOKEN,
+                default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
+            )
+            
+        patch_bot_emojis(games_bot)
+        
+        dp_games = Dispatcher()
+        dp_games.update.outer_middleware(DbSessionMiddleware())
+        dp_games.message.outer_middleware(GroupActivityMiddleware())
+        dp_games.message.outer_middleware(AntiSpamMiddleware())
+        dp_games.callback_query.outer_middleware(AntiSpamMiddleware())
+        
+        dp_games.include_router(games_start.router)
+        dp_games.include_router(games.router)
+        dp_games.include_router(xo.router)
+        dp_games.include_router(mines.router)
+        
+        logger.info("Both Main and Games Bot handlers registered.")
+        
+        await register_bot_commands(bot)
+        await register_games_bot_commands(games_bot)
+        
+        async def run_main_bot():
+            retry_count = 0
+            while True:
+                try:
+                    logger.info("Main Bot (PokeEmpire) polling started.")
+                    await dp.start_polling(bot, skip_updates=False)
+                    break
+                except Exception as e:
+                    retry_count += 1
+                    logger.error(f"Main Bot connection failed (attempt {retry_count}): {e}")
+                    logger.info("Retrying Main Bot connection in 5 seconds...")
+                    await asyncio.sleep(5)
+
+        async def run_games_bot():
+            retry_count = 0
+            while True:
+                try:
+                    logger.info("Games Bot (PokeArena) polling started.")
+                    await dp_games.start_polling(games_bot, skip_updates=False)
+                    break
+                except Exception as e:
+                    retry_count += 1
+                    logger.error(f"Games Bot connection failed (attempt {retry_count}): {e}")
+                    logger.info("Retrying Games Bot connection in 5 seconds...")
+                    await asyncio.sleep(5)
+
+        try:
+            await asyncio.gather(run_main_bot(), run_games_bot())
+        finally:
+            await bot.session.close()
+            await games_bot.session.close()
+    else:
+        logger.info("⚡ Single-Bot Mode active: All gameplay and mini-games handled on PokeEmpire.")
+        dp.include_router(admin.router)
+        dp.include_router(start.router)
+        dp.include_router(profile.router)
+        dp.include_router(catch.router)
+        dp.include_router(games.router)
+        dp.include_router(xo.router)
+        dp.include_router(mines.router)
+        dp.include_router(shop.router)
+        dp.include_router(trade.router)
+        dp.include_router(battle.router)
+        dp.include_router(redeem.router)
+        dp.include_router(auction.router)
+        dp.include_router(quests.router)
+        dp.include_router(guilds.router)
+        dp.include_router(mystery_events.router)
+
+        logger.info("Bot handlers and routers registered.")
+        await register_bot_commands(bot)
+        
+        try:
+            retry_count = 0
+            while True:
+                try:
+                    logger.info("PokeEmpire Bot polling started.")
+                    await dp.start_polling(bot, skip_updates=False)
+                    break
+                except Exception as e:
+                    retry_count += 1
+                    logger.error(f"Connection failed at startup (attempt {retry_count}): {e}")
+                    logger.info("Retrying connection in 5 seconds...")
+                    await asyncio.sleep(5)
+        finally:
+            await bot.session.close()
 
 if __name__ == "__main__":
     try:

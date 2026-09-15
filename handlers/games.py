@@ -1173,21 +1173,6 @@ async def cmd_trivia(message: Message, db: AsyncSession):
 async def cmd_scribble(message: Message, db: AsyncSession):
     chat_id = message.chat.id
 
-    if message.chat.type in ["group", "supergroup"]:
-        if not message.chat.username or message.chat.username.lower() != "pokeempireunion":
-            builder = InlineKeyboardBuilder()
-            builder.row(create_styled_button(text="🔗 Join Official GC", key="support", url="https://t.me/pokeempireunion"))
-            await message.answer(
-                "⚠️ <b>Scribble and Nameguess games are only available in our official group chat!</b>\n\n"
-                "Join us there to play and win coins!",
-                reply_markup=builder.as_markup(),
-                parse_mode="HTML"
-            )
-            return
-        else:
-            await message.answer("✏️ <b>Scribble</b> runs automatically in this group chat all the time! Keep an eye out for active words.")
-            return
-
     if chat_id in active_games:
         await message.answer("⚠️ There is already an active trivia or scribble game in this chat! Answer it first.")
         return
@@ -1771,18 +1756,6 @@ async def cb_nameguess_stop(callback: CallbackQuery):
 async def cmd_nameguess(message: Message, db: AsyncSession):
     chat_id = message.chat.id
     user_id = message.from_user.id
-
-    if message.chat.type in ["group", "supergroup"]:
-        if not message.chat.username or message.chat.username.lower() != "pokeempireunion":
-            builder = InlineKeyboardBuilder()
-            builder.row(InlineKeyboardButton(text="🔗 Join Official GC", url="https://t.me/pokeempireunion"))
-            await message.answer(
-                "⚠️ <b>Scribble and Nameguess games are only available in our official group chat!</b>\n\n"
-                "Join us there to play and win coins!",
-                reply_markup=builder.as_markup(),
-                parse_mode="HTML"
-            )
-            return
             
     if chat_id in active_games:
         await message.answer("⚠️ There is already an active trivia or scribble game in this chat! Answer it first.")

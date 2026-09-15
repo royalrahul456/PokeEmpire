@@ -82,19 +82,6 @@ def get_mines_keyboard(user_id: int, game: dict) -> InlineKeyboardMarkup:
 @router.message(Command("mines"))
 async def cmd_mines(message: Message, db: AsyncSession):
     user_id = message.from_user.id
-    
-    # Restrict to official group chat if used in groups
-    if message.chat.type in ["group", "supergroup"]:
-        if not message.chat.username or message.chat.username.lower() != "pokeempireunion":
-            builder = InlineKeyboardBuilder()
-            builder.row(create_styled_button(text="🔗 Join Official GC", key="support", url="https://t.me/pokeempireunion"))
-            await message.answer(
-                "⚠️ <b>Mines game is only available in our official group chat!</b>\n\n"
-                "Join us there to play!",
-                reply_markup=builder.as_markup(),
-                parse_mode="HTML"
-            )
-            return
 
     parts = message.text.split()
     

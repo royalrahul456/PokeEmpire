@@ -390,7 +390,6 @@ async def main():
         
         dp_games = Dispatcher()
         dp_games.update.outer_middleware(DbSessionMiddleware())
-        dp_games.message.outer_middleware(GroupActivityMiddleware())
         dp_games.message.outer_middleware(AntiSpamMiddleware())
         dp_games.callback_query.outer_middleware(AntiSpamMiddleware())
         
@@ -401,6 +400,19 @@ async def main():
         
         logger.info("Both Main and Games Bot handlers registered.")
         
+        # Verify Bot Tokens with Telegram
+        try:
+            bot_info = await bot.get_me()
+            logger.info(f"✅ Main Bot authenticated: @{bot_info.username} (ID: {bot_info.id})")
+        except Exception as e:
+            logger.error(f"❌ Main Bot token verification failed: {e}")
+
+        try:
+            games_bot_info = await games_bot.get_me()
+            logger.info(f"✅ Games Bot authenticated: @{games_bot_info.username} (ID: {games_bot_info.id})")
+        except Exception as e:
+            logger.error(f"❌ Games Bot token verification failed: {e}")
+
         await register_bot_commands(bot)
         await register_games_bot_commands(games_bot)
         

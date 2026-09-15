@@ -5,8 +5,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import config
+import html
 from database.models import User
-from utils.formatters import escape_md
 from utils.trainer_level import get_trainer_title, get_xp_required_for_next_level
 from keyboards.inline import create_styled_button
 
@@ -42,7 +42,7 @@ def get_games_hub_keyboard(main_bot_username: str = None) -> InlineKeyboardBuild
 
 @router.message(CommandStart())
 async def cmd_games_start(message: Message, db: AsyncSession):
-    user_name = escape_md(message.from_user.first_name)
+    user_name = html.escape(message.from_user.first_name or "Trainer")
     welcome_text = (
         f"🎮 <b>Welcome to PokeArena Games Center!</b> 🎮\n"
         f"◈ ────────────────────────── ◈\n"
@@ -76,7 +76,7 @@ async def cmd_games_hub(message: Message):
 @router.message(Command("balance", "bal"))
 async def cmd_balance(message: Message, db: AsyncSession):
     user_id = message.from_user.id
-    user_name = escape_md(message.from_user.first_name)
+    user_name = html.escape(message.from_user.first_name or "Trainer")
     
     stmt = select(User).where(User.id == user_id)
     res = await db.execute(stmt)
@@ -113,7 +113,7 @@ async def cmd_balance(message: Message, db: AsyncSession):
 async def cb_check_balance(callback: CallbackQuery, db: AsyncSession):
     await callback.answer()
     user_id = callback.from_user.id
-    user_name = escape_md(callback.from_user.first_name)
+    user_name = html.escape(callback.from_user.first_name or "Trainer")
     
     stmt = select(User).where(User.id == user_id)
     res = await db.execute(stmt)

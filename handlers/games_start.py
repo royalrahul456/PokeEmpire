@@ -12,6 +12,22 @@ from keyboards.inline import create_styled_button
 
 router = Router()
 
+def get_welcome_tab_keyboard(main_bot_username: str = None) -> InlineKeyboardBuilder:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        create_styled_button(text="🎮 View All Mini-Games (Games Tab)", key="games", callback_data="btn_open_games_hub", style="primary")
+    )
+    builder.row(
+        create_styled_button(text="💰 Balance & Wallet", key="profile", callback_data="btn_check_balance", style="success"),
+        create_styled_button(text="🎡 Hourly Spin", key="games", callback_data="btn_launch_spin", style="success")
+    )
+    main_username = main_bot_username or getattr(config, "MAIN_BOT_USERNAME", "pokeempirebot")
+    clean_username = main_username.replace("@", "")
+    builder.row(
+        create_styled_button(text="⚡ Back to Main Bot", key="back", url=f"https://t.me/{clean_username}", style="primary")
+    )
+    return builder
+
 def get_games_hub_keyboard(main_bot_username: str = None) -> InlineKeyboardBuilder:
     builder = InlineKeyboardBuilder()
     
@@ -25,27 +41,27 @@ def get_games_hub_keyboard(main_bot_username: str = None) -> InlineKeyboardBuild
     )
     builder.row(
         create_styled_button(text="❌ Tic-Tac-Toe", key="games", callback_data="btn_launch_xo", style="primary"),
-        create_styled_button(text="🎰 Slots Casino", key="games", callback_data="btn_launch_slots", style="primary")
+        create_styled_button(text="🎡 Spin Wheel", key="games", callback_data="btn_launch_spin", style="success")
     )
     builder.row(
-        create_styled_button(text="🎡 Spin Wheel", key="games", callback_data="btn_launch_spin", style="success"),
-        create_styled_button(text="🎲 Dice Duel", key="games", callback_data="btn_launch_dice", style="primary")
+        create_styled_button(text="🎲 Dice Duel", key="games", callback_data="btn_launch_dice", style="primary"),
+        create_styled_button(text="🎯 Darts", key="games", callback_data="btn_launch_darts", style="primary")
     )
     builder.row(
-        create_styled_button(text="🎯 Darts", key="games", callback_data="btn_launch_darts", style="primary"),
-        create_styled_button(text="🏀 Basketball", key="games", callback_data="btn_launch_basket", style="primary")
+        create_styled_button(text="🏀 Basketball", key="games", callback_data="btn_launch_basket", style="primary"),
+        create_styled_button(text="⚽ Football", key="games", callback_data="btn_launch_football", style="primary")
     )
     builder.row(
-        create_styled_button(text="⚽ Football", key="games", callback_data="btn_launch_football", style="primary"),
-        create_styled_button(text="🎳 Bowling", key="games", callback_data="btn_launch_bowling", style="primary")
+        create_styled_button(text="🎳 Bowling", key="games", callback_data="btn_launch_bowling", style="primary"),
+        create_styled_button(text="✊ RPS", key="games", callback_data="btn_launch_rps", style="primary")
     )
     builder.row(
-        create_styled_button(text="✊ RPS", key="games", callback_data="btn_launch_rps", style="primary"),
-        create_styled_button(text="✏️ Scribble", key="games", callback_data="btn_launch_scribble", style="primary")
+        create_styled_button(text="✏️ Scribble", key="games", callback_data="btn_launch_scribble", style="primary"),
+        create_styled_button(text="💡 NameGuess", key="games", callback_data="btn_launch_nameguess", style="success")
     )
     builder.row(
-        create_styled_button(text="💡 NameGuess", key="games", callback_data="btn_launch_nameguess", style="success"),
-        create_styled_button(text="💰 Balance", key="profile", callback_data="btn_check_balance", style="success")
+        create_styled_button(text="💰 Balance", key="profile", callback_data="btn_check_balance", style="success"),
+        create_styled_button(text="🔙 Welcome Menu", key="back", callback_data="btn_open_welcome_tab", style="primary")
     )
 
     main_username = main_bot_username or getattr(config, "MAIN_BOT_USERNAME", "pokeempirebot")
@@ -74,22 +90,6 @@ async def cmd_games_start(message: Message, db: AsyncSession):
             f"• Mines count: 1 to 24 (default: 3)\n"
             f"• Example: <code>/mines 500 3</code>\n\n"
             f"<i>Type the command above to start playing!</i>",
-            reply_markup=builder.as_markup(),
-            parse_mode="HTML"
-        )
-        return
-
-    if arg in ["slot", "slots", "casino"]:
-        builder = InlineKeyboardBuilder()
-        builder.row(create_styled_button(text="🎰 Play Slots", key="games", callback_data="btn_launch_slots", style="primary"))
-        builder.row(create_styled_button(text="🎰 Games Hub", key="games", callback_data="btn_open_games_hub", style="primary"))
-        await message.answer(
-            f"🎰 <b>Slot Machine Casino</b>\n"
-            f"◈ ────────────────────────── ◈\n"
-            f"Match 3 symbols to trigger jackpots up to 10x your bet!\n\n"
-            f"📌 <b>Format:</b> <code>/slot &lt;bet&gt;</code>\n"
-            f"• Example: <code>/slot 500</code>\n\n"
-            f"<i>Type the command above to roll the reels!</i>",
             reply_markup=builder.as_markup(),
             parse_mode="HTML"
         )
@@ -299,32 +299,40 @@ async def cmd_games_start(message: Message, db: AsyncSession):
         )
         return
 
+    user_id = message.from_user.id
+    stmt = select(User).where(User.id == user_id)
+    res = await db.execute(stmt)
+    user = res.scalar_one_or_none()
+    
+    if not user:
+        user = User(id=user_id, username=message.from_user.username, nickname=message.from_user.first_name or "Trainer", coins=1000, gems=10)
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+
+    level = getattr(user, 'trainer_level', 1) or 1
+    title = get_trainer_title(level)
+
     welcome_text = (
-        f"🎮 <b>PokeArena Games Hub</b>\n"
+        f"🎮 <b>Welcome to PokeArena!</b> 🎮\n"
         f"◈ ────────────────────────── ◈\n"
-        f"Welcome, <b>{user_name}</b>!\n"
-        f"Play games to win 🪙 <b>Coins</b> & 💎 <b>Gems</b> directly synced to your account.\n\n"
-        f"🕹️ <b>Quick Games:</b>\n"
-        f"• 👤 <code>/whothat</code> — Silhouette Trial\n"
-        f"• 👁️ <code>/unown</code> — Unown Cipher\n"
-        f"• ⚡ <code>/voltorb</code> — Voltorb Lock\n"
-        f"• 💣 <code>/mines</code> — Minefield\n"
-        f"• 🎰 <code>/slot</code> — Casino Slots\n"
-        f"• ❌ <code>/ttc</code> — Tic-Tac-Toe\n"
-        f"• 🎡 <code>/spin</code> — Hourly Fortune Wheel\n"
-        f"• 💰 <code>/balance</code> — Wallet Balance\n"
+        f"👤 Trainer: <b>{user_name}</b> (<code>{user_id}</code>)\n"
+        f"⭐ Level: <b>{level} ({title})</b>\n\n"
+        f"💰 <b>Coins:</b> <code>{user.coins:,}</code> 🪙\n"
+        f"💎 <b>Gems:</b> <code>{getattr(user, 'gems', 0):,}</code> 💎\n"
         f"◈ ────────────────────────── ◈\n"
-        f"<i>Select a game below to play:</i>"
+        f"<i>All coins, gems, and rewards won here are synced to your main account in real-time.</i>\n\n"
+        f"👇 <b>Select a tab below to begin:</b>"
     )
-    kb = get_games_hub_keyboard(getattr(config, "MAIN_BOT_USERNAME", None))
+    kb = get_welcome_tab_keyboard(getattr(config, "MAIN_BOT_USERNAME", None))
     await message.answer(welcome_text, reply_markup=kb.as_markup(), parse_mode="HTML")
 
 @router.message(Command("games"))
 async def cmd_games_hub(message: Message):
     hub_text = (
-        f"🎰 <b>PokeArena Games Hub</b> 🎰\n"
+        f"🎰 <b>PokeArena — Mini-Games Tab</b> 🎰\n"
         f"◈ ────────────────────────── ◈\n"
-        f"Choose a mini-game to play and win coins & gems!"
+        f"Select a mini-game below to play and win coins & gems:"
     )
     kb = get_games_hub_keyboard(getattr(config, "MAIN_BOT_USERNAME", None))
     await message.answer(hub_text, reply_markup=kb.as_markup(), parse_mode="HTML")
@@ -404,21 +412,62 @@ async def cb_check_balance(callback: CallbackQuery, db: AsyncSession):
 async def cb_open_games_hub(callback: CallbackQuery):
     await callback.answer()
     hub_text = (
-        f"🎰 <b>PokeArena Games Hub</b> 🎰\n"
+        f"🎰 <b>PokeArena — Mini-Games Tab</b> 🎰\n"
         f"◈ ────────────────────────── ◈\n"
-        f"Choose a mini-game to play and win coins & gems!"
+        f"Select a mini-game below to play:"
     )
     kb = get_games_hub_keyboard(getattr(config, "MAIN_BOT_USERNAME", None))
-    await callback.message.answer(hub_text, reply_markup=kb.as_markup(), parse_mode="HTML")
+    try:
+        await callback.message.edit_text(hub_text, reply_markup=kb.as_markup(), parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(hub_text, reply_markup=kb.as_markup(), parse_mode="HTML")
+
+@router.callback_query(F.data == "btn_open_welcome_tab")
+async def cb_open_welcome_tab(callback: CallbackQuery, db: AsyncSession):
+    await callback.answer()
+    user_id = callback.from_user.id
+    user_name = html.escape(callback.from_user.first_name or "Trainer")
+    
+    stmt = select(User).where(User.id == user_id)
+    res = await db.execute(stmt)
+    user = res.scalar_one_or_none()
+    
+    if not user:
+        user = User(id=user_id, username=callback.from_user.username, nickname=callback.from_user.first_name or "Trainer", coins=1000, gems=10)
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+
+    level = getattr(user, 'trainer_level', 1) or 1
+    title = get_trainer_title(level)
+
+    welcome_text = (
+        f"🎮 <b>Welcome to PokeArena!</b> 🎮\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"👤 Trainer: <b>{user_name}</b> (<code>{user_id}</code>)\n"
+        f"⭐ Level: <b>{level} ({title})</b>\n\n"
+        f"💰 <b>Coins:</b> <code>{user.coins:,}</code> 🪙\n"
+        f"💎 <b>Gems:</b> <code>{getattr(user, 'gems', 0):,}</code> 💎\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"<i>All coins, gems, and rewards won here are synced to your main account in real-time.</i>\n\n"
+        f"👇 <b>Select a tab below to begin:</b>"
+    )
+    kb = get_welcome_tab_keyboard(getattr(config, "MAIN_BOT_USERNAME", None))
+    try:
+        await callback.message.edit_text(welcome_text, reply_markup=kb.as_markup(), parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(welcome_text, reply_markup=kb.as_markup(), parse_mode="HTML")
 
 @router.message(Command("help"))
 async def cmd_games_help(message: Message):
     help_text = (
         f"📖 <b>PokeArena Games Guide & Rules</b> 📖\n"
         f"◈ ────────────────────────── ◈\n"
-        f"• 💣 <b>Mines:</b> <code>/mines &lt;bet&gt; [count]</code> - Pick safe tiles. Cash out before detonating!\n"
+        f"• 👤 <b>Silhouette:</b> <code>/whothat</code> - Identify Pokémon shadow outline.\n"
+        f"• 👁️ <b>Unown Cipher:</b> <code>/unown</code> - Decrypt ancient 3/4/5-letter word cipher.\n"
+        f"• ⚡ <b>Voltorb Lock:</b> <code>/voltorb</code> - Hack 1–50 security PIN in 6 attempts.\n"
+        f"• 💣 <b>Mines:</b> <code>/mines &lt;bet&gt; [count]</code> - Pick safe tiles before detonating.\n"
         f"• ❌ <b>Tic-Tac-Toe:</b> <code>/ttc &lt;bet&gt;</code> - 3x3 duel against AI or players.\n"
-        f"• 🎰 <b>Slots:</b> <code>/slot &lt;bet&gt;</code> - Match 3 symbols for up to 10x jackpot.\n"
         f"• 🎡 <b>Spin Wheel:</b> <code>/spin</code> - Hourly free spin for coins & gems.\n"
         f"• 🎲 <b>Dice Duel:</b> <code>/dice &lt;bet&gt;</code> - Roll higher than AI to win 2x.\n"
         f"• 🎯 <b>Darts:</b> <code>/darts &lt;bet&gt;</code> - Hit Bullseye for 3x or inner ring for 1.5x.\n"
@@ -447,14 +496,6 @@ async def cb_launch_xo(callback: CallbackQuery):
     await callback.answer()
     await callback.message.answer(
         "❌ <b>Tic-Tac-Toe (XO):</b>\nType <code>/ttc &lt;bet_amount&gt;</code> in a group or reply to an opponent!",
-        parse_mode="HTML"
-    )
-
-@router.callback_query(F.data == "btn_launch_slots")
-async def cb_launch_slots(callback: CallbackQuery):
-    await callback.answer()
-    await callback.message.answer(
-        "🎰 <b>Slots Casino:</b>\nType <code>/slot &lt;bet_amount&gt;</code> to roll the reels!\nExample: <code>/slot 500</code>",
         parse_mode="HTML"
     )
 

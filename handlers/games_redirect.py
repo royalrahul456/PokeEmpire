@@ -19,59 +19,11 @@ def get_games_redirect_keyboard() -> InlineKeyboardBuilder:
     )
     return builder
 
-@router.message(Command(
-    "games", "minigames", "mines", "endmines", "ttc", "xo", "tictactoe", 
-    "slot", "slots", "casino", "spin", "wheel", "rps", "rockpaperscissors", 
-    "scribble", "nameguess", "guess", "coinflip", "cf", "flip", 
-    "trivia", "dice", "roll", "darts", "dart", "basketball", "basket", "bb",
-    "football", "soccer", "goal", "bowling", "bowl",
-    "whothat", "silhouette", "shadow", "unown", "wordguess", "cipher",
-    "voltorb", "numguess", "vault"
-))
-async def cmd_redirect_games(message: Message):
-    games_username = getattr(config, "GAMES_BOT_USERNAME", "@PokeXArenaBot").replace("@", "")
-    cmd = message.text.split()[0].replace("/", "").split("@")[0].lower() if message.text else "hub"
-    
-    arg_map = {
-        "mines": "mines", "endmines": "mines",
-        "slot": "slot", "slots": "slot", "casino": "slot",
-        "spin": "spin", "wheel": "spin",
-        "ttc": "ttc", "xo": "ttc", "tictactoe": "ttc",
-        "rps": "rps", "rockpaperscissors": "rps",
-        "scribble": "scribble", "unscramble": "scribble",
-        "nameguess": "nameguess", "guess": "nameguess",
-        "dice": "dice", "roll": "dice",
-        "darts": "darts", "dart": "darts",
-        "basketball": "basket", "basket": "basket", "bb": "basket",
-        "football": "football", "soccer": "football", "goal": "football",
-        "bowling": "bowling", "bowl": "bowling",
-        "coinflip": "coinflip", "cf": "coinflip", "flip": "coinflip",
-        "whothat": "silhouette", "silhouette": "silhouette", "shadow": "silhouette",
-        "unown": "unown", "wordguess": "unown", "cipher": "unown",
-        "voltorb": "voltorb", "numguess": "voltorb", "vault": "voltorb"
-    }
-    target_arg = arg_map.get(cmd, "hub")
-    
-    redirect_text = (
-        f"🎰 <b>Mini-Games have moved to PokeArena!</b> 🎰\n"
-        f"◈ ────────────────────────── ◈\n"
-        f"All mini-games (<i>Mines, Tic-Tac-Toe, Slots, Silhouette, Unown Cipher, Voltorb Lock, Dice, Darts, Spin Wheel</i>) are now played on <b>@{games_username}</b>!\n\n"
-        f"🏆 All coins and rewards won on PokeArena are synced directly to your account in real-time!\n\n"
-        f"👇 <i>Click below to launch:</i>"
-    )
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        create_styled_button(
-            text="🎮 Play on PokeArena",
-            key="games",
-            url=f"https://t.me/{games_username}?start={target_arg}"
-        )
-    )
-    await message.answer(redirect_text, reply_markup=builder.as_markup(), parse_mode="HTML")
+# Command redirection is disabled so PokeEmpire does not reply with transfer prompts when games are played.
 
 @router.callback_query(F.data.in_({
     "dm_games", "play_daily", "play_spin", "play_trivia", "play_scribble", "play_mines",
-    "btn_launch_mines", "btn_launch_xo", "btn_launch_slots", "btn_launch_spin", 
+    "btn_launch_mines", "btn_launch_xo", "btn_launch_spin", 
     "btn_launch_rps", "btn_launch_scribble", "btn_launch_nameguess", "btn_open_games_hub",
     "btn_launch_dice", "btn_launch_darts", "btn_launch_basket", "btn_launch_football",
     "btn_launch_bowling", "btn_launch_silhouette", "btn_launch_unown", "btn_launch_voltorb",
@@ -83,7 +35,6 @@ async def cb_redirect_games(callback: CallbackQuery):
     
     cb_arg_map = {
         "play_mines": "mines", "btn_launch_mines": "mines",
-        "btn_launch_slots": "slot",
         "play_spin": "spin", "btn_launch_spin": "spin",
         "btn_launch_xo": "ttc",
         "btn_launch_rps": "rps",

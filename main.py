@@ -185,7 +185,6 @@ async def register_games_bot_commands(bot: Bot):
         BotCommand(command="voltorb", description="⚡ The Voltorb Lock (Num Guess)"),
         BotCommand(command="mines", description="💣 Play Mines Game"),
         BotCommand(command="ttc", description="❌ Play Tic-Tac-Toe PvP Duel"),
-        BotCommand(command="slot", description="🎰 Play Slot Machine Casino"),
         BotCommand(command="spin", description="🎡 Free Hourly Fortune Wheel"),
         BotCommand(command="balance", description="💰 Check your Coins & Gems"),
         BotCommand(command="streak", description="🔥 View Daily Catch Streak"),

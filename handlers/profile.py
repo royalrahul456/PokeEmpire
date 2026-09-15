@@ -698,6 +698,110 @@ async def cmd_balance(message: Message, db: AsyncSession):
         print(f"Error in cmd_balance: {e}")
         await message.answer("❌ An error occurred while retrieving your balance.")
 
+@router.message(Command("streak", "streaks"))
+async def cmd_streak(message: Message, db: AsyncSession):
+    user_id = message.from_user.id
+    
+    stmt = select(User).where(User.id == user_id)
+    res = await db.execute(stmt)
+    user = res.scalar_one_or_none()
+    if not user:
+        await message.answer("⚠️ You must register first with /start or catch a Pokémon!")
+        return
+        
+    from utils.streak import get_streak_data, get_streak_rank
+    from datetime import datetime, timedelta
+    
+    s_data = await get_streak_data(user_id)
+    
+    today = datetime.utcnow().date().isoformat()
+    yesterday = (datetime.utcnow() - timedelta(days=1)).date().isoformat()
+    
+    last_sec = s_data.get("last_secured_date", "")
+    if last_sec == today:
+        status_str = "Active!"
+        capped_count = 3
+    elif last_sec == yesterday:
+        status_str = "Active!"
+        capped_count = min(s_data.get("catches_today", 0), 3)
+    else:
+        status_str = "Streak broken!"
+        capped_count = min(s_data.get("catches_today", 0), 3)
+        
+    current_days = s_data.get("current_streak", 0)
+    best_days = s_data.get("best_streak", 0)
+    rank_str = get_streak_rank(current_days)
+    
+    bar_chars = "█" * (capped_count * 3) + "░" * (10 - (capped_count * 3))
+    if capped_count == 3:
+        bar_chars = "█" * 10
+        
+    text = (
+        f"🔥 <b>Daily Streak — {html.escape(user.nickname or user.username or message.from_user.first_name or 'Trainer')}</b>\n\n"
+        f"<blockquote>💧 <b>Status</b>: <code>{status_str}</code>\n"
+        f"🎁 <b>Current</b>: <code>{current_days} days</code>\n"
+        f"🏆 <b>Best</b>: <code>{best_days} days</code>\n"
+        f"🏆 <b>Rank</b>: <code>{rank_str}</code>\n"
+        f"🎁 <b>Progress</b>: <code>[{bar_chars}] {capped_count}/3</code></blockquote>\n\n"
+        f"👉 <i>Catch 3 Pokémon every day to keep your streak!</i>"
+    )
+    await message.answer(text, parse_mode="HTML")
+
+@router.message(Command("streaklb", "slb", "streakslb", "streaksleaderboard"))
+async def cmd_streak_leaderboard(message: Message, db: AsyncSession):
+    from utils.streak import get_top_streaks
+    
+    top_users = await get_top_streaks(10)
+    if not top_users:
+        await message.answer("🏆 <b>STREAK LEADERBOARD</b> 🏆\n───────────────\n\n• <i>No active streaks recorded yet.</i>", parse_mode="HTML")
+        return
+        
+    import config
+    bot_id = None
+    if config.BOT_TOKEN and ":" in config.BOT_TOKEN:
+        try:
+            bot_id = int(config.BOT_TOKEN.split(":")[0])
+        except ValueError:
+            pass
+
+    filtered_users = []
+    for uid, uinfo in top_users:
+        if bot_id and uid == bot_id:
+            continue
+        filtered_users.append((uid, uinfo))
+    filtered_users = filtered_users[:10]
+
+    if not filtered_users:
+        await message.answer("🏆 <b>STREAK LEADERBOARD</b> 🏆\n───────────────\n\n• <i>No active streaks recorded yet.</i>", parse_mode="HTML")
+        return
+
+    uids = [uid for uid, _ in filtered_users]
+    u_stmt = select(User).where(User.id.in_(uids))
+    u_res = await db.execute(u_stmt)
+    users_dict = {u.id: u for u in u_res.scalars().all()}
+
+    medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+    rows = []
+    for idx, (uid, uinfo) in enumerate(filtered_users):
+        user = users_dict.get(uid)
+        username = user.username if user else None
+        nickname = user.nickname if user else f"Trainer_{uid}"
+        curr = uinfo.get("current_streak", 0)
+        best = uinfo.get("best_streak", 0)
+        
+        rank_prefix = medals[idx] if idx < len(medals) else f"#{idx+1}"
+        display_name = f"@{html.escape(username)}" if username else f"{html.escape(nickname)}"
+        rows.append(f"{rank_prefix} <b>{display_name}</b>   Best: <code>{best}d</code> (Current: <code>{curr}d</code>)")
+
+    text = (
+        "🏆 <b>GLOBAL STREAK LEADERBOARD</b> 🏆\n"
+        "───────────────\n" +
+        "\n".join(rows) +
+        "\n───────────────\n"
+        "<i>Compete daily to reach the top of the streak ranks!</i>"
+    )
+    await message.answer(text, parse_mode="HTML")
+
 @router.message(Command("profile"))
 async def cmd_profile(message: Message, db: AsyncSession):
     try:

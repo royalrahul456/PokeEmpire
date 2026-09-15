@@ -16,31 +16,36 @@ def get_games_hub_keyboard(main_bot_username: str = None) -> InlineKeyboardBuild
     builder = InlineKeyboardBuilder()
     
     builder.row(
-        create_styled_button(text="💣 Mines Game", key="games", callback_data="btn_launch_mines", style="danger"),
-        create_styled_button(text="❌ Tic-Tac-Toe", key="games", callback_data="btn_launch_xo", style="primary")
+        create_styled_button(text="👤 Silhouette", key="games", callback_data="btn_launch_silhouette", style="primary"),
+        create_styled_button(text="👁️ Unown Cipher", key="games", callback_data="btn_launch_unown", style="primary")
     )
     builder.row(
-        create_styled_button(text="🎰 Slots Casino", key="games", callback_data="btn_launch_slots", style="primary"),
-        create_styled_button(text="🎡 Spin Wheel", key="games", callback_data="btn_launch_spin", style="success")
+        create_styled_button(text="⚡ Voltorb Lock", key="games", callback_data="btn_launch_voltorb", style="danger"),
+        create_styled_button(text="💣 Mines", key="games", callback_data="btn_launch_mines", style="danger")
     )
     builder.row(
-        create_styled_button(text="🎲 Dice Duel", key="games", callback_data="btn_launch_dice", style="primary"),
-        create_styled_button(text="🎯 Darts Target", key="games", callback_data="btn_launch_darts", style="primary")
+        create_styled_button(text="❌ Tic-Tac-Toe", key="games", callback_data="btn_launch_xo", style="primary"),
+        create_styled_button(text="🎰 Slots Casino", key="games", callback_data="btn_launch_slots", style="primary")
     )
     builder.row(
-        create_styled_button(text="🏀 Basketball", key="games", callback_data="btn_launch_basket", style="primary"),
-        create_styled_button(text="⚽ Football", key="games", callback_data="btn_launch_football", style="primary")
+        create_styled_button(text="🎡 Spin Wheel", key="games", callback_data="btn_launch_spin", style="success"),
+        create_styled_button(text="🎲 Dice Duel", key="games", callback_data="btn_launch_dice", style="primary")
     )
     builder.row(
-        create_styled_button(text="🎳 Bowling", key="games", callback_data="btn_launch_bowling", style="primary"),
-        create_styled_button(text="✊ Rock Paper Scissors", key="games", callback_data="btn_launch_rps", style="primary")
+        create_styled_button(text="🎯 Darts", key="games", callback_data="btn_launch_darts", style="primary"),
+        create_styled_button(text="🏀 Basketball", key="games", callback_data="btn_launch_basket", style="primary")
     )
     builder.row(
-        create_styled_button(text="✏️ Scribble", key="games", callback_data="btn_launch_scribble", style="primary"),
-        create_styled_button(text="💡 NameGuess", key="games", callback_data="btn_launch_nameguess", style="success")
+        create_styled_button(text="⚽ Football", key="games", callback_data="btn_launch_football", style="primary"),
+        create_styled_button(text="🎳 Bowling", key="games", callback_data="btn_launch_bowling", style="primary")
     )
     builder.row(
-        create_styled_button(text="💰 Balance & Wallet", key="profile", callback_data="btn_check_balance", style="success")
+        create_styled_button(text="✊ RPS", key="games", callback_data="btn_launch_rps", style="primary"),
+        create_styled_button(text="✏️ Scribble", key="games", callback_data="btn_launch_scribble", style="primary")
+    )
+    builder.row(
+        create_styled_button(text="💡 NameGuess", key="games", callback_data="btn_launch_nameguess", style="success"),
+        create_styled_button(text="💰 Balance", key="profile", callback_data="btn_check_balance", style="success")
     )
 
     main_username = main_bot_username or getattr(config, "MAIN_BOT_USERNAME", "pokeempirebot")
@@ -252,22 +257,64 @@ async def cmd_games_start(message: Message, db: AsyncSession):
         await cmd_balance(message, db)
         return
 
+    if arg in ["silhouette", "whothat", "shadow"]:
+        builder = InlineKeyboardBuilder()
+        builder.row(create_styled_button(text="👤 Start Silhouette Trial", key="games", callback_data="btn_launch_silhouette", style="primary"))
+        builder.row(create_styled_button(text="🎰 Games Hub", key="games", callback_data="btn_open_games_hub", style="primary"))
+        await message.answer(
+            f"👤 <b>The Silhouette Trial</b>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"Prof. Oak & Silph Co. field simulation! Identify Pokémon by shadow outline.\n\n"
+            f"📌 <b>Format:</b> <code>/whothat</code> or <code>/silhouette</code>",
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
+        return
+
+    if arg in ["unown", "wordguess", "cipher"]:
+        builder = InlineKeyboardBuilder()
+        builder.row(create_styled_button(text="👁️ Start Unown Cipher", key="games", callback_data="btn_launch_unown", style="primary"))
+        builder.row(create_styled_button(text="🎰 Games Hub", key="games", callback_data="btn_open_games_hub", style="primary"))
+        await message.answer(
+            f"👁️ <b>The Unown Cipher Matrix</b>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"Decipher mysterious 3, 4, or 5-letter ancient inscriptions from the Ruins of Alph!\n\n"
+            f"📌 <b>Format:</b> <code>/unown</code> or <code>/cipher</code>",
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
+        return
+
+    if arg in ["voltorb", "numguess", "vault"]:
+        builder = InlineKeyboardBuilder()
+        builder.row(create_styled_button(text="⚡ Start Voltorb Lock", key="games", callback_data="btn_launch_voltorb", style="danger"))
+        builder.row(create_styled_button(text="🎰 Games Hub", key="games", callback_data="btn_open_games_hub", style="primary"))
+        await message.answer(
+            f"⚡ <b>The Voltorb Lock & Key</b>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"Hack the Power Plant security PIN (1–50) in 6 attempts before Voltorb self-destructs!\n\n"
+            f"📌 <b>Format:</b> <code>/voltorb</code> or <code>/numguess</code>",
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
+        return
+
     welcome_text = (
-        f"🎮 <b>Welcome to PokeArena Games Center!</b> 🎮\n"
+        f"🎮 <b>PokeArena Games Hub</b>\n"
         f"◈ ────────────────────────── ◈\n"
-        f"Hello <b>{user_name}</b>! 👋\n\n"
-        f"This is <b>PokeArena</b>, the official dedicated Mini-Games Bot for PokeEmpire.\n"
-        f"All 🪙 <b>Coins</b>, 💎 <b>Gems</b>, and 🏆 <b>Rewards</b> won here are directly synced to your main account in real-time!\n\n"
-        f"🎲 <b>Featured Mini-Games:</b>\n"
-        f"• 💣 <code>/mines &lt;bet&gt;</code> - Minefield Multiplier\n"
-        f"• ❌ <code>/ttc &lt;bet&gt;</code> - Tic-Tac-Toe PvP Duel\n"
-        f"• 🎰 <code>/slot &lt;bet&gt;</code> - Slot Machine Casino\n"
-        f"• 🎡 <code>/spin</code> - Free Hourly Fortune Wheel\n"
-        f"• ✊ <code>/rps &lt;bet&gt;</code> - Rock Paper Scissors\n"
-        f"• ✏️ <code>/scribble</code> - Group Drawing & Guessing\n"
-        f"• 💡 <code>/nameguess</code> - Pokémon Name Quiz\n\n"
-        f"💰 Type <code>/balance</code> to view your balance.\n\n"
-        f"👇 <i>Select a game below to begin playing:</i>"
+        f"Welcome, <b>{user_name}</b>!\n"
+        f"Play games to win 🪙 <b>Coins</b> & 💎 <b>Gems</b> directly synced to your account.\n\n"
+        f"🕹️ <b>Quick Games:</b>\n"
+        f"• 👤 <code>/whothat</code> — Silhouette Trial\n"
+        f"• 👁️ <code>/unown</code> — Unown Cipher\n"
+        f"• ⚡ <code>/voltorb</code> — Voltorb Lock\n"
+        f"• 💣 <code>/mines</code> — Minefield\n"
+        f"• 🎰 <code>/slot</code> — Casino Slots\n"
+        f"• ❌ <code>/ttc</code> — Tic-Tac-Toe\n"
+        f"• 🎡 <code>/spin</code> — Hourly Fortune Wheel\n"
+        f"• 💰 <code>/balance</code> — Wallet Balance\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"<i>Select a game below to play:</i>"
     )
     kb = get_games_hub_keyboard(getattr(config, "MAIN_BOT_USERNAME", None))
     await message.answer(welcome_text, reply_markup=kb.as_markup(), parse_mode="HTML")
@@ -476,3 +523,21 @@ async def cb_launch_nameguess(callback: CallbackQuery, db: AsyncSession):
     await callback.answer()
     from handlers.games import cmd_nameguess
     await cmd_nameguess(callback.message, db)
+
+@router.callback_query(F.data == "btn_launch_silhouette")
+async def cb_launch_silhouette(callback: CallbackQuery, db: AsyncSession):
+    await callback.answer()
+    from handlers.games import cmd_silhouette
+    await cmd_silhouette(callback.message, db)
+
+@router.callback_query(F.data == "btn_launch_unown")
+async def cb_launch_unown(callback: CallbackQuery, db: AsyncSession):
+    await callback.answer()
+    from handlers.games import cmd_unown
+    await cmd_unown(callback.message, db)
+
+@router.callback_query(F.data == "btn_launch_voltorb")
+async def cb_launch_voltorb(callback: CallbackQuery, db: AsyncSession):
+    await callback.answer()
+    from handlers.games import cmd_voltorb
+    await cmd_voltorb(callback.message, db)

@@ -178,14 +178,17 @@ async def register_bot_commands(bot: Bot):
 async def register_games_bot_commands(bot: Bot):
     from aiogram.types import BotCommand
     commands = [
-        BotCommand(command="start", description="🎮 Launch PokeArena Games Center"),
+        BotCommand(command="start", description="🎮 Launch PokeArena Games Hub"),
         BotCommand(command="games", description="🎰 Open Games Hub"),
-        BotCommand(command="balance", description="💰 Check your Coins & Gems"),
-        BotCommand(command="bal", description="💰 Check your Coins & Gems"),
+        BotCommand(command="whothat", description="👤 The Silhouette Trial"),
+        BotCommand(command="unown", description="👁️ The Unown Cipher (Word Guess)"),
+        BotCommand(command="voltorb", description="⚡ The Voltorb Lock (Num Guess)"),
         BotCommand(command="mines", description="💣 Play Mines Game"),
         BotCommand(command="ttc", description="❌ Play Tic-Tac-Toe PvP Duel"),
         BotCommand(command="slot", description="🎰 Play Slot Machine Casino"),
         BotCommand(command="spin", description="🎡 Free Hourly Fortune Wheel"),
+        BotCommand(command="balance", description="💰 Check your Coins & Gems"),
+        BotCommand(command="streak", description="🔥 View Daily Catch Streak"),
         BotCommand(command="dice", description="🎲 Roll Dice Duel vs AI"),
         BotCommand(command="darts", description="🎯 Darts Target Challenge"),
         BotCommand(command="basketball", description="🏀 Basketball Free Throw"),

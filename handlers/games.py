@@ -6,9 +6,13 @@ import os
 import json
 from typing import Optional, Tuple
 from datetime import datetime, timedelta
+import io
+import re
+import aiohttp
+from PIL import Image
 from aiogram import Router, F, Bot
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, BufferedInputFile
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -938,6 +942,79 @@ def generate_hint(name: str) -> str:
             
     return " ".join(hint_parts)
 
+async def get_silhouette_bytes(image_url: str) -> bytes | None:
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(image_url, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                if resp.status == 200:
+                    data = await resp.read()
+                    img = Image.open(io.BytesIO(data)).convert("RGBA")
+                    r, g, b, a = img.split()
+                    silhouette = Image.new("RGBA", img.size, (15, 23, 42, 255))
+                    silhouette.putalpha(a)
+                    out = io.BytesIO()
+                    silhouette.save(out, format="PNG")
+                    return out.getvalue()
+    except Exception as e:
+        print(f"Error generating silhouette: {e}")
+    return None
+
+UNOWN_CIPHER_WORDS = {
+    3: [
+        ("MEW", "Mythical Psychic Pokémon"),
+        ("MUK", "Poison Sludge Pokémon"),
+        ("AXW", "Dragon Tusk Pokémon (Axew)"),
+        ("NAT", "Psychic/Flying Bird Pokémon (Natu)"),
+        ("ABR", "Psi Psychic Pokémon (Abra)"),
+    ],
+    4: [
+        ("ONIX", "Rock Snake Pokémon"),
+        ("JYNX", "Human Shape Ice/Psychic Pokémon"),
+        ("MEOW", "Scratch Cat Pokémon (Meowth)"),
+        ("SEEL", "Sea Lion Water Pokémon"),
+        ("ABRA", "Psi Psychic Pokémon"),
+        ("HYNO", "Hypnosis Psychic Pokémon (Hypno)"),
+        ("KABU", "Shellfish Rock Pokémon (Kabuto)"),
+        ("POLI", "Tadpole Water Pokémon (Poliwag)"),
+        ("AROK", "Cobra Poison Pokémon (Arbok)"),
+        ("DROW", "Hypnosis Psychic Pokémon (Drowzee)"),
+    ],
+    5: [
+        ("EEVEE", "Evolution Pokémon with many evolutions"),
+        ("DITTO", "Transform Pokémon"),
+        ("PICHU", "Tiny Mouse Electric Pokémon"),
+        ("LUGIA", "Diving Legendary Psychic/Flying Pokémon"),
+        ("HO-OH", "Rainbow Legendary Fire/Flying Pokémon"),
+        ("ABSOL", "Disaster Dark Pokémon"),
+        ("RALTS", "Feeling Psychic/Fairy Pokémon"),
+        ("SHINX", "Flash Electric Pokémon"),
+        ("RIOLU", "Emanation Fighting Pokémon"),
+        ("ZORUA", "Tricky Fox Dark Pokémon"),
+        ("DEWOT", "Discipline Water Pokémon (Dewott)"),
+        ("EELEK", "EleFish Electric Pokémon (Eelektrik)"),
+        ("INKAY", "Revolving Dark/Psychic Pokémon"),
+        ("GOOMY", "Soft Dragon Pokémon"),
+        ("ROWLE", "Grass Quill Pokémon (Rowlet)"),
+        ("TOXEL", "Baby Electric/Poison Pokémon"),
+        ("TINKA", "Metalsmith Fairy/Steel Pokémon (Tinkatink)"),
+    ]
+}
+
+def generate_unown_cipher(word: str) -> str:
+    n = len(word)
+    chars = list(word.upper())
+    if n <= 3:
+        # e.g., M _ W -> show first and last or middle
+        return f"[ {chars[0]}  _  _ ]" if random.random() < 0.5 else f"[ _  {chars[1]}  _ ]"
+    elif n == 4:
+        # e.g., _ N _ X
+        idx1, idx2 = sorted(random.sample(range(4), 2))
+        return " ".join([chars[i] if i in (idx1, idx2) else "_" for i in range(4)])
+    else: # 5
+        # e.g., E _ V _ _
+        revealed = set(random.sample(range(n), 2))
+        return " ".join([chars[i] if i in revealed else "_" for i in range(n)])
+
 async def cleanup_scribble_messages(bot: Bot, chat_id: int, game: dict):
     if "message_id" in game:
         try:
@@ -961,6 +1038,94 @@ async def cleanup_nameguess_messages(bot: Bot, chat_id: int, game: dict):
             await bot.delete_message(chat_id=chat_id, message_id=game["hint_message_id"])
         except Exception:
             pass
+
+async def cleanup_silhouette_messages(bot: Bot, chat_id: int, game: dict):
+    if "message_id" in game:
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=game["message_id"])
+        except Exception:
+            pass
+    if "hint_message_id" in game:
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=game["hint_message_id"])
+        except Exception:
+            pass
+
+async def cleanup_unown_messages(bot: Bot, chat_id: int, game: dict):
+    if "message_id" in game:
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=game["message_id"])
+        except Exception:
+            pass
+    if "hint_message_id" in game:
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=game["hint_message_id"])
+        except Exception:
+            pass
+
+async def cleanup_voltorb_messages(bot: Bot, chat_id: int, game: dict):
+    if "message_id" in game:
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=game["message_id"])
+        except Exception:
+            pass
+    if "last_hint_msg_id" in game:
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=game["last_hint_msg_id"])
+        except Exception:
+            pass
+
+async def silhouette_timeout_task(chat_id: int, message_id: int, bot: Bot):
+    await asyncio.sleep(60)
+    if chat_id in active_games:
+        game = active_games[chat_id]
+        if game.get("type") == "silhouette" and game.get("message_id") == message_id:
+            del active_games[chat_id]
+            await cleanup_silhouette_messages(bot, chat_id, game)
+            try:
+                ans_name = game.get("pokemon_name") or game["answer"].title()
+                msg = await bot.send_message(
+                    chat_id=chat_id,
+                    text=f"⏳ <b>Silhouette Simulation Expired!</b>\nThe wild Pokémon vanished back into the shadows.\n💡 The Pokémon was: <b>{ans_name}</b>",
+                    parse_mode="HTML"
+                )
+                asyncio.create_task(delete_message_after(msg, 60))
+            except Exception:
+                pass
+
+async def unown_timeout_task(chat_id: int, message_id: int, bot: Bot):
+    await asyncio.sleep(60)
+    if chat_id in active_games:
+        game = active_games[chat_id]
+        if game.get("type") == "unown" and game.get("message_id") == message_id:
+            del active_games[chat_id]
+            await cleanup_unown_messages(bot, chat_id, game)
+            try:
+                msg = await bot.send_message(
+                    chat_id=chat_id,
+                    text=f"⏳ <b>Unown Cipher Collapsed!</b>\nThe ancient glyph matrix faded into the ruins.\n💡 Decrypted Word was: <b>{game['display_name']}</b>",
+                    parse_mode="HTML"
+                )
+                asyncio.create_task(delete_message_after(msg, 60))
+            except Exception:
+                pass
+
+async def voltorb_timeout_task(chat_id: int, message_id: int, bot: Bot):
+    await asyncio.sleep(60)
+    if chat_id in active_games:
+        game = active_games[chat_id]
+        if game.get("type") == "voltorb" and game.get("message_id") == message_id:
+            del active_games[chat_id]
+            await cleanup_voltorb_messages(bot, chat_id, game)
+            try:
+                msg = await bot.send_message(
+                    chat_id=chat_id,
+                    text=f"⏳ <b>Vault Security Lockdown!</b>\n💥 <i>BOOM! Voltorb detonated and sealed the terminal.</i>\n🔐 Correct Security PIN was: <code>{game['target']}</code>",
+                    parse_mode="HTML"
+                )
+                asyncio.create_task(delete_message_after(msg, 60))
+            except Exception:
+                pass
 
 async def delete_message_after(message: Message, delay: int):
     await asyncio.sleep(delay)
@@ -1625,6 +1790,100 @@ async def check_game_answers(message: Message, db: AsyncSession):
     if game["type"] == "trivia":
         return
 
+    # Handle Voltorb Lock Guessing
+    if game["type"] == "voltorb":
+        guess_text = message.text.strip()
+        if not guess_text.isdigit():
+            return
+        guess_num = int(guess_text)
+        target = game["target"]
+        
+        if guess_num == target:
+            from aiogram.types import ReactionTypeEmoji
+            try:
+                await message.react(reaction=[ReactionTypeEmoji(emoji="🎉")])
+            except Exception:
+                pass
+
+            user_id = message.from_user.id
+            stmt = select(User).where(User.id == user_id)
+            res = await db.execute(stmt)
+            user = res.scalar_one_or_none()
+            if not user:
+                user = User(id=user_id, username=message.from_user.username, nickname=message.from_user.first_name)
+                db.add(user)
+                await db.flush()
+
+            attempts_used = game["attempts"] + 1
+            reward = max(150, (game["max_attempts"] - attempts_used + 1) * 150)
+            user.coins += reward
+            try:
+                from utils.trainer_level import log_transaction
+                await log_transaction(user_id, reward, "VOLTORB_WIN", f"Disarmed Voltorb Security PIN ({target})", db)
+            except Exception:
+                pass
+            await db.commit()
+
+            del active_games[chat_id]
+            await cleanup_voltorb_messages(message.bot, chat_id, game)
+
+            victory_text = (
+                f"🎉 <b>VAULT UNLOCKED & DISARMED!</b> 🎉\n"
+                f"───────────────\n"
+                f"<blockquote>🔐 <b>Security PIN</b>: <code>{target}</code>\n"
+                f"⚡ <b>Attempts</b>: <b>{attempts_used}/{game['max_attempts']}</b>\n"
+                f"💰 <b>Reward</b>: <b>+{reward} coins</b>\n"
+                f"👥 <b>Hacker</b>: {message.from_user.mention_html()}</blockquote>"
+            )
+            v_msg = await message.reply(victory_text, parse_mode="HTML")
+            asyncio.create_task(delete_message_after(v_msg, 60))
+            return
+        elif guess_num < target:
+            game["attempts"] += 1
+            game["low_bound"] = max(game["low_bound"], guess_num + 1)
+            if game["attempts"] >= game["max_attempts"]:
+                del active_games[chat_id]
+                await cleanup_voltorb_messages(message.bot, chat_id, game)
+                boom_text = (
+                    f"💥 <b>BOOM! VOLTORB SELF-DESTRUCTED!</b> 💥\n"
+                    f"───────────────\n"
+                    f"<blockquote>❌ <b>Security Breach Failed!</b> Max attempts (6/6) reached.\n"
+                    f"🔐 <b>The correct PIN was</b>: <code>{target}</code></blockquote>"
+                )
+                b_msg = await message.reply(boom_text, parse_mode="HTML")
+                asyncio.create_task(delete_message_after(b_msg, 60))
+                return
+            else:
+                rem = game["max_attempts"] - game["attempts"]
+                h_text = f"🔺 <b>HIGHER!</b> | Range: <code>[{game['low_bound']} – {game['high_bound']}]</code> | Attempts left: <b>{rem}</b>"
+                h_msg = await message.reply(h_text, parse_mode="HTML")
+                game["last_hint_msg_id"] = h_msg.message_id
+                asyncio.create_task(delete_message_after(h_msg, 15))
+                return
+        else: # guess_num > target
+            game["attempts"] += 1
+            game["high_bound"] = min(game["high_bound"], guess_num - 1)
+            if game["attempts"] >= game["max_attempts"]:
+                del active_games[chat_id]
+                await cleanup_voltorb_messages(message.bot, chat_id, game)
+                boom_text = (
+                    f"💥 <b>BOOM! VOLTORB SELF-DESTRUCTED!</b> 💥\n"
+                    f"───────────────\n"
+                    f"<blockquote>❌ <b>Security Breach Failed!</b> Max attempts (6/6) reached.\n"
+                    f"🔐 <b>The correct PIN was</b>: <code>{target}</code></blockquote>"
+                )
+                b_msg = await message.reply(boom_text, parse_mode="HTML")
+                asyncio.create_task(delete_message_after(b_msg, 60))
+                return
+            else:
+                rem = game["max_attempts"] - game["attempts"]
+                h_text = f"🔻 <b>LOWER!</b> | Range: <code>[{game['low_bound']} – {game['high_bound']}]</code> | Attempts left: <b>{rem}</b>"
+                h_msg = await message.reply(h_text, parse_mode="HTML")
+                game["last_hint_msg_id"] = h_msg.message_id
+                asyncio.create_task(delete_message_after(h_msg, 15))
+                return
+
+    # Handle Text Guess Matching (Scribble, Nameguess, Silhouette, Unown)
     import re
     def normalize_poke_name(val: str) -> str:
         return re.sub(r'[^a-z0-9]', '', val.lower())
@@ -1652,7 +1911,6 @@ async def check_game_answers(message: Message, db: AsyncSession):
         user_id = message.from_user.id
         nickname = message.from_user.first_name
 
-        # Query/Register user
         stmt = select(User).where(User.id == user_id)
         res = await db.execute(stmt)
         user = res.scalar_one_or_none()
@@ -1662,8 +1920,18 @@ async def check_game_answers(message: Message, db: AsyncSession):
             db.add(user)
             await db.flush()
 
-        # Determine reward
-        if game.get("type") == "nameguess":
+        gtype = game.get("type")
+        if gtype == "silhouette":
+            reward = random.randint(250, 450)
+        elif gtype == "unown":
+            length = game.get("length", 4)
+            if length <= 3:
+                reward = 250
+            elif length == 4:
+                reward = 450
+            else:
+                reward = random.randint(750, 1000)
+        elif gtype == "nameguess":
             if message.chat.type in ["group", "supergroup"] and game.get("is_auto"):
                 reward = random.randint(150, 250)
             else:
@@ -1677,22 +1945,41 @@ async def check_game_answers(message: Message, db: AsyncSession):
         user.coins += reward
         try:
             from utils.trainer_level import log_transaction
-            await log_transaction(user_id, reward, "NAMEGUESS_WIN" if game.get("type") == "nameguess" else "SCRIBBLE_WIN", f"Won {game.get('type', 'game').title()} ({correct_answer.title()})", db)
+            await log_transaction(user_id, reward, f"{gtype.upper()}_WIN", f"Won {gtype.title()} ({correct_answer.title()})", db)
         except Exception:
             pass
 
         await db.commit()
 
-        # Clear active game and delete prompt/hint messages
         del active_games[chat_id]
-        if game.get("type") == "nameguess":
+        if gtype == "silhouette":
+            await cleanup_silhouette_messages(message.bot, chat_id, game)
+        elif gtype == "unown":
+            await cleanup_unown_messages(message.bot, chat_id, game)
+        elif gtype == "nameguess":
             await cleanup_nameguess_messages(message.bot, chat_id, game)
         else:
             await cleanup_scribble_messages(message.bot, chat_id, game)
 
-        ans_display = game.get("pokemon_name") or correct_answer.title()
-        # Format victory message in clean card style with blockquotes
-        if game.get("type") == "nameguess":
+        ans_display = game.get("pokemon_name") or game.get("display_name") or correct_answer.title()
+        if gtype == "silhouette":
+            text = (
+                f"🎉 <b>SILHOUETTE IDENTIFIED!</b> 🎉\n"
+                f"───────────────\n"
+                f"<blockquote>👤 <b>Pokémon</b>: <b>{ans_display}</b>\n"
+                f"💰 <b>Earned</b>: <b>+{reward} coins</b>\n"
+                f"👥 <b>Field Master</b>: {message.from_user.mention_html()}</blockquote>"
+            )
+        elif gtype == "unown":
+            text = (
+                f"🎉 <b>UNOWN CIPHER DECRYPTED!</b> 🎉\n"
+                f"───────────────\n"
+                f"<blockquote>👁️ <b>Decrypted Word</b>: <b>{ans_display}</b>\n"
+                f"📜 <b>Category</b>: <b>{game.get('category', 'Ruins of Alph Inscription')}</b>\n"
+                f"💰 <b>Earned</b>: <b>+{reward} coins</b>\n"
+                f"👥 <b>Cipher Master</b>: {message.from_user.mention_html()}</blockquote>"
+            )
+        elif gtype == "nameguess":
             text = (
                 f"🎉 <b>Correct!</b>\n"
                 f"───────────────\n"
@@ -2225,6 +2512,379 @@ async def cb_play_nameguess(callback: CallbackQuery, db: AsyncSession):
     await callback.answer()
     await cmd_nameguess(callback.message, db)
 
+
+# ==========================================
+# 1. "WHO IS THAT?" (THE SILHOUETTE TRIAL)
+# ==========================================
+
+@router.callback_query(F.data == "silhouette_hint")
+async def cb_silhouette_hint(callback: CallbackQuery):
+    chat_id = callback.message.chat.id
+    if chat_id not in active_games or active_games[chat_id].get("type") != "silhouette":
+        await callback.answer("⚠️ No active Silhouette Trial in this chat.", show_alert=True)
+        return
+        
+    game = active_games[chat_id]
+    if "hint_text" in game:
+        await callback.answer(f"💡 Hint already revealed: {game['hint_text']}", show_alert=True)
+        return
+        
+    hint_text = game.get("clue_hint") or generate_hint(game["answer"])
+    game["hint_text"] = hint_text
+    
+    hint_msg = await callback.message.reply(
+        f"💡 <b>Silph Co. Sensor Hint Revealed:</b>\n"
+        f"───────────────\n"
+        f"👉 <code>{hint_text}</code>",
+        parse_mode="HTML"
+    )
+    game["hint_message_id"] = hint_msg.message_id
+    await callback.answer("💡 Sensor scan complete! Hint revealed.")
+
+@router.callback_query(F.data == "silhouette_stop")
+async def cb_silhouette_stop(callback: CallbackQuery):
+    chat_id = callback.message.chat.id
+    user_id = callback.from_user.id
+    
+    if chat_id not in active_games or active_games[chat_id].get("type") != "silhouette":
+        await callback.answer("⚠️ No active Silhouette game to stop.", show_alert=True)
+        return
+        
+    game = active_games[chat_id]
+    is_allowed = False
+    if callback.message.chat.type == "private":
+        is_allowed = True
+    else:
+        if user_id in config.ADMIN_IDS:
+            is_allowed = True
+        else:
+            try:
+                member = await callback.bot.get_chat_member(chat_id=chat_id, user_id=user_id)
+                is_allowed = member.status in ["creator", "administrator"]
+            except Exception:
+                is_allowed = False
+                
+    if not is_allowed:
+        await callback.answer("❌ Only group administrators or bot owners can stop the game.", show_alert=True)
+        return
+        
+    del active_games[chat_id]
+    await cleanup_silhouette_messages(callback.bot, chat_id, game)
+    
+    ans_display = game.get("pokemon_name") or game["answer"].title()
+    await callback.message.answer(
+        f"🛑 <b>Silhouette Trial stopped</b> by {html.escape(callback.from_user.first_name)}.\n"
+        f"💡 The Pokémon was: <b>{ans_display}</b>",
+        parse_mode="HTML"
+    )
+    await callback.answer("Simulation aborted!")
+
+@router.message(Command("whothat", "silhouette", "shadow"))
+async def cmd_silhouette(message: Message, db: AsyncSession):
+    chat_id = message.chat.id
+    if chat_id in active_games:
+        await message.answer("⚠️ There is already an active game running in this chat! Complete or stop it first.")
+        return
+
+    # Select random Pokémon with valid image
+    stmt = select(Pokemon).where(Pokemon.image_url.isnot(None)).order_by(func.random()).limit(1)
+    res = await db.execute(stmt)
+    pokemon = res.scalar_one_or_none()
+
+    if not pokemon or not pokemon.image_url:
+        await message.answer("❌ Error initiating Silhouette Trial. No Pokémon data available.")
+        return
+
+    name = pokemon.name.lower()
+    initial_hint = generate_hint(name)
+    type_info = f" | Type: <b>{pokemon.type1}{'/' + pokemon.type2 if pokemon.type2 else ''}</b>" if getattr(pokemon, 'type1', None) else ""
+    gen_info = f" | Gen: <b>{pokemon.generation}</b>" if getattr(pokemon, 'generation', None) else ""
+
+    active_games[chat_id] = {
+        "type": "silhouette",
+        "answer": name,
+        "pokemon_name": pokemon.name,
+        "clue_hint": f"{initial_hint}{type_info}{gen_info}",
+        "created_at": time.time(),
+        "is_auto": False
+    }
+
+    text = (
+        f"👤 <b>THE SILHOUETTE TRIAL</b> 👤\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"🔬 <i>Prof. Oak & Silph Co. Recognition Lab</i>\n"
+        f"A wild Pokémon's signal flickers in the dark! Can you recognize it by its shadow?\n\n"
+        f"⏳ <b>Time Limit:</b> <code>60 seconds</code>\n"
+        f"💰 <b>Bounty Reward:</b> <code>+250 to 450 coins</code>\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"<i>Type the Pokémon's name in chat to identify it!</i>"
+    )
+
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        create_styled_button(text="🔍 Sensor Scan (Hint)", key="hint", callback_data="silhouette_hint"),
+        create_styled_button(text="🚫 Abort Sim", key="cancel", style="danger", callback_data="silhouette_stop")
+    )
+
+    # Try generating silhouette bytes
+    sil_bytes = await get_silhouette_bytes(pokemon.image_url)
+    try:
+        if sil_bytes:
+            photo_file = BufferedInputFile(sil_bytes, filename="silhouette.png")
+            sent_msg = await message.answer_photo(
+                photo=photo_file,
+                caption=text,
+                reply_markup=builder.as_markup(),
+                parse_mode="HTML"
+            )
+        else:
+            sent_msg = await send_safe_media(
+                bot=message.bot,
+                chat_id=chat_id,
+                media_type="photo",
+                media_value=pokemon.image_url,
+                caption=text,
+                reply_markup=builder.as_markup(),
+                parse_mode="HTML",
+                message_to_reply=message
+            )
+        active_games[chat_id]["message_id"] = sent_msg.message_id
+        asyncio.create_task(silhouette_timeout_task(chat_id, sent_msg.message_id, message.bot))
+    except Exception as e:
+        if chat_id in active_games:
+            del active_games[chat_id]
+        print(f"Error launching silhouette: {e}")
+        await message.answer("❌ Error generating silhouette simulation. Please try again.")
+
+@router.callback_query(F.data.in_({"play_silhouette", "btn_launch_silhouette"}))
+async def cb_play_silhouette(callback: CallbackQuery, db: AsyncSession):
+    await callback.answer()
+    await cmd_silhouette(callback.message, db)
+
+
+# ==========================================
+# 2. WORD GUESS (THE UNOWN CIPHER)
+# ==========================================
+
+@router.callback_query(F.data == "unown_hint")
+async def cb_unown_hint(callback: CallbackQuery):
+    chat_id = callback.message.chat.id
+    if chat_id not in active_games or active_games[chat_id].get("type") != "unown":
+        await callback.answer("⚠️ No active Unown Cipher in this chat.", show_alert=True)
+        return
+        
+    game = active_games[chat_id]
+    if "hint_text" in game:
+        await callback.answer(f"💡 Hint already revealed: {game['hint_text']}", show_alert=True)
+        return
+        
+    word = game["answer"].upper()
+    hint_text = f"Letters: {len(word)} | Category: {game.get('category', 'Ruins Inscription')} | Starts with: {word[0]}"
+    game["hint_text"] = hint_text
+    
+    hint_msg = await callback.message.reply(
+        f"👁️ <b>Unown Cipher Resonance Hint:</b>\n"
+        f"───────────────\n"
+        f"👉 <code>{hint_text}</code>",
+        parse_mode="HTML"
+    )
+    game["hint_message_id"] = hint_msg.message_id
+    await callback.answer("👁️ Ancient psychic resonance decoded!")
+
+@router.callback_query(F.data == "unown_stop")
+async def cb_unown_stop(callback: CallbackQuery):
+    chat_id = callback.message.chat.id
+    user_id = callback.from_user.id
+    
+    if chat_id not in active_games or active_games[chat_id].get("type") != "unown":
+        await callback.answer("⚠️ No active Unown game to stop.", show_alert=True)
+        return
+        
+    game = active_games[chat_id]
+    is_allowed = False
+    if callback.message.chat.type == "private":
+        is_allowed = True
+    else:
+        if user_id in config.ADMIN_IDS:
+            is_allowed = True
+        else:
+            try:
+                member = await callback.bot.get_chat_member(chat_id=chat_id, user_id=user_id)
+                is_allowed = member.status in ["creator", "administrator"]
+            except Exception:
+                is_allowed = False
+                
+    if not is_allowed:
+        await callback.answer("❌ Only group administrators or bot owners can stop the game.", show_alert=True)
+        return
+        
+    del active_games[chat_id]
+    await cleanup_unown_messages(callback.bot, chat_id, game)
+    
+    await callback.message.answer(
+        f"🛑 <b>Unown Cipher game stopped</b> by {html.escape(callback.from_user.first_name)}.\n"
+        f"💡 Decrypted Word was: <b>{game['display_name']}</b>",
+        parse_mode="HTML"
+    )
+    await callback.answer("Cipher closed!")
+
+@router.message(Command("unown", "wordguess", "cipher"))
+async def cmd_unown(message: Message, db: AsyncSession):
+    chat_id = message.chat.id
+    if chat_id in active_games:
+        await message.answer("⚠️ There is already an active game running in this chat! Complete or stop it first.")
+        return
+
+    # Choose difficulty length (3, 4, or 5 letters)
+    chosen_len = random.choice([3, 4, 5])
+    pool = UNOWN_CIPHER_WORDS.get(chosen_len, UNOWN_CIPHER_WORDS[4])
+    word, category = random.choice(pool)
+    cipher_glyph = generate_unown_cipher(word)
+
+    rewards_map = {3: 250, 4: 450, 5: 850}
+    reward_val = rewards_map.get(chosen_len, 450)
+
+    active_games[chat_id] = {
+        "type": "unown",
+        "answer": word.lower(),
+        "display_name": word.upper(),
+        "category": category,
+        "clue": cipher_glyph,
+        "length": chosen_len,
+        "created_at": time.time(),
+        "is_auto": False
+    }
+
+    text = (
+        f"👁️ <b>THE UNOWN CIPHER MATRIX</b> 👁️\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"📜 <i>Ruins of Alph Linguistic Chamber</i>\n"
+        f"Mysterious psychic glyphs have surfaced on the ancient chamber walls!\n\n"
+        f"🔠 <b>Cipher Glyph ({chosen_len} Letters):</b>\n"
+        f"<blockquote><code>{cipher_glyph}</code></blockquote>\n"
+        f"📌 <b>Category:</b> <i>{category}</i>\n"
+        f"⏳ <b>Time Limit:</b> <code>60 seconds</code>\n"
+        f"💰 <b>Reward:</b> <code>+{reward_val} coins</code>\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"<i>Type the decrypted word directly in chat to claim the bounty!</i>"
+    )
+
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        create_styled_button(text="🔮 Channel Unown (Hint)", key="hint", callback_data="unown_hint"),
+        create_styled_button(text="🚫 Seal Cipher", key="cancel", style="danger", callback_data="unown_stop")
+    )
+
+    try:
+        sent_msg = await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        active_games[chat_id]["message_id"] = sent_msg.message_id
+        asyncio.create_task(unown_timeout_task(chat_id, sent_msg.message_id, message.bot))
+    except Exception as e:
+        if chat_id in active_games:
+            del active_games[chat_id]
+        print(f"Error launching unown: {e}")
+        await message.answer("❌ Error initiating Unown Cipher. Please try again.")
+
+@router.callback_query(F.data.in_({"play_unown", "btn_launch_unown"}))
+async def cb_play_unown(callback: CallbackQuery, db: AsyncSession):
+    await callback.answer()
+    await cmd_unown(callback.message, db)
+
+
+# ==========================================
+# 3. NUMGUESS (THE VOLTORB LOCK & KEY)
+# ==========================================
+
+@router.callback_query(F.data == "voltorb_stop")
+async def cb_voltorb_stop(callback: CallbackQuery):
+    chat_id = callback.message.chat.id
+    user_id = callback.from_user.id
+    
+    if chat_id not in active_games or active_games[chat_id].get("type") != "voltorb":
+        await callback.answer("⚠️ No active Voltorb Lock in this chat.", show_alert=True)
+        return
+        
+    game = active_games[chat_id]
+    is_allowed = False
+    if callback.message.chat.type == "private":
+        is_allowed = True
+    else:
+        if user_id in config.ADMIN_IDS:
+            is_allowed = True
+        else:
+            try:
+                member = await callback.bot.get_chat_member(chat_id=chat_id, user_id=user_id)
+                is_allowed = member.status in ["creator", "administrator"]
+            except Exception:
+                is_allowed = False
+                
+    if not is_allowed:
+        await callback.answer("❌ Only group administrators or bot owners can stop the game.", show_alert=True)
+        return
+        
+    del active_games[chat_id]
+    await cleanup_voltorb_messages(callback.bot, chat_id, game)
+    
+    await callback.message.answer(
+        f"🛑 <b>Voltorb Lock breach aborted</b> by {html.escape(callback.from_user.first_name)}.\n"
+        f"🔐 Security PIN was: <code>{game['target']}</code>",
+        parse_mode="HTML"
+    )
+    await callback.answer("Vault lock reset!")
+
+@router.message(Command("voltorb", "numguess", "vault"))
+async def cmd_voltorb(message: Message, db: AsyncSession):
+    chat_id = message.chat.id
+    if chat_id in active_games:
+        await message.answer("⚠️ There is already an active game running in this chat! Complete or stop it first.")
+        return
+
+    target = random.randint(1, 50)
+    active_games[chat_id] = {
+        "type": "voltorb",
+        "target": target,
+        "attempts": 0,
+        "max_attempts": 6,
+        "low_bound": 1,
+        "high_bound": 50,
+        "created_at": time.time(),
+        "is_auto": False
+    }
+
+    text = (
+        f"⚡ <b>THE VOLTORB LOCK & KEY</b> ⚡\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"🏢 <i>Power Plant Security Vault System</i>\n"
+        f"A live Voltorb guards the security lockbox! Guess the PIN between <b>1 and 50</b> before it uses Self-Destruct!\n\n"
+        f"🎯 <b>Initial Range:</b> <code>[ 1 – 50 ]</code>\n"
+        f"💣 <b>Attempts Remaining:</b> <code>6 / 6</code>\n"
+        f"💰 <b>Max Bounty Reward:</b> <code>+900 coins</code> (scales with speed!)\n"
+        f"⏳ <b>Time Limit:</b> <code>60 seconds</code>\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"<i>Type any number between 1 and 50 in chat to hack the terminal!</i>"
+    )
+
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        create_styled_button(text="🚫 Abort Hack", key="cancel", style="danger", callback_data="voltorb_stop")
+    )
+
+    try:
+        sent_msg = await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        active_games[chat_id]["message_id"] = sent_msg.message_id
+        asyncio.create_task(voltorb_timeout_task(chat_id, sent_msg.message_id, message.bot))
+    except Exception as e:
+        if chat_id in active_games:
+            del active_games[chat_id]
+        print(f"Error launching voltorb: {e}")
+        await message.answer("❌ Error initializing Voltorb Lock. Please try again.")
+
+@router.callback_query(F.data.in_({"play_voltorb", "btn_launch_voltorb"}))
+async def cb_play_voltorb(callback: CallbackQuery, db: AsyncSession):
+    await callback.answer()
+    await cmd_voltorb(callback.message, db)
+
+
 # ==========================================
 # ADMIN SCRIBBLE TOGGLE & TRIVIA CALLBACKS
 # ==========================================
@@ -2359,7 +3019,51 @@ async def cb_trivia_answer(callback: CallbackQuery, db: AsyncSession):
             )
             asyncio.create_task(delete_message_after(msg, 60))
 
-@router.message(Command("streak"))
+@router.message(Command("balance", "bal", "coins", "wallet"))
+async def cmd_balance(message: Message, db: AsyncSession):
+    try:
+        user_id = message.from_user.id
+        u_stmt = select(User).where(User.id == user_id)
+        u_res = await db.execute(u_stmt)
+        user = u_res.scalar_one_or_none()
+
+        if not user:
+            user = User(
+                id=user_id,
+                username=message.from_user.username,
+                nickname=message.from_user.first_name or "Trainer",
+                coins=500,
+                gems=10
+            )
+            db.add(user)
+            await db.commit()
+
+        from utils.trainer_level import get_trainer_title
+        level = getattr(user, 'trainer_level', 1) or 1
+        title = get_trainer_title(level)
+        name = html.escape(user.nickname or message.from_user.first_name or "Trainer")
+        
+        text = (
+            f"💳 <b>TRAINER BALANCE & WALLET</b> 💳\n"
+            f"───────────────\n"
+            f"👤 <b>Trainer</b>: <b>{name}</b> (<code>{user_id}</code>)\n"
+            f"⭐ <b>Level</b>: <b>{level} ({title})</b>\n\n"
+            f"💰 <b>Coins</b>: <code>{user.coins:,}</code> 🪙\n"
+            f"💎 <b>Gems</b>: <code>{getattr(user, 'gems', 0):,}</code> 💎\n"
+            f"───────────────\n"
+            f"<i>All earnings are instantly usable across PokeEmpire & PokeArena!</i>"
+        )
+        builder = InlineKeyboardBuilder()
+        builder.row(
+            create_styled_button(text="🎰 Games Hub", key="games", callback_data="btn_open_games_hub", style="primary"),
+            create_styled_button(text="🎡 Hourly Spin", key="games", callback_data="btn_launch_spin", style="success")
+        )
+        await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    except Exception as e:
+        print(f"Error in games cmd_balance: {e}")
+        await message.answer("❌ An error occurred while retrieving your balance.")
+
+@router.message(Command("streak", "streaks"))
 async def cmd_streak(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     
@@ -2401,7 +3105,7 @@ async def cmd_streak(message: Message, db: AsyncSession):
         bar_chars = "█" * 10
         
     text = (
-        f" 🔥 <b>Daily Streak — {html.escape(user.nickname)}</b>\n\n"
+        f" 🔥 <b>Daily Streak — {html.escape(user.nickname or 'Trainer')}</b>\n\n"
         f"<blockquote>💧 <b>Status</b>: <code>{status_str}</code>\n"
         f"🎁 <b>Current</b>: <code>{current_days} days</code>\n"
         f"🏆 <b>Best</b>: <code>{best_days} days</code>\n"
@@ -2411,8 +3115,7 @@ async def cmd_streak(message: Message, db: AsyncSession):
     )
     await message.answer(text, parse_mode="HTML")
 
-@router.message(Command("streaklb"))
-@router.message(Command("slb"))
+@router.message(Command("streaklb", "slb", "streakslb", "streaksleaderboard"))
 async def cmd_streak_leaderboard(message: Message, db: AsyncSession):
     from utils.streak import get_top_streaks
     from utils.formatters import escape_md

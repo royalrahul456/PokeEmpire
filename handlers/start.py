@@ -911,10 +911,11 @@ async def cmd_ping(message: Message, db: AsyncSession):
     try:
         from sqlalchemy import text as sa_text
         db_start = time.time()
-        await db.execute(sa_text("SELECT 1"))
+        await asyncio.wait_for(db.execute(sa_text("SELECT 1")), timeout=3.5)
         db_ms = int((time.time() - db_start) * 1000)
         db_status = f"🟢 Connected ({db_ms}ms)"
-    except Exception:
+    except Exception as err:
+        print(f"[PING DB ERROR]: {err}")
         db_status = "🔴 Error"
 
     t1 = time.time()

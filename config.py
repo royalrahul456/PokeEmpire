@@ -20,7 +20,7 @@ MAIN_BOT_USERNAME = os.getenv("MAIN_BOT_USERNAME", "@pokeempirebot").strip().str
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://royalrahul456.github.io/PokeEmpire/webapp/").strip().strip('"').strip("'")
 
 # Default Supabase IPv4 Pooler PostgreSQL URL (Transaction Mode on port 6543 for unlimited connections)
-SUPABASE_DB_URL = "postgresql://postgres.dlxlqrerxplqevvutgsn:rahulmahadevpachpute@aws-0-ap-southeast-2.pooler.supabase.com:6543/postgres"
+SUPABASE_DB_URL = "postgresql://postgres.dlxlqrerxplqevvutgsn:rahulmahadevpachpute@aws-0-ap-southeast-2.pooler.supabase.com:6543/postgres?ssl=require"
 
 # Check if we are running in Render with persistent volume mount
 PERSISTENT_VOLUME = "/app/data_volume"
@@ -65,10 +65,15 @@ def _format_db_url(url: str) -> str:
         db_url = db_url.replace("sslmode=prefer", "ssl=prefer")
         db_url = db_url.replace("sslmode=verify-full", "ssl=require")
         db_url = db_url.replace("sslmode=verify-ca", "ssl=require")
+        db_url = db_url.replace("sslmode=disable", "ssl=disable")
     
     if "channel_binding=" in db_url:
         import re
         db_url = re.sub(r'[&?]channel_binding=[^&]*', '', db_url)
+
+    if "ssl=" not in db_url and ("supabase.com" in db_url or "pooler" in db_url):
+        delimiter = "&" if "?" in db_url else "?"
+        db_url = f"{db_url}{delimiter}ssl=require"
 
     return db_url
 

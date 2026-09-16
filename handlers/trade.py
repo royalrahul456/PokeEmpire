@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
-@router.message(Command("pay"))
+@router.message(Command("pay", ignore_mention=True))
 async def cmd_pay(message: Message, db: AsyncSession):
     try:
         parts = message.text.split()
@@ -246,7 +246,7 @@ async def cb_pay_decline(callback: CallbackQuery):
         await callback.answer()
 
 
-@router.message(Command("trade"))
+@router.message(Command("trade", ignore_mention=True))
 async def cmd_trade(message: Message, db: AsyncSession):
     try:
         parts = message.text.split()

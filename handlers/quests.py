@@ -171,7 +171,7 @@ async def build_quests_payload(user_id: int, db: AsyncSession):
     builder.row(create_styled_button(text="🔄 Refresh Quests", key="refresh", callback_data="refresh_quests"))
     return text, builder.as_markup()
 
-@router.message(Command("quests", "bounties", "quest"))
+@router.message(Command("quests", "bounties", "quest", ignore_mention=True))
 async def cmd_quests(message: Message, db: AsyncSession):
     text, kb = await build_quests_payload(message.from_user.id, db)
     await message.answer(text, reply_markup=kb, parse_mode="HTML")

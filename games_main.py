@@ -89,29 +89,42 @@ def apply_auto_reply_patch():
     logger.info("Applied auto-reply monkey patch for group chats.")
 
 async def register_games_bot_commands(bot: Bot):
-    from aiogram.types import BotCommand
+    from aiogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeAllPrivateChats, BotCommandScopeAllGroupChats, MenuButtonCommands
     commands = [
-        BotCommand(command="start", description="🎮 Launch PokeArena Games Center"),
+        BotCommand(command="start", description="🎮 Launch PokeArena Games Hub"),
         BotCommand(command="games", description="🎰 Open Games Hub"),
         BotCommand(command="balance", description="💰 Check your Coins & Gems"),
         BotCommand(command="bal", description="💳 Wallet Quick Balance"),
-        BotCommand(command="streak", description="🔥 Daily Catch Streak"),
+        BotCommand(command="streak", description="🔥 View Daily Catch Streak"),
         BotCommand(command="whothat", description="👤 The Silhouette Trial"),
         BotCommand(command="blitz", description="⚡ Type Matchup Blitz"),
         BotCommand(command="voltorb", description="⚡ The Voltorb Lock (Num Guess)"),
         BotCommand(command="mines", description="💣 Play Mines Game"),
         BotCommand(command="ttc", description="❌ Play Tic-Tac-Toe PvP Duel"),
         BotCommand(command="spin", description="🎡 Free Hourly Fortune Wheel"),
+        BotCommand(command="dice", description="🎲 Roll Dice Duel vs AI"),
+        BotCommand(command="darts", description="🎯 Darts Target Challenge"),
+        BotCommand(command="basketball", description="🏀 Basketball Free Throw"),
+        BotCommand(command="football", description="⚽ Football Penalty Shootout"),
+        BotCommand(command="bowling", description="🎳 Bowling Strike Alley"),
+        BotCommand(command="coinflip", description="🪙 Flip Coin 50/50"),
         BotCommand(command="rps", description="✊ Play Rock Paper Scissors"),
         BotCommand(command="scribble", description="✏️ Play Drawing & Guessing"),
         BotCommand(command="nameguess", description="💡 Play Pokémon Name Quiz"),
         BotCommand(command="help", description="📖 How to Play Mini-Games"),
     ]
     try:
-        await bot.set_my_commands(commands)
-        logger.info("Registered Telegram menu commands for PokeArena.")
+        await bot.set_my_commands(commands, scope=BotCommandScopeDefault())
+        await bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats())
+        await bot.set_my_commands(commands, scope=BotCommandScopeAllGroupChats())
+        logger.info("Registered Telegram menu commands across all scopes for PokeArena.")
     except Exception as e:
         logger.warning(f"Failed to register Telegram menu commands: {e}")
+
+    try:
+        await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+    except Exception:
+        pass
 
 async def main():
     token = config.GAMES_BOT_TOKEN or config.BOT_TOKEN

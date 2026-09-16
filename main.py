@@ -126,7 +126,7 @@ async def start_dummy_server():
         logger.error(f"Failed to start web health check server: {e}")
 
 async def register_bot_commands(bot: Bot):
-    from aiogram.types import BotCommand
+    from aiogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeAllPrivateChats, BotCommandScopeAllGroupChats, MenuButtonCommands
     commands = [
         BotCommand(command="start", description="🚀 Open primary Hub Dashboard"),
         BotCommand(command="profile", description="👤 Check Trainer coins & metrics"),
@@ -141,10 +141,13 @@ async def register_bot_commands(bot: Bot):
         BotCommand(command="games", description="🎮 Play Mini-Games on PokeArena"),
         BotCommand(command="streak", description="🔥 View Catch Streak stats"),
         BotCommand(command="fine", description="🚨 Issue a 20% fine penalty (Bot Admin only)"),
+        BotCommand(command="adminlist", description="👑 View Bot Admin Roster"),
+        BotCommand(command="admins", description="🛡️ View Bot Admin Roster"),
         BotCommand(command="shop", description="🛒 Open Coin Shop"),
         BotCommand(command="redeem", description="🎟️ Claim a promo/gift code"),
         BotCommand(command="gen", description="🔑 Generate a redeem code (Owner only)"),
         BotCommand(command="panel", description="⚙️ Executive Owner Console (Owner only)"),
+        BotCommand(command="ping", description="⚡ Check System & DB Latency"),
         BotCommand(command="addrarity", description="✨ Create custom Pokémon rarity tier"),
         BotCommand(command="addpokemon", description="➕ Register a new Pokémon in database"),
         BotCommand(command="syncdatabase", description="🔄 Synchronize database records to channel"),
@@ -165,20 +168,21 @@ async def register_bot_commands(bot: Bot):
         BotCommand(command="help", description="ℹ️ Show complete guide instructions")
     ]
     try:
-        await bot.set_my_commands(commands)
-        logger.info("✅ Registered bot commands menu successfully")
+        await bot.set_my_commands(commands, scope=BotCommandScopeDefault())
+        await bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats())
+        await bot.set_my_commands(commands, scope=BotCommandScopeAllGroupChats())
+        logger.info("✅ Registered bot commands menu across all scopes successfully")
     except Exception as e:
         logger.error(f"Failed to register bot commands: {e}")
 
     try:
-        from aiogram.types import MenuButtonCommands
         await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
         logger.info("✅ Reset Chat Menu Button to standard commands menu")
     except Exception as e:
         logger.error(f"Failed to reset chat menu button: {e}")
 
 async def register_games_bot_commands(bot: Bot):
-    from aiogram.types import BotCommand
+    from aiogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeAllPrivateChats, BotCommandScopeAllGroupChats, MenuButtonCommands
     commands = [
         BotCommand(command="start", description="🎮 Launch PokeArena Games Hub"),
         BotCommand(command="games", description="🎰 Open Games Hub"),
@@ -203,10 +207,17 @@ async def register_games_bot_commands(bot: Bot):
         BotCommand(command="help", description="📖 How to Play Mini-Games"),
     ]
     try:
-        await bot.set_my_commands(commands)
-        logger.info("✅ Registered PokeArena games bot commands menu successfully")
+        await bot.set_my_commands(commands, scope=BotCommandScopeDefault())
+        await bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats())
+        await bot.set_my_commands(commands, scope=BotCommandScopeAllGroupChats())
+        logger.info("✅ Registered PokeArena games bot commands across all scopes successfully")
     except Exception as e:
         logger.warning(f"Failed to register PokeArena bot commands: {e}")
+
+    try:
+        await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+    except Exception:
+        pass
 
 def apply_auto_reply_patch():
     from aiogram.types import Message

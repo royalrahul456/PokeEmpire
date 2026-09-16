@@ -460,7 +460,7 @@ async def send_auction_settlement_channel_report(bot: Bot, db: AsyncSession, auc
 
 
 
-@router.message(Command("auction"))
+@router.message(Command("auction", ignore_mention=True))
 async def cmd_create_auction(message: Message, db: AsyncSession):
     from utils.settings import global_settings_cache
     if global_settings_cache.get("auctions_enabled", "on") == "off":
@@ -721,7 +721,7 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
         await message.answer(f"❌ Failed to list auction: {e}. Your Pokémon has been returned.")
 
 
-@router.message(Command("auctions", "auc"))
+@router.message(Command("auctions", "auc", ignore_mention=True))
 async def cmd_list_auctions(message: Message, db: AsyncSession):
     stmt = select(Auction).where(Auction.status == "ACTIVE").order_by(Auction.expires_at.asc())
     res = await db.execute(stmt)
@@ -761,7 +761,7 @@ async def cmd_list_auctions(message: Message, db: AsyncSession):
     await message.answer(text, parse_mode="HTML")
 
 
-@router.message(Command("bid"))
+@router.message(Command("bid", ignore_mention=True))
 async def cmd_bid_manual(message: Message, db: AsyncSession):
     # Check Channel Membership Requirement
     if not await check_auction_channel_membership(message.bot, message.from_user.id):
@@ -948,7 +948,7 @@ async def process_custom_bid_text(message: Message, db: AsyncSession):
     await message.answer(reply_msg, parse_mode="HTML")
 
 
-@router.message(Command("bidhistory", "auchistory"))
+@router.message(Command("bidhistory", "auchistory", ignore_mention=True))
 async def cmd_bid_history(message: Message, db: AsyncSession):
     parts = message.text.split()
     auction_id = None
@@ -1007,7 +1007,7 @@ async def cmd_bid_history(message: Message, db: AsyncSession):
     await message.answer(text, parse_mode="HTML")
 
 
-@router.message(Command("cancelauction"))
+@router.message(Command("cancelauction", ignore_mention=True))
 async def cmd_cancel_auction(message: Message, db: AsyncSession):
     parts = message.text.split()
     if len(parts) < 2:
@@ -1137,7 +1137,7 @@ async def cmd_cancel_auction(message: Message, db: AsyncSession):
             print(f"⚠️ Failed to process next queued auction after manual cancel: {queue_err}")
 
 
-@router.message(Command("au"))
+@router.message(Command("au", ignore_mention=True))
 async def cmd_toggle_auctions(message: Message, db: AsyncSession):
     if message.from_user.id not in config.ADMIN_IDS:
         await message.answer("❌ Denied. Only Bot Owners can run this command.")

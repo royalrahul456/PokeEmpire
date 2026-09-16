@@ -201,7 +201,7 @@ async def delete_message_after(message: Message, delay: int):
 # HANDLERS - MAIN MENU & AI GAME LOOPS
 # -------------------------------------------------------------
 
-@router.message(Command("xo", "ttc", "tictactoe"))
+@router.message(Command("xo", "ttc", "tictactoe", ignore_mention=True))
 async def cmd_xo(message: Message, db: AsyncSession):
     if message.chat.type == "private":
         await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")

@@ -246,7 +246,7 @@ async def edit_player_cover_message(callback: CallbackQuery, user_id: int, capti
             except Exception:
                 pass
 
-@router.message(Command("pokemon"))
+@router.message(Command("pokemon", ignore_mention=True))
 async def cmd_pokemon_list(message: Message):
     await message.answer(
         "🎒 <b>The Pokémon Bag is now integrated!</b>\n"
@@ -458,7 +458,7 @@ def get_rarity_filter_keyboard(user_id: int, current_page: int, current_filter: 
     
     return builder.as_markup()
 
-@router.message(Command("pokedex", "dexlist"))
+@router.message(Command("pokedex", "dexlist", ignore_mention=True))
 async def cmd_pokedex(message: Message, db: AsyncSession):
     text = None
     kb = None
@@ -618,7 +618,7 @@ async def cb_pokedex_set_filter(callback: CallbackQuery, db: AsyncSession):
     await edit_player_cover_message(callback, user_id, text, kb, db, parse_mode="HTML")
     await callback.answer(f"Filtered by: {rarity_filter}")
 
-@router.message(Command("achievements", "achievement"))
+@router.message(Command("achievements", "achievement", ignore_mention=True))
 async def cmd_achievements(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     nickname = message.from_user.first_name
@@ -747,7 +747,7 @@ async def cmd_streak(message: Message, db: AsyncSession):
     )
     await message.answer(text, parse_mode="HTML")
 
-@router.message(Command("streaklb", "slb", "streakslb", "streaksleaderboard"))
+@router.message(Command("streaklb", "slb", "streakslb", "streaksleaderboard", ignore_mention=True))
 async def cmd_streak_leaderboard(message: Message, db: AsyncSession):
     from utils.streak import get_top_streaks
     
@@ -802,7 +802,7 @@ async def cmd_streak_leaderboard(message: Message, db: AsyncSession):
     )
     await message.answer(text, parse_mode="HTML")
 
-@router.message(Command("profile"))
+@router.message(Command("profile", ignore_mention=True))
 async def cmd_profile(message: Message, db: AsyncSession):
     try:
         user_id = message.from_user.id
@@ -978,8 +978,8 @@ async def cmd_profile(message: Message, db: AsyncSession):
         traceback.print_exc()
         await message.answer(f"❌ An error occurred while generating your profile: <code>{html.escape(str(e))}</code>", parse_mode="HTML")
 
-@router.message(Command("check"))
-@router.message(Command("c"))
+@router.message(Command("check", ignore_mention=True))
+@router.message(Command("c", ignore_mention=True))
 async def cmd_check_pokemon(message: Message, db: AsyncSession):
     parts = message.text.split()
     if len(parts) < 2:
@@ -1267,8 +1267,8 @@ def get_leaderboard_keyboard() -> InlineKeyboardMarkup:
     )
     return builder.as_markup()
 
-@router.message(Command("leaderboard"))
-@router.message(Command("lb"))
+@router.message(Command("leaderboard", ignore_mention=True))
+@router.message(Command("lb", ignore_mention=True))
 async def cmd_leaderboard(message: Message, db: AsyncSession):
     text = await get_leaderboard_text("catches", db)
     
@@ -1318,7 +1318,7 @@ async def cb_leaderboard_type(callback: CallbackQuery, db: AsyncSession):
             pass
     await callback.answer()
 
-@router.message(Command("fav"))
+@router.message(Command("fav", ignore_mention=True))
 async def cmd_fav(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     parts = message.text.split()
@@ -1380,7 +1380,7 @@ async def cmd_fav(message: Message, db: AsyncSession):
     form_suffix = f" ({form_lbl})" if form_index > 0 else ""
     await message.answer(f"🌟 <b>{shiny_tag}{p.name.title()}</b>{form_suffix} (Pokédex ID: {fav_str}) has been set as your Pokédex cover favorite!", parse_mode="HTML")
 
-@router.message(Command("unfav"))
+@router.message(Command("unfav", ignore_mention=True))
 async def cmd_unfav(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     await set_favorite_id(user_id, None, db)
@@ -1494,7 +1494,7 @@ async def build_rankings_payload(chat_id: int, user_id: int, period: str, db: As
     return text, builder.as_markup()
 
 
-@router.message(Command("rankings", "chatrankings", "chattop"))
+@router.message(Command("rankings", "chatrankings", "chattop", ignore_mention=True))
 async def cmd_rankings(message: Message, db: AsyncSession):
     if message.chat.type not in ["group", "supergroup"]:
         await message.answer("⚠️ Chat Rankings are for group chats! Use /rankings inside a group chat.")
@@ -1532,9 +1532,9 @@ async def cb_rankings_filter(callback: CallbackQuery, db: AsyncSession):
         print(f"Error editing rankings callback: {e}")
     await callback.answer()
 
-@router.message(Command("search"))
-@router.message(Command("s"))
-@router.message(Command("cid"))
+@router.message(Command("search", ignore_mention=True))
+@router.message(Command("s", ignore_mention=True))
+@router.message(Command("cid", ignore_mention=True))
 async def cmd_search(message: Message, db: AsyncSession):
     parts = message.text.split()
     if len(parts) < 2:
@@ -1862,7 +1862,7 @@ async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
         await callback.answer(f"❌ Error displaying profile: {e}", show_alert=True)
 
 
-@router.message(Command("dex"))
+@router.message(Command("dex", ignore_mention=True))
 async def cmd_dex(message: Message, db: AsyncSession):
     parts = message.text.split()
     if len(parts) < 2:
@@ -2198,7 +2198,7 @@ async def cb_dex_back(callback: CallbackQuery, db: AsyncSession):
             
     await callback.answer()
 
-@router.message(Command("gift"))
+@router.message(Command("gift", ignore_mention=True))
 async def cmd_gift(message: Message, db: AsyncSession):
     parts = message.text.split()
     target_user = None
@@ -2525,7 +2525,7 @@ async def build_transactions_payload(user_id: int, page: int, db: AsyncSession, 
     return text, markup
 
 
-@router.message(Command("transactions", "tx", "history"))
+@router.message(Command("transactions", "tx", "history", ignore_mention=True))
 async def cmd_transactions(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     is_dm = (message.chat.type == "private")

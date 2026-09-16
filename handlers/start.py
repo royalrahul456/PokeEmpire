@@ -80,7 +80,7 @@ async def cmd_start(message: Message, db: AsyncSession):
 
 
 
-@router.message(Command("settings", "gcsettings"))
+@router.message(Command("settings", "gcsettings", ignore_mention=True))
 async def cmd_gc_settings(message: Message, db: AsyncSession):
     if message.chat.type not in ["group", "supergroup"]:
         await message.answer("⚠️ Group settings are only available inside group chats!")
@@ -137,7 +137,7 @@ async def cmd_gc_settings(message: Message, db: AsyncSession):
     
     await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
-@router.message(Command("help", "guide"))
+@router.message(Command("help", "guide", ignore_mention=True))
 async def cmd_help(message: Message):
     help_text = (
         f"⚡ <b>POKÉEMPIRE OFFICIAL GUIDE</b> ⚡\n"
@@ -168,7 +168,7 @@ async def cmd_help(message: Message):
         await message.answer(help_text, parse_mode="HTML")
 
 
-@router.message(Command("report"))
+@router.message(Command("report", ignore_mention=True))
 async def cmd_report(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     user_name = html.escape(message.from_user.first_name or message.from_user.username or f"Trainer {user_id}")
@@ -232,7 +232,7 @@ async def cmd_report(message: Message, db: AsyncSession):
         parse_mode="HTML"
     )
 
-@router.message(Command("reports", "bugreports"))
+@router.message(Command("reports", "bugreports", ignore_mention=True))
 async def cmd_view_reports(message: Message, db: AsyncSession):
     if not message.from_user or message.from_user.id not in config.ADMIN_IDS:
         await message.answer("❌ Denied. Only Bot Creator & Admins can view bug reports.")
@@ -565,7 +565,7 @@ SEPTEMBER_EVENT_CALENDAR_TEXT = (
     "PokeEmpire Team 🦚"
 )
 
-@router.message(Command("events", "calendar", "event", "september"))
+@router.message(Command("events", "calendar", "event", "september", ignore_mention=True))
 async def cmd_events_calendar(message: Message):
     if message.chat.type == "private":
         kb = get_back_to_hub_keyboard()
@@ -900,7 +900,7 @@ async def cb_battle_action(callback: CallbackQuery, db: AsyncSession):
 def is_renaming(message: Message) -> bool:
     return message.from_user.id in active_renames
 
-@router.message(Command("ping"))
+@router.message(Command("ping", ignore_mention=True))
 async def cmd_ping(message: Message, db: AsyncSession):
     import time
     
@@ -1086,7 +1086,7 @@ async def cb_owner_spawnchance(callback: CallbackQuery):
     await callback.message.edit_caption(caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
     await callback.answer()
 
-@router.message(Command("setcover"))
+@router.message(Command("setcover", ignore_mention=True))
 async def cmd_set_cover(message: Message):
     if message.chat.type != "private":
         await message.answer("⚠️ This command can only be used in private DMs.")
@@ -1119,7 +1119,7 @@ async def cmd_set_cover(message: Message):
     active_cover_updates[message.from_user.id] = key
     await message.answer(f"📷 <b>Ready!</b> Send the photo, video, or animation (GIF) you want to use as the cover for <code>{key}</code>.", parse_mode="HTML")
 
-@router.message(Command("resetcover"))
+@router.message(Command("resetcover", ignore_mention=True))
 async def cmd_reset_cover(message: Message):
     if message.from_user.id not in config.ADMIN_IDS:
         await message.answer("❌ Denied. Only the bot owner can configure covers.")

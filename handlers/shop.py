@@ -31,7 +31,7 @@ def get_shop_keyboard(user_has_charm: bool) -> InlineKeyboardBuilder:
     builder.row(InlineKeyboardButton(text="🔙 Back to Hub Menu", callback_data="dm_home"))
     return builder
 
-@router.message(Command("shop"))
+@router.message(Command("shop", ignore_mention=True))
 async def cmd_shop(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     nickname = message.from_user.first_name

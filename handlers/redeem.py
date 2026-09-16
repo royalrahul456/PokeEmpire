@@ -16,7 +16,7 @@ from utils.settings import get_custom_rarity_forms, send_safe_media
 router = Router()
 redeem_process_lock = asyncio.Lock()
 
-@router.message(Command("createredeem"))
+@router.message(Command("createredeem", ignore_mention=True))
 async def cmd_create_redeem(message: Message, db: AsyncSession):
     # Only bot owner can run this in DM
     if message.chat.type != "private":
@@ -157,7 +157,7 @@ async def cmd_create_redeem(message: Message, db: AsyncSession):
         parse_mode="HTML"
     )
 
-@router.message(Command("redeem"))
+@router.message(Command("redeem", ignore_mention=True))
 async def cmd_redeem(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     parts = message.text.split()
@@ -325,7 +325,7 @@ async def cmd_redeem(message: Message, db: AsyncSession):
             await message.answer("❌ An error occurred during redemption. Please try again.")
 
 
-@router.message(Command("gen"))
+@router.message(Command("gen", ignore_mention=True))
 async def cmd_gen(message: Message, db: AsyncSession):
     # Authorization check
     if not message.from_user or (message.from_user.id not in config.OWNER_IDS and message.from_user.id not in getattr(config, "CO_OWNER_IDS", [])):

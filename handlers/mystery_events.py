@@ -45,7 +45,7 @@ EVENT_MUTATORS = [
     }
 ]
 
-@router.message(Command("spawnmystery", "mysteryspawn"))
+@router.message(Command("spawnmystery", "mysteryspawn", ignore_mention=True))
 async def cmd_spawn_mystery(message: Message, db: AsyncSession):
     if message.chat.type not in ["group", "supergroup"]:
         await message.answer("⚠️ Mystery Grass events can only be triggered in group chats!")
@@ -123,7 +123,7 @@ async def cb_grass_investigate(callback: CallbackQuery, db: AsyncSession):
 async def cb_grass_ignore(callback: CallbackQuery):
     await callback.answer("🚶 You quietly backed away from the rustling grass...", show_alert=True)
 
-@router.message(Command("trigger_mystery_event"))
+@router.message(Command("trigger_mystery_event", ignore_mention=True))
 async def cmd_trigger_daily_mystery(message: Message, db: AsyncSession):
     if not message.from_user or message.from_user.id not in config.ADMIN_IDS:
         await message.answer("❌ Denied. Only Bot Owner can trigger global Daily Mystery Events.")

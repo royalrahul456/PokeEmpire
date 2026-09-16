@@ -64,7 +64,7 @@ async def is_user_admin(message: Message) -> bool:
     except Exception:
         return False
 
-@router.message(Command("setspawn"))
+@router.message(Command("setspawn", ignore_mention=True))
 async def cmd_set_spawn(message: Message, db: AsyncSession):
     chat_id = message.chat.id
 
@@ -111,8 +111,8 @@ async def cmd_set_spawn(message: Message, db: AsyncSession):
 
     await message.answer(f"⚙️ **Configured!** Spawns will occur every **{threshold} messages** in this chat.")
 
-@router.message(Command("toggle_spawns"))
-@router.message(Command("toggle"))
+@router.message(Command("toggle_spawns", ignore_mention=True))
+@router.message(Command("toggle", ignore_mention=True))
 async def cmd_toggle_spawns(message: Message, db: AsyncSession):
     chat_id = message.chat.id
 
@@ -253,7 +253,7 @@ async def build_admin_roster_text(bot: Bot, db: AsyncSession) -> str:
     text += "───────────────"
     return text
 
-@router.message(Command("adminlist", "admins"))
+@router.message(Command("adminlist", "admins", ignore_mention=True))
 async def cmd_admin_list(message: Message, db: AsyncSession):
     if not config.ADMIN_IDS:
         await message.answer("ℹ️ **Bot Administrators**: None configured.")
@@ -275,7 +275,7 @@ async def cb_owner_adminlist(callback: CallbackQuery, db: AsyncSession):
 import time
 spawnsettings_cooldown_cache = {}  # chat_id -> timestamp
 
-@router.message(Command("spawnsetting", "spawnsettings"))
+@router.message(Command("spawnsetting", "spawnsettings", ignore_mention=True))
 async def cmd_spawn_setting(message: Message, db: AsyncSession):
     if message.chat.type not in ["group", "supergroup"]:
         await message.answer("⚠️ Spawns only occur in group chats! Use this command in a group.")
@@ -360,7 +360,7 @@ async def cmd_spawn_setting(message: Message, db: AsyncSession):
 
     await message.answer(text, parse_mode="Markdown")
 
-@router.message(Command("giftcoins"))
+@router.message(Command("giftcoins", ignore_mention=True))
 async def cmd_gift_coins(message: Message, db: AsyncSession):
     # Only bot owner/controller can use this
     if not config.ADMIN_IDS or message.from_user.id not in config.ADMIN_IDS:
@@ -466,7 +466,7 @@ async def cmd_gift_coins(message: Message, db: AsyncSession):
     except Exception:
         pass
 
-@router.message(Command("deletecoins", "dltcoins", "removecoins", "takecoins"))
+@router.message(Command("deletecoins", "dltcoins", "removecoins", "takecoins", ignore_mention=True))
 async def cmd_delete_coins(message: Message, db: AsyncSession):
     # Only bot owner can use this
     if not config.ADMIN_IDS or message.from_user.id not in config.ADMIN_IDS:
@@ -553,7 +553,7 @@ async def cmd_delete_coins(message: Message, db: AsyncSession):
     
     await message.answer(caption, parse_mode="HTML")
 
-@router.message(Command("giftpokemon"))
+@router.message(Command("giftpokemon", ignore_mention=True))
 async def cmd_gift_pokemon(message: Message, db: AsyncSession):
     # Only bot owner can use this
     if not config.ADMIN_IDS or message.from_user.id not in config.ADMIN_IDS:
@@ -824,7 +824,7 @@ async def save_dynamic_settings(db: AsyncSession):
         
     await db.commit()
 
-@router.message(Command("makeadmin"))
+@router.message(Command("makeadmin", ignore_mention=True))
 async def cmd_make_admin(message: Message, db: AsyncSession):
     # Only bot owner can use this (first admin ID in config.ADMIN_IDS)
     if not config.ADMIN_IDS or message.from_user.id not in config.ADMIN_IDS:
@@ -892,7 +892,7 @@ async def cmd_make_admin(message: Message, db: AsyncSession):
     )
     await message.answer(text, parse_mode="Markdown")
 
-@router.message(Command("removeadmin"))
+@router.message(Command("removeadmin", ignore_mention=True))
 async def cmd_remove_admin(message: Message, db: AsyncSession):
     # Only bot owner can use this (first admin ID in config.ADMIN_IDS)
     if not config.ADMIN_IDS or message.from_user.id not in config.ADMIN_IDS:
@@ -969,7 +969,7 @@ async def cmd_remove_admin(message: Message, db: AsyncSession):
     await message.answer(text, parse_mode="Markdown")
 
 
-@router.message(Command("makeuploader"))
+@router.message(Command("makeuploader", ignore_mention=True))
 async def cmd_make_uploader(message: Message, db: AsyncSession):
     # Only bot owner can use this
     if not config.ADMIN_IDS or message.from_user.id not in config.ADMIN_IDS:
@@ -1073,7 +1073,7 @@ async def cmd_make_uploader(message: Message, db: AsyncSession):
         await message.answer(f"⚠️ Couldn't DM **{escape_md(target_name)}** — they may not have started the bot yet.", parse_mode="Markdown")
 
 
-@router.message(Command("removeuploader"))
+@router.message(Command("removeuploader", ignore_mention=True))
 async def cmd_remove_uploader(message: Message, db: AsyncSession):
     # Only bot owner can use this
     if not config.ADMIN_IDS or message.from_user.id not in config.ADMIN_IDS:
@@ -1149,7 +1149,7 @@ async def cmd_remove_uploader(message: Message, db: AsyncSession):
         pass
 
 
-@router.message(Command("spawn"))
+@router.message(Command("spawn", ignore_mention=True))
 async def cmd_spawn(message: Message, db: AsyncSession):
     # Ensure command is run in a group chat
     if message.chat.type not in ["group", "supergroup"]:
@@ -1200,7 +1200,7 @@ async def cmd_spawn(message: Message, db: AsyncSession):
         print(f"[MANUAL SPAWN EXCEPTION] chat={message.chat.id} error={err}")
         await message.answer(f"❌ Error executing spawn: `{err}`")
 
-@router.message(Command("spawnchance"))
+@router.message(Command("spawnchance", ignore_mention=True))
 async def cmd_spawn_chance(message: Message):
     user_id = message.from_user.id if message.from_user else 0
     is_owner = bool(user_id and (user_id in config.OWNER_IDS or user_id in getattr(config, "CO_OWNER_IDS", [])))
@@ -1280,7 +1280,7 @@ async def cmd_spawn_chance(message: Message):
 # Key: user_id, Value: (pokemon_id, form_index)
 active_poke_media_updates = {}
 
-@router.message(Command("setpokemedia"))
+@router.message(Command("setpokemedia", ignore_mention=True))
 async def cmd_set_poke_media(message: Message, db: AsyncSession):
     if message.chat.type != "private":
         await message.answer("⚠️ This command can only be used in private DMs.")
@@ -1615,7 +1615,7 @@ async def get_media_list_text(db: AsyncSession) -> str:
     return response
 
 
-@router.message(Command("medialist"))
+@router.message(Command("medialist", ignore_mention=True))
 async def cmd_media_list(message: Message, db: AsyncSession):
     if not config.ADMIN_IDS or (message.from_user.id not in config.ADMIN_IDS and message.from_user.id not in config.UPLOADER_IDS):
         await message.answer("❌ Denied. Only Admins or Uploaders can view configured media IDs.")
@@ -1636,7 +1636,7 @@ async def cb_owner_medialist(callback: CallbackQuery, db: AsyncSession):
     await callback.answer()
 
 
-@router.message(Command("emojiid"))
+@router.message(Command("emojiid", ignore_mention=True))
 async def cmd_emoji_id(message: Message):
     if not config.ADMIN_IDS or message.from_user.id not in config.ADMIN_IDS:
         await message.answer("❌ Denied. Owner only.")
@@ -1747,7 +1747,7 @@ async def post_media_update_to_channel(bot: Bot, pokemon: Pokemon, form_index: i
     except Exception as e:
         print(f"⚠️ Failed to post update to database channel {config.DATABASE_CHANNEL}: {e}")
 
-@router.message(Command("banword"))
+@router.message(Command("banword", ignore_mention=True))
 async def cmd_ban_word(message: Message):
     if message.from_user.id not in config.ADMIN_IDS:
         await message.answer("❌ Denied. Only bot administrators can ban words.")
@@ -1767,7 +1767,7 @@ async def cmd_ban_word(message: Message):
     else:
         await message.answer(f"⚠️ Word '<b>{html.escape(word)}</b>' is already banned.", parse_mode="HTML")
 
-@router.message(Command("removebanword"))
+@router.message(Command("removebanword", ignore_mention=True))
 async def cmd_remove_ban_word(message: Message):
     if message.from_user.id not in config.ADMIN_IDS:
         await message.answer("❌ Denied. Only bot administrators can manage banned words.")
@@ -1787,7 +1787,7 @@ async def cmd_remove_ban_word(message: Message):
     else:
         await message.answer(f"⚠️ Word '<b>{html.escape(word)}</b>' was not found in the banned list.", parse_mode="HTML")
 
-@router.message(Command("banwords"))
+@router.message(Command("banwords", ignore_mention=True))
 async def cmd_ban_words(message: Message):
     if message.from_user.id not in config.ADMIN_IDS:
         await message.answer("❌ Denied. Only bot administrators can check banned words.")
@@ -1873,7 +1873,7 @@ async def send_or_edit_panel(event: Message | CallbackQuery, db: AsyncSession, o
                     pass
         await event.answer()
 
-@router.message(Command("panel", "p", "ownerpanel", "adminpanel", "control", "admin"))
+@router.message(Command("panel", "p", "ownerpanel", "adminpanel", "control", "admin", ignore_mention=True))
 async def cmd_owner_panel(message: Message, db: AsyncSession):
     try:
         owner_name = message.from_user.first_name if message.from_user else "Creator"
@@ -1998,7 +1998,7 @@ async def cb_panel_spawn_prompt(callback: CallbackQuery):
 async def cb_panel_gen_prompt(callback: CallbackQuery):
     await callback.answer("👉 Use /gen <code_name> <usage_limit> <coins|pokemon_id> <value> to generate a redeem code!", show_alert=True)
 
-@router.message(Command("addform", "newform", "addrarity", "newrarity"))
+@router.message(Command("addform", "newform", "addrarity", "newrarity", ignore_mention=True))
 async def cmd_add_form(message: Message, db: AsyncSession):
     if not message.from_user or message.from_user.id not in config.ADMIN_IDS:
         await message.answer("❌ Denied. Only Bot Owner/Administrators can configure new forms.")
@@ -2080,7 +2080,7 @@ async def cmd_add_form(message: Message, db: AsyncSession):
 
 active_pokemon_additions = {}
 
-@router.message(Command("cancel"))
+@router.message(Command("cancel", ignore_mention=True))
 async def cmd_cancel_addition(message: Message):
     if not message.from_user:
         return
@@ -2259,7 +2259,7 @@ async def process_pokemon_addition(message: Message, db: AsyncSession):
         )
 
 
-@router.message(Command("addpokemon", "newpokemon"))
+@router.message(Command("addpokemon", "newpokemon", ignore_mention=True))
 async def cmd_add_pokemon(message: Message, db: AsyncSession):
     if not message.from_user or message.from_user.id not in config.ADMIN_IDS:
         await message.answer("❌ Denied. Only Bot Owner/Administrators can register new Pokémon.")
@@ -2363,7 +2363,7 @@ async def cmd_add_pokemon(message: Message, db: AsyncSession):
         )
 
 
-@router.message(Command("syncdatabase", "syncdb"))
+@router.message(Command("syncdatabase", "syncdb", ignore_mention=True))
 async def cmd_sync_database(message: Message, db: AsyncSession):
     if not message.from_user or message.from_user.id not in config.ADMIN_IDS:
         await message.answer("❌ Denied. Only Bot Owner/Administrators can trigger database synchronization.")
@@ -2470,7 +2470,7 @@ async def cmd_sync_database(message: Message, db: AsyncSession):
         parse_mode="HTML"
     )
 
-@router.message(Command("grps"))
+@router.message(Command("grps", ignore_mention=True))
 async def cmd_grps(message: Message, db: AsyncSession):
     if not message.from_user or message.from_user.id not in config.ADMIN_IDS:
         await message.answer("❌ Denied. Only Bot Owners can use this command.")
@@ -2536,7 +2536,7 @@ async def cmd_grps(message: Message, db: AsyncSession):
 
 _spam_state: dict = {}
 
-@router.message(Command("spam"))
+@router.message(Command("spam", ignore_mention=True))
 async def cmd_spam_start(message: Message, db: AsyncSession):
     if not message.from_user or message.from_user.id not in config.ADMIN_IDS:
         await message.answer("Denied. Only Bot Owners can use this command.")
@@ -2736,8 +2736,8 @@ async def handle_spam_wizard_text(message: Message):
         )
 
 
-@router.message(Command("toggleemojis"))
-@router.message(Command("togglepremiumemojis"))
+@router.message(Command("toggleemojis", ignore_mention=True))
+@router.message(Command("togglepremiumemojis", ignore_mention=True))
 async def cmd_toggle_emojis(message: Message, db: AsyncSession):
     if not message.from_user or message.from_user.id not in config.ADMIN_IDS:
         await message.answer("❌ Denied. Only Bot Creator & Admins can toggle premium emojis.")
@@ -2771,7 +2771,7 @@ async def cmd_toggle_emojis(message: Message, db: AsyncSession):
 # /broadcast — Broadcast message to all groups & channels (Admin/Owner)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.message(Command("broadcast", "bcast", "gcast"))
+@router.message(Command("broadcast", "bcast", "gcast", ignore_mention=True))
 async def cmd_broadcast(message: Message, db: AsyncSession):
     if not message.from_user or message.from_user.id not in config.ADMIN_IDS:
         await message.answer("❌ Denied. Only Bot Creators & Admins can use /broadcast.")

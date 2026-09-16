@@ -18,7 +18,7 @@ async def get_user_guild_data(user_id: int, db: AsyncSession):
     res = await db.execute(stmt)
     return res.first() or (None, None)
 
-@router.message(Command("guild", "clan"))
+@router.message(Command("guild", "clan", ignore_mention=True))
 async def cmd_guild(message: Message, db: AsyncSession):
     parts = message.text.split(maxsplit=2)
     user_id = message.from_user.id
@@ -289,7 +289,7 @@ async def cmd_guild(message: Message, db: AsyncSession):
         await message.answer(f"🗑️ Guild <b>{html.escape(guild_name)}</b> has been successfully disbanded and deleted!", parse_mode="HTML")
 
 
-@router.message(Command("guildwithdraw", "gwithdraw"))
+@router.message(Command("guildwithdraw", "gwithdraw", ignore_mention=True))
 async def cmd_guild_withdraw_standalone(message: Message, db: AsyncSession):
     """Direct shortcut command /guildwithdraw <amount> or /gwithdraw <amount>."""
     parts = message.text.split()
@@ -348,7 +348,7 @@ async def cmd_guild_withdraw_standalone(message: Message, db: AsyncSession):
     )
 
 
-@router.message(Command("guildlb", "clanlb"))
+@router.message(Command("guildlb", "clanlb", ignore_mention=True))
 async def cmd_guild_lb(message: Message, db: AsyncSession):
     stmt = select(Guild).order_by(Guild.treasury.desc()).limit(10)
     res = await db.execute(stmt)

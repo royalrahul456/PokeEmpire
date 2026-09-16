@@ -44,7 +44,7 @@ active_games = {}
 # In-memory dictionary to track trainer trivia command cooldowns
 last_trivia_time = {}
 
-@router.message(Command("daily"))
+@router.message(Command("daily", ignore_mention=True))
 async def cmd_daily(message: Message, db: AsyncSession):
     import html
     user_id = message.from_user.id
@@ -90,7 +90,7 @@ async def cmd_daily(message: Message, db: AsyncSession):
     )
     await message.answer(text, parse_mode="HTML")
 
-@router.message(Command("spin", "wheel"))
+@router.message(Command("spin", "wheel", ignore_mention=True))
 async def cmd_spin(message: Message, db: AsyncSession):
     if message.chat.type == "private":
         await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
@@ -150,7 +150,7 @@ async def cmd_spin(message: Message, db: AsyncSession):
     await msg.edit_text(wheels[1], parse_mode="HTML")
     await asyncio.sleep(0.5)
     await msg.edit_text(wheels[2], parse_mode="HTML")
-@router.message(Command("coinflip", "cf", "flip"))
+@router.message(Command("coinflip", "cf", "flip", ignore_mention=True))
 async def cmd_coinflip(message: Message, db: AsyncSession):
     if message.chat.type == "private":
         await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
@@ -226,7 +226,7 @@ async def cmd_coinflip(message: Message, db: AsyncSession):
     await asyncio.sleep(0.5)
     await msg.edit_text(text, parse_mode="HTML")
 
-@router.message(Command("rps"))
+@router.message(Command("rps", ignore_mention=True))
 async def cmd_rps(message: Message, db: AsyncSession):
     if message.chat.type == "private":
         await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
@@ -319,7 +319,7 @@ async def cmd_rps(message: Message, db: AsyncSession):
     await asyncio.sleep(0.5)
     await msg.edit_text(text, parse_mode="HTML")
 
-@router.message(Command("dice", "roll"))
+@router.message(Command("dice", "roll", ignore_mention=True))
 async def cmd_dice(message: Message, db: AsyncSession):
     if message.chat.type == "private":
         await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
@@ -408,7 +408,7 @@ async def cmd_dice(message: Message, db: AsyncSession):
     builder.row(create_styled_button(text="🎲 Roll Again", key="games", callback_data="btn_launch_dice", style="primary"))
     await message.answer(result_text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
-@router.message(Command("darts", "dart"))
+@router.message(Command("darts", "dart", ignore_mention=True))
 async def cmd_darts(message: Message, db: AsyncSession):
     if message.chat.type == "private":
         await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
@@ -488,7 +488,7 @@ async def cmd_darts(message: Message, db: AsyncSession):
     builder.row(create_styled_button(text="🎯 Throw Again", key="games", callback_data="btn_launch_darts", style="primary"))
     await message.answer(result_text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
-@router.message(Command("basketball", "basket", "bb"))
+@router.message(Command("basketball", "basket", "bb", ignore_mention=True))
 async def cmd_basketball(message: Message, db: AsyncSession):
     if message.chat.type == "private":
         await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
@@ -562,7 +562,7 @@ async def cmd_basketball(message: Message, db: AsyncSession):
     builder.row(create_styled_button(text="🏀 Shoot Again", key="games", callback_data="btn_launch_basket", style="primary"))
     await message.answer(result_text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
-@router.message(Command("football", "soccer", "goal"))
+@router.message(Command("football", "soccer", "goal", ignore_mention=True))
 async def cmd_football(message: Message, db: AsyncSession):
     if message.chat.type == "private":
         await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
@@ -636,7 +636,7 @@ async def cmd_football(message: Message, db: AsyncSession):
     builder.row(create_styled_button(text="⚽ Kick Again", key="games", callback_data="btn_launch_football", style="primary"))
     await message.answer(result_text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
-@router.message(Command("bowling", "bowl"))
+@router.message(Command("bowling", "bowl", ignore_mention=True))
 async def cmd_bowling(message: Message, db: AsyncSession):
     if message.chat.type == "private":
         await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
@@ -1476,7 +1476,7 @@ async def initiate_trivia_game(chat_id: int, db: AsyncSession, is_auto: bool = F
     )
     return text, builder.as_markup()
 
-@router.message(Command("trivia"))
+@router.message(Command("trivia", ignore_mention=True))
 async def cmd_trivia(message: Message, db: AsyncSession):
     if message.chat.type == "private":
         await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
@@ -1516,8 +1516,8 @@ async def cmd_trivia(message: Message, db: AsyncSession):
     active_games[chat_id]["message_id"] = sent_msg.message_id
     asyncio.create_task(trivia_timeout_task(chat_id, sent_msg.message_id, message.bot))
 
-@router.message(Command("scribble"))
-@router.message(Command("unscramble"))
+@router.message(Command("scribble", ignore_mention=True))
+@router.message(Command("unscramble", ignore_mention=True))
 async def cmd_scribble(message: Message, db: AsyncSession):
     if message.chat.type == "private":
         await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
@@ -2294,7 +2294,7 @@ async def cb_nameguess_stop(callback: CallbackQuery):
     await callback.answer("Game stopped!")
 
 
-@router.message(Command("nameguess", "guess"))
+@router.message(Command("nameguess", "guess", ignore_mention=True))
 async def cmd_nameguess(message: Message, db: AsyncSession):
     if message.chat.type == "private":
         await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
@@ -2441,7 +2441,7 @@ async def cb_silhouette_stop(callback: CallbackQuery):
     )
     await callback.answer("Simulation aborted!")
 
-@router.message(Command("whothat", "silhouette", "shadow"))
+@router.message(Command("whothat", "silhouette", "shadow", ignore_mention=True))
 async def cmd_silhouette(message: Message, db: AsyncSession):
     if message.chat.type == "private":
         await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
@@ -2757,7 +2757,7 @@ async def cb_voltorb_stop(callback: CallbackQuery):
     )
     await callback.answer("Vault lock reset!")
 
-@router.message(Command("voltorb", "numguess", "vault"))
+@router.message(Command("voltorb", "numguess", "vault", ignore_mention=True))
 async def cmd_voltorb(message: Message, db: AsyncSession):
     if message.chat.type == "private":
         await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
@@ -2821,7 +2821,7 @@ async def cb_play_voltorb(callback: CallbackQuery, db: AsyncSession):
 # ADMIN SCRIBBLE TOGGLE & TRIVIA CALLBACKS
 # ==========================================
 
-@router.message(Command("togglescribble"))
+@router.message(Command("togglescribble", ignore_mention=True))
 async def cmd_toggle_scribble(message: Message):
     if message.chat.type not in ["group", "supergroup"]:
         await message.answer("⚠️ This command can only be used in group chats.")
@@ -2840,7 +2840,7 @@ async def cmd_toggle_scribble(message: Message):
     status_str = "Enabled 🟢" if new_status else "Disabled 🔴"
     await message.answer(f"✏️ <b>Scribble Mode</b> is now <b>{status_str}</b> in this chat.", parse_mode="HTML")
 
-@router.message(Command("togglenameguess"))
+@router.message(Command("togglenameguess", ignore_mention=True))
 async def cmd_toggle_nameguess(message: Message):
     if message.chat.type not in ["group", "supergroup"]:
         await message.answer("⚠️ This command can only be used in group chats.")
@@ -2951,7 +2951,7 @@ async def cb_trivia_answer(callback: CallbackQuery, db: AsyncSession):
             )
             asyncio.create_task(delete_message_after(msg, 60))
 
-@router.message(Command("balance", "bal", "coins", "wallet"))
+@router.message(Command("balance", "bal", "coins", "wallet", ignore_mention=True))
 async def cmd_balance(message: Message, db: AsyncSession):
     try:
         user_id = message.from_user.id
@@ -2995,7 +2995,7 @@ async def cmd_balance(message: Message, db: AsyncSession):
         print(f"Error in games cmd_balance: {e}")
         await message.answer("❌ An error occurred while retrieving your balance.")
 
-@router.message(Command("streak", "streaks"))
+@router.message(Command("streak", "streaks", ignore_mention=True))
 async def cmd_streak(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     
@@ -3047,7 +3047,7 @@ async def cmd_streak(message: Message, db: AsyncSession):
     )
     await message.answer(text, parse_mode="HTML")
 
-@router.message(Command("streaklb", "slb", "streakslb", "streaksleaderboard"))
+@router.message(Command("streaklb", "slb", "streakslb", "streaksleaderboard", ignore_mention=True))
 async def cmd_streak_leaderboard(message: Message, db: AsyncSession):
     from utils.streak import get_top_streaks
     from utils.formatters import escape_md

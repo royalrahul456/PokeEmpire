@@ -82,8 +82,8 @@ def get_hp_bar_battle(current: int, max_hp: int, length: int = 10) -> str:
         
     return f"`[{bar}]` {color_emoji} **{current}/{max_hp}**"
 
-@router.message(Command("battle"))
-@router.message(Command("duel"))
+@router.message(Command("battle", ignore_mention=True))
+@router.message(Command("duel", ignore_mention=True))
 async def cmd_battle(message: Message, db: AsyncSession):
     if message.chat.type == "private":
         await message.answer("⚠️ PvP Battles can only be started in group chats.")

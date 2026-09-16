@@ -12,7 +12,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 router = Router()
 
-@router.message(Command("catch"))
+@router.message(Command("catch", ignore_mention=True))
 async def cmd_catch(message: Message, db: AsyncSession):
     chat_id = message.chat.id
     user_id = message.from_user.id
@@ -321,7 +321,7 @@ from datetime import datetime, timedelta
 import html
 from utils.settings import send_safe_media
 
-@router.message(Command("claim"))
+@router.message(Command("claim", ignore_mention=True))
 async def cmd_claim(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     nickname = message.from_user.first_name
@@ -432,7 +432,7 @@ async def cmd_claim(message: Message, db: AsyncSession):
         message_to_reply=message
     )
 
-@router.message(Command("daily"))
+@router.message(Command("daily", ignore_mention=True))
 async def cmd_daily(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     nickname = message.from_user.first_name

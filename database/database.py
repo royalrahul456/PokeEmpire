@@ -95,22 +95,44 @@ async def _create_all_tables():
 async def init_db():
     """Initialize the database, creating all tables and seeding Pokémon list."""
     global engine, SessionLocal
-    if "postgresql" in DATABASE_URL or "cockroachdb" in DATABASE_URL:
-        try:
-            async with SessionLocal() as session:
-                await session.execute(text("SELECT 1 FROM users LIMIT 1"))
-                safe_print("✅ Cloud database tables verified.")
-                return
-        except Exception:
-            pass
     try:
         await asyncio.wait_for(_create_all_tables(), timeout=4.0)
     except (asyncio.TimeoutError, Exception) as e:
         safe_print(f"ℹ️ Table creation check completed ({e}).")
-        safe_print(f"ℹ️ Table creation check completed ({e}).")
 
-    # Run schema column migrations for SQLite fallback databases
-    if "postgresql" not in DATABASE_URL and "cockroachdb" not in DATABASE_URL:
+    # Run schema column migrations for PostgreSQL & SQLite databases
+    if "postgresql" in DATABASE_URL or "cockroachdb" in DATABASE_URL:
+        pg_migrations = [
+            "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS scribble_enabled BOOLEAN DEFAULT true;",
+            "ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS nameguess_enabled BOOLEAN DEFAULT true;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS current_streak INTEGER DEFAULT 0;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS best_streak INTEGER DEFAULT 0;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_secured_date VARCHAR(20);",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_catch_date VARCHAR(20);",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS catches_today INTEGER DEFAULT 0;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_mines_date VARCHAR(20);",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_mines_count INTEGER DEFAULT 0;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS trainer_level INTEGER DEFAULT 1;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS trainer_xp INTEGER DEFAULT 0;",
+            "CREATE TABLE IF NOT EXISTS active_mines_games (chat_id BIGINT PRIMARY KEY, user_id BIGINT, bet_amount INTEGER, mines_count INTEGER, grid TEXT, revealed TEXT, status VARCHAR(20), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, last_activity_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);",
+            "ALTER TABLE active_mines_games ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;",
+            "ALTER TABLE pokemon ADD COLUMN IF NOT EXISTS video_url VARCHAR(255);",
+            "ALTER TABLE pokemon ADD COLUMN IF NOT EXISTS dmax_url VARCHAR(255);",
+            "ALTER TABLE pokemon ADD COLUMN IF NOT EXISTS gmax_url VARCHAR(255);",
+            "ALTER TABLE pokemon ADD COLUMN IF NOT EXISTS zmove_url VARCHAR(255);",
+            "ALTER TABLE pokemon ADD COLUMN IF NOT EXISTS terastal_url VARCHAR(255);",
+            "ALTER TABLE user_pokemon ADD COLUMN IF NOT EXISTS is_amv BOOLEAN DEFAULT false;",
+            "ALTER TABLE user_pokemon ADD COLUMN IF NOT EXISTS form_index INTEGER DEFAULT 0;",
+            "ALTER TABLE user_pokemon ADD COLUMN IF NOT EXISTS serial_number VARCHAR(20);",
+            "ALTER TABLE redeem_codes ADD COLUMN IF NOT EXISTS reward_form_index INTEGER DEFAULT 0;"
+        ]
+        for q in pg_migrations:
+            try:
+                async with engine.begin() as conn:
+                    await conn.execute(text(q))
+            except Exception:
+                pass
+    else:
         try:
             async with engine.begin() as conn:
                 for col in ["scribble_enabled", "nameguess_enabled"]:
@@ -130,6 +152,8 @@ async def init_db():
                 for col, col_type in streak_cols:
                     try: await conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {col_type}"))
                     except Exception: pass
+                try: await conn.execute(text("CREATE TABLE IF NOT EXISTS active_mines_games (chat_id INTEGER PRIMARY KEY, user_id INTEGER, bet_amount INTEGER, mines_count INTEGER, grid TEXT, revealed TEXT, status VARCHAR(20), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, last_activity_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"))
+                except Exception: pass
                 try: await conn.execute(text("ALTER TABLE active_mines_games ADD COLUMN last_activity_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"))
                 except Exception: pass
                 for col in ["video_url", "dmax_url", "gmax_url", "zmove_url", "terastal_url"]:

@@ -93,82 +93,55 @@ async def _create_all_tables():
         await conn.run_sync(Base.metadata.create_all)
 
 async def init_db():
-    """Initialize the database, creating all tables and seeding Pokémon list. Falls back to SQLite if cloud DB fails."""
+    """Initialize the database, creating all tables and seeding Pokémon list."""
     global engine, SessionLocal
+    if "postgresql" in DATABASE_URL or "cockroachdb" in DATABASE_URL:
+        try:
+            async with SessionLocal() as session:
+                await session.execute(text("SELECT 1 FROM users LIMIT 1"))
+                safe_print("✅ Cloud database tables verified.")
+                return
+        except Exception:
+            pass
     try:
         await asyncio.wait_for(_create_all_tables(), timeout=4.0)
     except (asyncio.TimeoutError, Exception) as e:
         safe_print(f"ℹ️ Table creation check completed ({e}).")
+        safe_print(f"ℹ️ Table creation check completed ({e}).")
 
-    # Run schema column migrations across all database engines (PostgreSQL, CockroachDB, SQLite)
-    try:
-        async with engine.begin() as conn:
-            is_pg = "postgresql" in DATABASE_URL or "cockroachdb" in DATABASE_URL
-
-            for col in ["scribble_enabled", "nameguess_enabled"]:
-                try:
-                    if is_pg:
-                        await conn.execute(text(f"ALTER TABLE group_settings ADD COLUMN IF NOT EXISTS {col} BOOLEAN DEFAULT true"))
-                    else:
-                        await conn.execute(text(f"ALTER TABLE group_settings ADD COLUMN {col} BOOLEAN DEFAULT true"))
-                except Exception:
-                    pass
-
-            streak_cols = [
-                ("current_streak", "INTEGER DEFAULT 0"),
-                ("best_streak", "INTEGER DEFAULT 0"),
-                ("last_secured_date", "VARCHAR(20)"),
-                ("last_catch_date", "VARCHAR(20)"),
-                ("catches_today", "INTEGER DEFAULT 0"),
-                ("last_mines_date", "VARCHAR(20)"),
-                ("daily_mines_count", "INTEGER DEFAULT 0"),
-                ("trainer_level", "INTEGER DEFAULT 1"),
-                ("trainer_xp", "INTEGER DEFAULT 0")
-            ]
-            for col, col_type in streak_cols:
-                try:
-                    if is_pg:
-                        await conn.execute(text(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col} {col_type}"))
-                    else:
-                        await conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {col_type}"))
-                except Exception:
-                    pass
-
-            try:
-                if is_pg:
-                    await conn.execute(text("ALTER TABLE active_mines_games ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"))
-                else:
-                    await conn.execute(text("ALTER TABLE active_mines_games ADD COLUMN last_activity_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"))
-            except Exception:
-                pass
-
-            for col in ["video_url", "dmax_url", "gmax_url", "zmove_url", "terastal_url"]:
-                try:
-                    if is_pg:
-                        await conn.execute(text(f"ALTER TABLE pokemon ADD COLUMN IF NOT EXISTS {col} VARCHAR(255)"))
-                    else:
-                        await conn.execute(text(f"ALTER TABLE pokemon ADD COLUMN {col} VARCHAR(255)"))
-                except Exception:
-                    pass
-
-            for col, col_type in [("is_amv", "BOOLEAN DEFAULT false"), ("form_index", "INTEGER DEFAULT 0"), ("serial_number", "VARCHAR(20)")]:
-                try:
-                    if is_pg:
-                        await conn.execute(text(f"ALTER TABLE user_pokemon ADD COLUMN IF NOT EXISTS {col} {col_type}"))
-                    else:
-                        await conn.execute(text(f"ALTER TABLE user_pokemon ADD COLUMN {col} {col_type}"))
-                except Exception:
-                    pass
-
-            try:
-                if is_pg:
-                    await conn.execute(text("ALTER TABLE redeem_codes ADD COLUMN IF NOT EXISTS reward_form_index INTEGER DEFAULT 0"))
-                else:
-                    await conn.execute(text("ALTER TABLE redeem_codes ADD COLUMN reward_form_index INTEGER DEFAULT 0"))
-            except Exception:
-                pass
-    except Exception as ex:
-        safe_print(f"Schema migration check completed: {ex}")
+    # Run schema column migrations for SQLite fallback databases
+    if "postgresql" not in DATABASE_URL and "cockroachdb" not in DATABASE_URL:
+        try:
+            async with engine.begin() as conn:
+                for col in ["scribble_enabled", "nameguess_enabled"]:
+                    try: await conn.execute(text(f"ALTER TABLE group_settings ADD COLUMN {col} BOOLEAN DEFAULT true"))
+                    except Exception: pass
+                streak_cols = [
+                    ("current_streak", "INTEGER DEFAULT 0"),
+                    ("best_streak", "INTEGER DEFAULT 0"),
+                    ("last_secured_date", "VARCHAR(20)"),
+                    ("last_catch_date", "VARCHAR(20)"),
+                    ("catches_today", "INTEGER DEFAULT 0"),
+                    ("last_mines_date", "VARCHAR(20)"),
+                    ("daily_mines_count", "INTEGER DEFAULT 0"),
+                    ("trainer_level", "INTEGER DEFAULT 1"),
+                    ("trainer_xp", "INTEGER DEFAULT 0")
+                ]
+                for col, col_type in streak_cols:
+                    try: await conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {col_type}"))
+                    except Exception: pass
+                try: await conn.execute(text("ALTER TABLE active_mines_games ADD COLUMN last_activity_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"))
+                except Exception: pass
+                for col in ["video_url", "dmax_url", "gmax_url", "zmove_url", "terastal_url"]:
+                    try: await conn.execute(text(f"ALTER TABLE pokemon ADD COLUMN {col} VARCHAR(255)"))
+                    except Exception: pass
+                for col, col_type in [("is_amv", "BOOLEAN DEFAULT false"), ("form_index", "INTEGER DEFAULT 0"), ("serial_number", "VARCHAR(20)")]:
+                    try: await conn.execute(text(f"ALTER TABLE user_pokemon ADD COLUMN {col} {col_type}"))
+                    except Exception: pass
+                try: await conn.execute(text("ALTER TABLE redeem_codes ADD COLUMN reward_form_index INTEGER DEFAULT 0"))
+                except Exception: pass
+        except Exception as ex:
+            safe_print(f"Schema migration check completed: {ex}")
 
     # Migrate existing AMV data to pokemon_form_media for SQLite fallback databases
     if "postgresql" not in DATABASE_URL and "cockroachdb" not in DATABASE_URL:

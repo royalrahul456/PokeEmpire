@@ -356,6 +356,14 @@ async def main():
     from utils.emoji_patch import patch_bot_emojis
     patch_bot_emojis(bot)
 
+    # Validate bot token with Telegram API before starting polling
+    try:
+        bot_info = await bot.get_me()
+        logger.info(f"✅ Main Bot authenticated successfully as @{bot_info.username} (ID: {bot_info.id})")
+    except Exception as e:
+        logger.error(f"❌ Main Bot authentication failed: Telegram API returned ({e}). Please get a fresh token from @BotFather!")
+        return
+
     dp = Dispatcher()
 
     # Register Middlewares

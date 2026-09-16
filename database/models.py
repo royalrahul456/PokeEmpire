@@ -273,6 +273,21 @@ class BugReport(Base):
     user = relationship("User", foreign_keys=[user_id])
 
 
+class ActiveMinesGame(Base):
+    __tablename__ = "active_mines_games"
+
+    user_id = Column(BigInteger, primary_key=True)
+    chat_id = Column(BigInteger, nullable=True)
+    message_id = Column(BigInteger, nullable=True)
+    bet = Column(Integer, nullable=False)
+    mines_count = Column(Integer, nullable=False)
+    mines_json = Column(String(200), nullable=False)
+    revealed_json = Column(String(500), default="[]", nullable=False)
+    ended = Column(Boolean, default=False, nullable=False)
+    nickname = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+
+
 
 
 

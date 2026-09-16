@@ -19,7 +19,6 @@ if "postgresql" in DATABASE_URL or "cockroachdb" in DATABASE_URL:
         DATABASE_URL,
         connect_args={
             "statement_cache_size": 0,
-            "prepared_statement_cache_size": 0,
             "command_timeout": 15
         },
         pool_size=10,

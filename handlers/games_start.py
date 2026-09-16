@@ -474,7 +474,7 @@ async def cmd_games_help(message: Message):
         f"• 👤 <b>Silhouette:</b> <code>/whothat</code> - Identify Pokémon shadow outline.\n"
         f"• ⚡ <b>Type Blitz:</b> <code>/blitz</code> or <code>/typematch</code> - Name super-effective or resistant counters.\n"
         f"• ⚡ <b>Voltorb Lock:</b> <code>/voltorb</code> - Hack 1–50 security PIN in 6 attempts.\n"
-        f"• 💣 <b>Mines:</b> <code>/mines &lt;bet&gt; [count]</code> - Pick safe tiles before detonating.\n"
+        f"• 💣 <b>Mines:</b> <code>/mines &lt;bet&gt; [count]</code> - Pick safe tiles (4/day, 120s timer).\n"
         f"• ❌ <b>Tic-Tac-Toe:</b> <code>/ttc &lt;bet&gt;</code> - 3x3 duel against AI or players.\n"
         f"• 🎡 <b>Spin Wheel:</b> <code>/spin</code> - Hourly free spin for coins & gems.\n"
         f"• 🎲 <b>Dice Duel:</b> <code>/dice &lt;bet&gt;</code> - Roll higher than AI to win 2x.\n"
@@ -498,7 +498,9 @@ async def cb_launch_mines(callback: CallbackQuery):
         await callback.message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
         return
     await callback.message.answer(
-        "💣 <b>Mines Game:</b>\nType <code>/mines &lt;bet_amount&gt;</code> to start a game!\nExample: <code>/mines 1000</code>",
+        "💣 <b>Mines Game:</b>\n"
+        "• Type <code>/mines &lt;bet&gt; [count]</code> to start a game (e.g. <code>/mines 1000 3</code>)\n"
+        "• Limit: <b>4 games per day</b> | ⏳ <b>120s inactivity timer</b>",
         parse_mode="HTML"
     )
 

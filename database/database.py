@@ -108,10 +108,12 @@ async def init_db():
                 for col in ["scribble_enabled", "nameguess_enabled"]:
                     try: await conn.execute(text(f"ALTER TABLE group_settings ADD COLUMN {col} BOOLEAN DEFAULT true"))
                     except Exception: pass
-                streak_cols = [("current_streak", "INTEGER DEFAULT 0"), ("best_streak", "INTEGER DEFAULT 0"), ("last_secured_date", "VARCHAR(20)"), ("last_catch_date", "VARCHAR(20)"), ("catches_today", "INTEGER DEFAULT 0"), ("trainer_level", "INTEGER DEFAULT 1"), ("trainer_xp", "INTEGER DEFAULT 0")]
+                streak_cols = [("current_streak", "INTEGER DEFAULT 0"), ("best_streak", "INTEGER DEFAULT 0"), ("last_secured_date", "VARCHAR(20)"), ("last_catch_date", "VARCHAR(20)"), ("catches_today", "INTEGER DEFAULT 0"), ("last_mines_date", "VARCHAR(20)"), ("daily_mines_count", "INTEGER DEFAULT 0"), ("trainer_level", "INTEGER DEFAULT 1"), ("trainer_xp", "INTEGER DEFAULT 0")]
                 for col, col_type in streak_cols:
                     try: await conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {col_type}"))
                     except Exception: pass
+                try: await conn.execute(text("ALTER TABLE active_mines_games ADD COLUMN last_activity_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"))
+                except Exception: pass
                 try: await conn.execute(text("ALTER TABLE pokemon ADD COLUMN video_url VARCHAR(255)"))
                 except Exception: pass
                 for col in ["dmax_url", "gmax_url", "zmove_url", "terastal_url"]:

@@ -17,6 +17,8 @@ class User(Base):
     last_secured_date = Column(String(20), nullable=True)
     last_catch_date = Column(String(20), nullable=True)
     catches_today = Column(Integer, default=0, nullable=False)
+    last_mines_date = Column(String(20), nullable=True)
+    daily_mines_count = Column(Integer, default=0, nullable=False)
     trainer_level = Column(Integer, default=1, nullable=False)
     trainer_xp = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)
@@ -285,6 +287,7 @@ class ActiveMinesGame(Base):
     revealed_json = Column(String(500), default="[]", nullable=False)
     ended = Column(Boolean, default=False, nullable=False)
     nickname = Column(String(100), nullable=True)
+    last_activity_at = Column(DateTime, default=func.now(), nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)
 
 

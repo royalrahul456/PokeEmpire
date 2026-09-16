@@ -8,6 +8,13 @@ from aiogram.enums import ParseMode
 from aiogram.types import TelegramObject, Message
 from typing import Callable, Dict, Any, Awaitable
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
 import config
 from database.database import init_db, SessionLocal
 from utils.anti_spam import AntiSpamMiddleware

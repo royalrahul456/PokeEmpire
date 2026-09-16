@@ -200,7 +200,6 @@ async def register_games_bot_commands(bot: Bot):
         BotCommand(command="rps", description="✊ Play Rock Paper Scissors"),
         BotCommand(command="scribble", description="✏️ Play Drawing & Guessing"),
         BotCommand(command="nameguess", description="💡 Play Pokémon Name Quiz"),
-        BotCommand(command="fine", description="🚨 Fine user 20% balance (Bot Admin only)"),
         BotCommand(command="help", description="📖 How to Play Mini-Games"),
     ]
     try:

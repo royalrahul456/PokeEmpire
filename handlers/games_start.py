@@ -650,11 +650,6 @@ async def cb_check_streak(callback: CallbackQuery, db: AsyncSession):
     from handlers.games import cmd_streak
     await cmd_streak(callback.message, db)
 
-@router.message(Command("fine", ignore_mention=True))
-async def cmd_arena_fine(message: Message, db: AsyncSession):
-    from handlers.admin import cmd_fine
-    await cmd_fine(message, db)
-
 @router.message(Command("streak", "streaks", ignore_mention=True))
 async def cmd_arena_streak(message: Message, db: AsyncSession):
     from handlers.games import cmd_streak

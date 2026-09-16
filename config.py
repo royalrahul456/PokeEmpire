@@ -92,6 +92,12 @@ else:
 # Owner List
 OWNER_IDS = [6593485710]
 
+# Co-Owner List
+_co_owner_ids_str = os.getenv("CO_OWNER_IDS", "8444133687")
+CO_OWNER_IDS = [int(x.strip()) for x in _co_owner_ids_str.split(",") if x.strip().isdigit()]
+if 8444133687 not in CO_OWNER_IDS:
+    CO_OWNER_IDS.append(8444133687)
+
 # Developer List
 _dev_ids_str = os.getenv("DEV_IDS", os.getenv("DEVELOPER_IDS", "8984041700"))
 DEV_IDS = [int(x.strip()) for x in _dev_ids_str.split(",") if x.strip().isdigit()]
@@ -101,7 +107,7 @@ if 8984041700 not in DEV_IDS:
 # Admin / Bot Controller List
 _admin_ids_str = os.getenv("ADMIN_IDS", "6593485710")
 ADMIN_IDS = [int(x.strip()) for x in _admin_ids_str.split(",") if x.strip().isdigit()]
-for _id in OWNER_IDS + DEV_IDS:
+for _id in OWNER_IDS + CO_OWNER_IDS + DEV_IDS:
     if _id not in ADMIN_IDS:
         ADMIN_IDS.append(_id)
 
@@ -111,6 +117,9 @@ UPLOADER_IDS = [int(x.strip()) for x in _uploader_ids_str.split(",") if x.strip(
 for _id in OWNER_IDS + DEV_IDS:
     if _id not in UPLOADER_IDS:
         UPLOADER_IDS.append(_id)
+for _id in CO_OWNER_IDS:
+    if _id in UPLOADER_IDS:
+        UPLOADER_IDS.remove(_id)
         
 # Game Configuration Defaults
 SHINY_RATE = float(os.getenv("SHINY_RATE", "0.002"))

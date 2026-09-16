@@ -23,8 +23,8 @@ async def cmd_create_redeem(message: Message, db: AsyncSession):
         await message.answer("⚠️ This command can only be used in private DMs.")
         return
         
-    if not config.ADMIN_IDS or message.from_user.id != config.ADMIN_IDS[0]:
-        await message.answer("❌ Denied. Only the Bot Owner can create redeem codes.")
+    if not message.from_user or (message.from_user.id not in config.OWNER_IDS and message.from_user.id not in getattr(config, "CO_OWNER_IDS", [])):
+        await message.answer("❌ Denied. Only Bot Owners and Co-Owners can create redeem codes.")
         return
         
     parts = message.text.split()
@@ -177,7 +177,7 @@ async def cmd_redeem(message: Message, db: AsyncSession):
             await message.answer("❌ Invalid redeem code. Please check spelling and try again.")
             return
             
-        is_owner = bool(config.ADMIN_IDS and user_id == config.ADMIN_IDS[0])
+        is_owner = bool(user_id and (user_id in config.OWNER_IDS or user_id in getattr(config, "CO_OWNER_IDS", [])))
 
         # Check limit (owners bypass usage limit)
         if not is_owner and code.usage_count >= code.usage_limit:
@@ -328,8 +328,8 @@ async def cmd_redeem(message: Message, db: AsyncSession):
 @router.message(Command("gen"))
 async def cmd_gen(message: Message, db: AsyncSession):
     # Authorization check
-    if not config.ADMIN_IDS or message.from_user.id != config.ADMIN_IDS[0]:
-        await message.answer("❌ Denied. Only the Bot Owner can generate redeem codes.")
+    if not message.from_user or (message.from_user.id not in config.OWNER_IDS and message.from_user.id not in getattr(config, "CO_OWNER_IDS", [])):
+        await message.answer("❌ Denied. Only Bot Owners and Co-Owners can generate redeem codes.")
         return
         
     parts = message.text.split()

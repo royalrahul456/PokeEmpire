@@ -151,25 +151,22 @@ async def cmd_toggle_spawns(message: Message, db: AsyncSession):
     else:
         await message.answer("🚫 **Spawns Disabled.** Spawning has been turned off for this group chat.")
 
-@router.message(Command("adminlist", "admins"))
-async def cmd_admin_list(message: Message, db: AsyncSession):
-    if not config.ADMIN_IDS:
-        await message.answer("ℹ️ **Bot Administrators**: None configured.")
-        return
-
+async def build_admin_roster_text(bot: Bot, db: AsyncSession) -> str:
     owner_ids = getattr(config, "OWNER_IDS", [6593485710])
+    co_owner_ids = getattr(config, "CO_OWNER_IDS", [8444133687])
     dev_ids = getattr(config, "DEV_IDS", [8984041700])
-    all_admin_ids = getattr(config, "ADMIN_IDS", [6593485710, 8984041700])
+    all_admin_ids = getattr(config, "ADMIN_IDS", [6593485710, 8444133687, 8984041700])
     uploader_ids = getattr(config, "UPLOADER_IDS", [6593485710, 8984041700])
 
     # Query database for matching registered bot admins & uploaders
-    all_ids = list(set(owner_ids + dev_ids + all_admin_ids + uploader_ids))
+    all_ids = list(set(owner_ids + co_owner_ids + dev_ids + all_admin_ids + uploader_ids))
     stmt = select(User).where(User.id.in_(all_ids))
     res = await db.execute(stmt)
     registered_users = res.scalars().all()
     registered_ids = {u.id: u for u in registered_users}
 
     owner_rows = []
+    co_owner_rows = []
     dev_rows = []
     admin_rows = []
     uploader_rows = []
@@ -188,7 +185,7 @@ async def cmd_admin_list(message: Message, db: AsyncSession):
                 username = "TheDarkKratos"
             else:
                 try:
-                    chat = await message.bot.get_chat(uid)
+                    chat = await asyncio.wait_for(bot.get_chat(uid), timeout=2.0)
                     nickname = chat.first_name
                     username = chat.username
                 except Exception:
@@ -205,20 +202,27 @@ async def cmd_admin_list(message: Message, db: AsyncSession):
         row = await get_user_row(oid, "Owner")
         owner_rows.append(row)
 
+    # Build Co-Owner rows
+    for coid in co_owner_ids:
+        if coid not in owner_ids:
+            row = await get_user_row(coid, "Co-Owner")
+            co_owner_rows.append(row)
+
     # Build Developer rows
     for did in dev_ids:
-        row = await get_user_row(did, "Developer")
-        dev_rows.append(row)
+        if did not in owner_ids and did not in co_owner_ids:
+            row = await get_user_row(did, "Developer")
+            dev_rows.append(row)
 
-    # Build Admin rows (excluding owner & dev)
+    # Build Admin rows (excluding owner, co-owner & dev)
     for aid in all_admin_ids:
-        if aid not in owner_ids and aid not in dev_ids:
+        if aid not in owner_ids and aid not in co_owner_ids and aid not in dev_ids:
             row = await get_user_row(aid, "Admin")
             admin_rows.append(row)
 
-    # Build Uploader rows (excluding owner & dev)
+    # Build Uploader rows (excluding owner, co-owner & dev)
     for up_id in uploader_ids:
-        if up_id not in owner_ids and up_id not in dev_ids:
+        if up_id not in owner_ids and up_id not in co_owner_ids and up_id not in dev_ids:
             row = await get_user_row(up_id, "Uploader")
             uploader_rows.append(row)
 
@@ -229,6 +233,10 @@ async def cmd_admin_list(message: Message, db: AsyncSession):
     if owner_rows:
         owner_title = "👑 **OWNER**" if len(owner_rows) == 1 else "👑 **OWNERS**"
         text += f"{owner_title}\n" + "\n".join(owner_rows) + "\n\n"
+
+    if co_owner_rows:
+        co_owner_title = "👑 **CO-OWNER**" if len(co_owner_rows) == 1 else "👑 **CO-OWNERS**"
+        text += f"{co_owner_title}\n" + "\n".join(co_owner_rows) + "\n\n"
 
     if dev_rows:
         dev_title = "💻 **DEVELOPER**" if len(dev_rows) == 1 else "💻 **DEVELOPERS**"
@@ -243,7 +251,26 @@ async def cmd_admin_list(message: Message, db: AsyncSession):
         text += f"{uploader_title}\n" + "\n".join(uploader_rows) + "\n\n"
 
     text += "───────────────"
+    return text
+
+@router.message(Command("adminlist", "admins"))
+async def cmd_admin_list(message: Message, db: AsyncSession):
+    if not config.ADMIN_IDS:
+        await message.answer("ℹ️ **Bot Administrators**: None configured.")
+        return
+
+    text = await build_admin_roster_text(message.bot, db)
     await message.answer(text, parse_mode="Markdown")
+
+@router.callback_query(F.data == "owner_adminlist")
+async def cb_owner_adminlist(callback: CallbackQuery, db: AsyncSession):
+    if callback.from_user.id not in config.ADMIN_IDS:
+        await callback.answer("❌ Denied. Admin only.", show_alert=True)
+        return
+
+    text = await build_admin_roster_text(callback.bot, db)
+    await callback.message.answer(text, parse_mode="Markdown")
+    await callback.answer()
 
 import time
 spawnsettings_cooldown_cache = {}  # chat_id -> timestamp
@@ -913,11 +940,12 @@ async def cmd_remove_admin(message: Message, db: AsyncSession):
             await message.answer("⚠️ Target must be a user ID or @username.")
             return
 
-    # Check if target is a core owner/developer
+    # Check if target is a core owner/co-owner/developer
     owner_ids = getattr(config, "OWNER_IDS", [6593485710])
+    co_owner_ids = getattr(config, "CO_OWNER_IDS", [8444133687])
     dev_ids = getattr(config, "DEV_IDS", [8984041700])
-    if target_id in owner_ids or target_id in dev_ids:
-        await message.answer("❌ Denied. You cannot remove a Bot Owner or Developer from the administrator list!")
+    if target_id in owner_ids or target_id in co_owner_ids or target_id in dev_ids:
+        await message.answer("❌ Denied. You cannot remove a Bot Owner, Co-Owner, or Developer from the administrator list!")
         return
 
     # Check if not admin
@@ -1175,7 +1203,7 @@ async def cmd_spawn(message: Message, db: AsyncSession):
 @router.message(Command("spawnchance"))
 async def cmd_spawn_chance(message: Message):
     user_id = message.from_user.id if message.from_user else 0
-    is_owner = bool(config.ADMIN_IDS and user_id == config.ADMIN_IDS[0])
+    is_owner = bool(user_id and (user_id in config.OWNER_IDS or user_id in getattr(config, "CO_OWNER_IDS", [])))
 
     parts = message.text.split()
     from utils.settings import load_spawn_settings, save_spawn_settings

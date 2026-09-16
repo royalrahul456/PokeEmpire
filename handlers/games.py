@@ -2818,6 +2818,103 @@ async def cb_play_voltorb(callback: CallbackQuery, db: AsyncSession):
 
 
 # ==========================================
+# ABORT / STOP ACTIVE MINI-GAME COMMAND
+# ==========================================
+
+@router.message(Command("abort", "cancelgame", "stopgame", "endgame", ignore_mention=True))
+async def cmd_abort_game(message: Message):
+    chat_id = message.chat.id
+    user_id = message.from_user.id if message.from_user else 0
+    user_name = html.escape(message.from_user.first_name if message.from_user else "Trainer")
+
+    if chat_id not in active_games:
+        # Check active XO games in this chat
+        from handlers.xo import active_xo_games
+        xo_found = False
+        for k in list(active_xo_games.keys()):
+            if k.startswith(f"xo_ai_{chat_id}_") or k.startswith(f"xo_pvp_{chat_id}_"):
+                active_xo_games.pop(k, None)
+                xo_found = True
+        if xo_found:
+            await message.answer(f"🛑 <b>Active Tic-Tac-Toe duel aborted</b> by {user_name}.", parse_mode="HTML")
+            return
+
+        await message.answer("ℹ️ No active game is currently running in this chat.")
+        return
+
+    game = active_games[chat_id]
+    game_type = game.get("type", "game")
+
+    # Authorization check
+    is_allowed = False
+    if message.chat.type == "private":
+        is_allowed = True
+    else:
+        if user_id in config.ADMIN_IDS or user_id in getattr(config, "CO_OWNER_IDS", []) or user_id in config.OWNER_IDS:
+            is_allowed = True
+        else:
+            try:
+                member = await message.bot.get_chat_member(chat_id=chat_id, user_id=user_id)
+                is_allowed = member.status in ["creator", "administrator", "member"]
+            except Exception:
+                is_allowed = True
+
+    del active_games[chat_id]
+
+    if game_type == "silhouette":
+        await cleanup_silhouette_messages(message.bot, chat_id, game)
+        ans_display = game.get("pokemon_name") or game.get("answer", "Unknown").title()
+        await message.answer(
+            f"🛑 <b>Silhouette Trial aborted</b> by {user_name}.\n"
+            f"💡 The Pokémon was: <b>{ans_display}</b>",
+            parse_mode="HTML"
+        )
+    elif game_type == "voltorb":
+        await cleanup_voltorb_messages(message.bot, chat_id, game)
+        await message.answer(
+            f"🛑 <b>Voltorb Lock breach aborted</b> by {user_name}.\n"
+            f"🔐 Security PIN was: <code>{game.get('target', 'N/A')}</code>",
+            parse_mode="HTML"
+        )
+    elif game_type == "typematch":
+        await cleanup_typematch_messages(message.bot, chat_id, game)
+        ans_list = ", ".join(t.title() for t in game.get("valid_answers", []))
+        await message.answer(
+            f"🛑 <b>Type Matchup Blitz aborted</b> by {user_name}.\n"
+            f"💡 Valid Elemental Counters were: <b>{ans_list}</b>",
+            parse_mode="HTML"
+        )
+    elif game_type == "scribble":
+        await cleanup_scribble_messages(message.bot, chat_id, game)
+        ans_word = game.get("word") or game.get("answer") or "N/A"
+        await message.answer(
+            f"🛑 <b>Scribble game aborted</b> by {user_name}.\n"
+            f"💡 The word was: <b>{ans_word.title()}</b>",
+            parse_mode="HTML"
+        )
+    elif game_type == "nameguess":
+        await cleanup_nameguess_messages(message.bot, chat_id, game)
+        ans_display = game.get("pokemon_name") or game.get("answer", "Unknown").title()
+        await message.answer(
+            f"🛑 <b>NameGuess Quiz aborted</b> by {user_name}.\n"
+            f"💡 The Pokémon was: <b>{ans_display}</b>",
+            parse_mode="HTML"
+        )
+    elif game_type == "trivia":
+        ans_display = game.get("answer", "N/A")
+        await message.answer(
+            f"🛑 <b>Trivia challenge aborted</b> by {user_name}.\n"
+            f"💡 Correct Answer was: <b>{ans_display}</b>",
+            parse_mode="HTML"
+        )
+    else:
+        await message.answer(
+            f"🛑 <b>Active {game_type.title()} game aborted</b> by {user_name}.",
+            parse_mode="HTML"
+        )
+
+
+# ==========================================
 # ADMIN SCRIBBLE TOGGLE & TRIVIA CALLBACKS
 # ==========================================
 

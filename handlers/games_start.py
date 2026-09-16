@@ -486,6 +486,7 @@ async def cmd_games_help(message: Message):
         f"• ✊ <b>RPS:</b> <code>/rps &lt;bet&gt; &lt;rock/paper/scissors&gt;</code> - Rock Paper Scissors.\n"
         f"• ✏️ <b>Scribble:</b> <code>/scribble</code> - Unscramble Pokémon names in groups.\n"
         f"• 💡 <b>NameGuess:</b> <code>/nameguess</code> - Identify Pokémon from anagrams.\n"
+        f"• 🛑 <b>Abort:</b> <code>/abort</code> - Stop and cancel active mini-game in chat.\n"
         f"• 💰 <b>Balance:</b> <code>/balance</code> or <code>/bal</code> - Check your synchronized wallet."
     )
     kb = get_games_hub_keyboard(getattr(config, "MAIN_BOT_USERNAME", None))

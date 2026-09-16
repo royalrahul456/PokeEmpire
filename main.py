@@ -506,6 +506,7 @@ async def main():
         dp.include_router(start.router)
         dp.include_router(profile.router)
         dp.include_router(catch.router)
+        dp.include_router(games_start.router)
         dp.include_router(games.router)
         dp.include_router(xo.router)
         dp.include_router(mines.router)

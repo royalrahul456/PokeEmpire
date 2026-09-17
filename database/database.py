@@ -89,7 +89,12 @@ import asyncio
 
 async def _create_all_tables():
     async with engine.begin() as conn:
-        from database.models import User, Pokemon, UserPokemon, ActiveSpawn, GroupSetting, GlobalSetting, PokemonFormMedia, PvpBattle, Auction, AuctionBid, ChatMessageStat, Guild, GuildMember, TrainerQuest, TransactionHistory, MysteryEventState, BugReport, RedeemCode, RedeemClaim
+        from database.models import (
+            User, Pokemon, UserPokemon, ActiveSpawn, GroupSetting, GlobalSetting, 
+            PokemonFormMedia, PvpBattle, Auction, AuctionBid, ChatMessageStat, 
+            Guild, GuildMember, TrainerQuest, TransactionHistory, MysteryEventState, 
+            BugReport, RedeemCode, RedeemClaim, ActiveMinesGame
+        )
         await conn.run_sync(Base.metadata.create_all)
 
 async def init_db():
@@ -114,8 +119,39 @@ async def init_db():
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_mines_count INTEGER DEFAULT 0;",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS trainer_level INTEGER DEFAULT 1;",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS trainer_xp INTEGER DEFAULT 0;",
-            "CREATE TABLE IF NOT EXISTS active_mines_games (chat_id BIGINT PRIMARY KEY, user_id BIGINT, bet_amount INTEGER, mines_count INTEGER, grid TEXT, revealed TEXT, status VARCHAR(20), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, last_activity_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);",
+            # Fix active_mines_games schema if old columns exist
+            """DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name='active_mines_games' AND column_name='bet_amount'
+                ) THEN
+                    DROP TABLE active_mines_games;
+                END IF;
+            END $$;""",
+            """CREATE TABLE IF NOT EXISTS active_mines_games (
+                user_id BIGINT PRIMARY KEY,
+                chat_id BIGINT,
+                message_id BIGINT,
+                bet INTEGER NOT NULL DEFAULT 0,
+                mines_count INTEGER NOT NULL DEFAULT 3,
+                mines_json VARCHAR(200) NOT NULL DEFAULT '[]',
+                revealed_json VARCHAR(500) NOT NULL DEFAULT '[]',
+                ended BOOLEAN NOT NULL DEFAULT false,
+                nickname VARCHAR(100),
+                last_activity_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );""",
+            "ALTER TABLE active_mines_games ADD COLUMN IF NOT EXISTS chat_id BIGINT;",
+            "ALTER TABLE active_mines_games ADD COLUMN IF NOT EXISTS message_id BIGINT;",
+            "ALTER TABLE active_mines_games ADD COLUMN IF NOT EXISTS bet INTEGER DEFAULT 0;",
+            "ALTER TABLE active_mines_games ADD COLUMN IF NOT EXISTS mines_count INTEGER DEFAULT 3;",
+            "ALTER TABLE active_mines_games ADD COLUMN IF NOT EXISTS mines_json VARCHAR(200) DEFAULT '[]';",
+            "ALTER TABLE active_mines_games ADD COLUMN IF NOT EXISTS revealed_json VARCHAR(500) DEFAULT '[]';",
+            "ALTER TABLE active_mines_games ADD COLUMN IF NOT EXISTS ended BOOLEAN DEFAULT false;",
+            "ALTER TABLE active_mines_games ADD COLUMN IF NOT EXISTS nickname VARCHAR(100);",
             "ALTER TABLE active_mines_games ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;",
+            "ALTER TABLE active_mines_games ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;",
             "ALTER TABLE pokemon ADD COLUMN IF NOT EXISTS video_url VARCHAR(255);",
             "ALTER TABLE pokemon ADD COLUMN IF NOT EXISTS dmax_url VARCHAR(255);",
             "ALTER TABLE pokemon ADD COLUMN IF NOT EXISTS gmax_url VARCHAR(255);",
@@ -152,10 +188,34 @@ async def init_db():
                 for col, col_type in streak_cols:
                     try: await conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {col_type}"))
                     except Exception: pass
-                try: await conn.execute(text("CREATE TABLE IF NOT EXISTS active_mines_games (chat_id INTEGER PRIMARY KEY, user_id INTEGER, bet_amount INTEGER, mines_count INTEGER, grid TEXT, revealed TEXT, status VARCHAR(20), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, last_activity_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"))
-                except Exception: pass
-                try: await conn.execute(text("ALTER TABLE active_mines_games ADD COLUMN last_activity_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"))
-                except Exception: pass
+                
+                # Check for legacy schema in active_mines_games
+                try:
+                    pragma_res = await conn.execute(text("PRAGMA table_info(active_mines_games)"))
+                    cols = [row[1] for row in pragma_res.fetchall()]
+                    if cols and "bet_amount" in cols:
+                        await conn.execute(text("DROP TABLE active_mines_games"))
+                except Exception:
+                    pass
+
+                try:
+                    await conn.execute(text(
+                        "CREATE TABLE IF NOT EXISTS active_mines_games ("
+                        "user_id INTEGER PRIMARY KEY, "
+                        "chat_id INTEGER, "
+                        "message_id INTEGER, "
+                        "bet INTEGER NOT NULL DEFAULT 0, "
+                        "mines_count INTEGER NOT NULL DEFAULT 3, "
+                        "mines_json VARCHAR(200) NOT NULL DEFAULT '[]', "
+                        "revealed_json VARCHAR(500) NOT NULL DEFAULT '[]', "
+                        "ended BOOLEAN NOT NULL DEFAULT 0, "
+                        "nickname VARCHAR(100), "
+                        "last_activity_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+                        "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                        ")"
+                    ))
+                except Exception:
+                    pass
                 for col in ["video_url", "dmax_url", "gmax_url", "zmove_url", "terastal_url"]:
                     try: await conn.execute(text(f"ALTER TABLE pokemon ADD COLUMN {col} VARCHAR(255)"))
                     except Exception: pass

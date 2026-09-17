@@ -2839,6 +2839,18 @@ async def cmd_abort_game(message: Message):
             await message.answer(f"🛑 <b>Active Tic-Tac-Toe duel aborted</b> by {user_name}.", parse_mode="HTML")
             return
 
+        # Check active Mines games for this user
+        from handlers.mines import active_mines_games, delete_game_state
+        if user_id in active_mines_games:
+            m_game = active_mines_games.get(user_id, {})
+            await delete_game_state(user_id, db)
+            await message.answer(
+                f"🛑 <b>Mines game aborted</b> by {user_name}.\n"
+                f"<i>Note: Placed bet of {m_game.get('bet', 0):,} coins was forfeited.</i>",
+                parse_mode="HTML"
+            )
+            return
+
         await message.answer("ℹ️ No active game is currently running in this chat.")
         return
 

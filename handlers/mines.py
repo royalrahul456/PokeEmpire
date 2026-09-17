@@ -92,39 +92,64 @@ def get_mines_keyboard(user_id: int, game: dict) -> InlineKeyboardMarkup:
         
     return builder.as_markup()
 
+def parse_bet_amount(arg: str, user_coins: int) -> int | None:
+    """Safely parses bet input strings supporting integers, commas, k/m suffixes, and all/half keywords."""
+    arg = arg.strip().lower().replace(",", "")
+    if arg in ["all", "max"]:
+        return min(user_coins, 100000)
+    if arg in ["half"]:
+        return min(max(10, user_coins // 2), 100000)
+    if arg.endswith("k"):
+        try:
+            return int(float(arg[:-1]) * 1000)
+        except ValueError:
+            return None
+    if arg.endswith("m"):
+        try:
+            return int(float(arg[:-1]) * 1000000)
+        except ValueError:
+            return None
+    try:
+        return int(arg)
+    except ValueError:
+        return None
+
 async def get_or_load_game(user_id: int, db: AsyncSession) -> dict | None:
     """Gets game state from memory or recovers from persistent database."""
     if user_id in active_mines_games:
         return active_mines_games[user_id]
     
-    stmt = select(ActiveMinesGame).where(ActiveMinesGame.user_id == user_id)
-    res = await db.execute(stmt)
-    db_game = res.scalar_one_or_none()
-    
-    if db_game and not db_game.ended:
-        try:
-            mines_set = set(json.loads(db_game.mines_json))
-        except Exception:
-            mines_set = set()
-            
-        try:
-            revealed_set = set(json.loads(db_game.revealed_json))
-        except Exception:
-            revealed_set = set()
-            
-        game_state = {
-            "bet": db_game.bet,
-            "mines_count": db_game.mines_count,
-            "mines": mines_set,
-            "revealed": revealed_set,
-            "ended": db_game.ended,
-            "nickname": db_game.nickname or "Trainer",
-            "chat_id": db_game.chat_id,
-            "message_id": db_game.message_id,
-            "last_activity": time.time()
-        }
-        active_mines_games[user_id] = game_state
-        return game_state
+    try:
+        stmt = select(ActiveMinesGame).where(ActiveMinesGame.user_id == user_id)
+        res = await db.execute(stmt)
+        db_game = res.scalar_one_or_none()
+        
+        if db_game and not db_game.ended:
+            try:
+                mines_set = set(json.loads(db_game.mines_json))
+            except Exception:
+                mines_set = set()
+                
+            try:
+                revealed_set = set(json.loads(db_game.revealed_json))
+            except Exception:
+                revealed_set = set()
+                
+            game_state = {
+                "bet": db_game.bet,
+                "mines_count": db_game.mines_count,
+                "mines": mines_set,
+                "revealed": revealed_set,
+                "ended": db_game.ended,
+                "nickname": db_game.nickname or "Trainer",
+                "chat_id": db_game.chat_id,
+                "message_id": db_game.message_id,
+                "last_activity": time.time()
+            }
+            active_mines_games[user_id] = game_state
+            return game_state
+    except Exception as e:
+        print(f"Error loading active mines game for user {user_id}: {e}")
     return None
 
 async def save_game_state(user_id: int, game_state: dict, db: AsyncSession, chat_id: int = None, message_id: int = None):
@@ -132,40 +157,43 @@ async def save_game_state(user_id: int, game_state: dict, db: AsyncSession, chat
     game_state["last_activity"] = time.time()
     active_mines_games[user_id] = game_state
     
-    mines_json = json.dumps(list(game_state["mines"]))
-    revealed_json = json.dumps(list(game_state["revealed"]))
-    
-    stmt = select(ActiveMinesGame).where(ActiveMinesGame.user_id == user_id)
-    res = await db.execute(stmt)
-    db_game = res.scalar_one_or_none()
-    
-    if db_game:
-        db_game.bet = game_state["bet"]
-        db_game.mines_count = game_state["mines_count"]
-        db_game.mines_json = mines_json
-        db_game.revealed_json = revealed_json
-        db_game.ended = game_state.get("ended", False)
-        db_game.nickname = game_state.get("nickname", "Trainer")
-        db_game.last_activity_at = datetime.utcnow()
-        if chat_id:
-            db_game.chat_id = chat_id
-        if message_id:
-            db_game.message_id = message_id
-    else:
-        db_game = ActiveMinesGame(
-            user_id=user_id,
-            chat_id=chat_id,
-            message_id=message_id,
-            bet=game_state["bet"],
-            mines_count=game_state["mines_count"],
-            mines_json=mines_json,
-            revealed_json=revealed_json,
-            ended=game_state.get("ended", False),
-            nickname=game_state.get("nickname", "Trainer"),
-            last_activity_at=datetime.utcnow()
-        )
-        db.add(db_game)
-    await db.commit()
+    try:
+        mines_json = json.dumps(list(game_state["mines"]))
+        revealed_json = json.dumps(list(game_state["revealed"]))
+        
+        stmt = select(ActiveMinesGame).where(ActiveMinesGame.user_id == user_id)
+        res = await db.execute(stmt)
+        db_game = res.scalar_one_or_none()
+        
+        if db_game:
+            db_game.bet = game_state["bet"]
+            db_game.mines_count = game_state["mines_count"]
+            db_game.mines_json = mines_json
+            db_game.revealed_json = revealed_json
+            db_game.ended = game_state.get("ended", False)
+            db_game.nickname = game_state.get("nickname", "Trainer")
+            db_game.last_activity_at = datetime.utcnow()
+            if chat_id:
+                db_game.chat_id = chat_id
+            if message_id:
+                db_game.message_id = message_id
+        else:
+            db_game = ActiveMinesGame(
+                user_id=user_id,
+                chat_id=chat_id,
+                message_id=message_id,
+                bet=game_state["bet"],
+                mines_count=game_state["mines_count"],
+                mines_json=mines_json,
+                revealed_json=revealed_json,
+                ended=game_state.get("ended", False),
+                nickname=game_state.get("nickname", "Trainer"),
+                last_activity_at=datetime.utcnow()
+            )
+            db.add(db_game)
+        await db.commit()
+    except Exception as e:
+        print(f"Error saving active mines game state for user {user_id}: {e}")
 
 async def delete_game_state(user_id: int, db: AsyncSession):
     """Deletes game state from in-memory dictionary and database."""
@@ -173,9 +201,12 @@ async def delete_game_state(user_id: int, db: AsyncSession):
     if user_id in inactivity_tasks:
         inactivity_tasks[user_id].cancel()
         inactivity_tasks.pop(user_id, None)
-    stmt = delete(ActiveMinesGame).where(ActiveMinesGame.user_id == user_id)
-    await db.execute(stmt)
-    await db.commit()
+    try:
+        stmt = delete(ActiveMinesGame).where(ActiveMinesGame.user_id == user_id)
+        await db.execute(stmt)
+        await db.commit()
+    except Exception as e:
+        print(f"Error deleting active mines game state for user {user_id}: {e}")
 
 def reset_inactivity_timer(user_id: int, bot: Bot):
     """Schedules or resets the 120-second inactivity auto-end timer for a game."""
@@ -208,26 +239,29 @@ def reset_inactivity_timer(user_id: int, bot: Bot):
 
                 # Clean up game state from DB and memory
                 async with SessionLocal() as session:
-                    stmt = delete(ActiveMinesGame).where(ActiveMinesGame.user_id == user_id)
-                    await session.execute(stmt)
-                    
-                    # Auto cashout if player had revealed at least 1 diamond
-                    win_amt = 0
-                    bal = 0
-                    if revealed_count > 0:
-                        mult = calculate_multiplier(mines_count, revealed_count)
-                        win_amt = int(bet * mult)
-                        u_stmt = select(User).where(User.id == user_id)
-                        u_res = await session.execute(u_stmt)
-                        db_user = u_res.scalar_one_or_none()
-                        if db_user:
-                            db_user.coins += win_amt
-                            try:
-                                await log_transaction(user_id, win_amt, "MINES_TIMEOUT_CASHOUT", f"Mines Inactivity Auto-Cashout ({win_amt:,} coins)", session)
-                            except Exception:
-                                pass
-                            bal = db_user.coins
-                    await session.commit()
+                    try:
+                        stmt = delete(ActiveMinesGame).where(ActiveMinesGame.user_id == user_id)
+                        await session.execute(stmt)
+                        
+                        # Auto cashout if player had revealed at least 1 diamond
+                        win_amt = 0
+                        bal = 0
+                        if revealed_count > 0:
+                            mult = calculate_multiplier(mines_count, revealed_count)
+                            win_amt = int(bet * mult)
+                            u_stmt = select(User).where(User.id == user_id)
+                            u_res = await session.execute(u_stmt)
+                            db_user = u_res.scalar_one_or_none()
+                            if db_user:
+                                db_user.coins = (db_user.coins or 0) + win_amt
+                                try:
+                                    await log_transaction(user_id, win_amt, "MINES_TIMEOUT_CASHOUT", f"Mines Inactivity Auto-Cashout ({win_amt:,} coins)", session)
+                                except Exception:
+                                    pass
+                                bal = db_user.coins
+                        await session.commit()
+                    except Exception as e:
+                        print(f"Error in inactivity auto-cashout DB update: {e}")
 
                 active_mines_games.pop(user_id, None)
 
@@ -274,120 +308,134 @@ async def cmd_mines(message: Message, db: AsyncSession):
         return
 
     user_id = message.from_user.id
-    async with user_locks[user_id]:
-        parts = message.text.split()
-        
-        if len(parts) < 2:
-            await message.answer(
-                "⚠️ <b>Mines Format:</b> <code>/mines &lt;bet&gt; [mines_count]</code>\n"
-                "• Mines count must be between 1 and 24 (default is 3).\n"
-                "• Daily Limit: <b>4 games per day</b>\n"
-                "• E.g. <code>/mines 100 3</code>",
-                parse_mode="HTML"
-            )
-            return
+    try:
+        async with user_locks[user_id]:
+            parts = message.text.split()
             
-        # Parse bet
-        bet_str = parts[1]
-        if not bet_str.isdigit():
-            await message.answer("❌ Bet amount must be a valid number.")
-            return
-        bet = int(bet_str)
-        
-        if bet < 10 or bet > 100000:
-            await message.answer("❌ Bet must be between 10 and 100,000 coins.")
-            return
-            
-        # Parse mines count
-        mines_count = 3
-        if len(parts) >= 3:
-            m_str = parts[2]
-            if not m_str.isdigit():
-                await message.answer("❌ Mines count must be a valid number.")
-                return
-            mines_count = int(m_str)
-            if mines_count < 1 or mines_count > 24:
-                await message.answer("❌ Mines count must be between 1 and 24.")
+            if len(parts) < 2:
+                await message.answer(
+                    "⚠️ <b>Mines Format:</b> <code>/mines &lt;bet&gt; [mines_count]</code>\n"
+                    "• Mines count must be between 1 and 24 (default is 3).\n"
+                    "• Daily Limit: <b>4 games per day</b>\n"
+                    "• E.g. <code>/mines 100 3</code> or <code>/mines 500 5</code>",
+                    parse_mode="HTML"
+                )
                 return
 
-        # Check if user already has an active game
-        existing_game = await get_or_load_game(user_id, db)
-        if existing_game and not existing_game.get("ended", False):
-            await message.answer("❌ You already have an active Mines game! Please finish it, cash out, or type /endmines first.")
-            return
+            # Fetch User
+            stmt = select(User).where(User.id == user_id)
+            res = await db.execute(stmt)
+            user = res.scalar_one_or_none()
+            
+            if not user:
+                user = User(
+                    id=user_id,
+                    username=message.from_user.username,
+                    nickname=message.from_user.first_name or "Trainer",
+                    coins=1000,
+                    daily_mines_count=0
+                )
+                db.add(user)
+                await db.flush()
 
-        # Fetch User
-        stmt = select(User).where(User.id == user_id)
-        res = await db.execute(stmt)
-        user = res.scalar_one_or_none()
-        
-        if not user:
-            user = User(
-                id=user_id,
-                username=message.from_user.username,
-                nickname=message.from_user.first_name or "Trainer",
-                coins=1000
+            if user.coins is None:
+                user.coins = 0
+            if user.daily_mines_count is None:
+                user.daily_mines_count = 0
+
+            # Parse bet
+            bet = parse_bet_amount(parts[1], user.coins)
+            if bet is None:
+                await message.answer("❌ Bet amount must be a valid number (e.g. <code>/mines 100 3</code>).", parse_mode="HTML")
+                return
+            
+            if bet < 10 or bet > 100000:
+                await message.answer("❌ Bet must be between 10 and 100,000 coins.")
+                return
+                
+            # Parse mines count
+            mines_count = 3
+            if len(parts) >= 3:
+                m_str = parts[2].strip()
+                if not m_str.isdigit():
+                    await message.answer("❌ Mines count must be a valid number between 1 and 24.")
+                    return
+                mines_count = int(m_str)
+                if mines_count < 1 or mines_count > 24:
+                    await message.answer("❌ Mines count must be between 1 and 24.")
+                    return
+
+            # Check if user already has an active game
+            existing_game = await get_or_load_game(user_id, db)
+            if existing_game and not existing_game.get("ended", False):
+                await message.answer("❌ You already have an active Mines game! Please finish it, cash out, or type /endmines first.")
+                return
+
+            # Enforce Daily Limit (4 games per day)
+            today = datetime.utcnow().date().isoformat()
+            if user.last_mines_date != today:
+                user.daily_mines_count = 0
+                user.last_mines_date = today
+
+            if user.daily_mines_count >= DAILY_MINES_LIMIT:
+                await message.answer(
+                    f"⚠️ <b>Daily Mines Limit Reached!</b>\n"
+                    f"You have already played <b>{DAILY_MINES_LIMIT}/{DAILY_MINES_LIMIT}</b> Mines games today.\n"
+                    f"Come back tomorrow after midnight UTC for 4 more games!",
+                    parse_mode="HTML"
+                )
+                return
+
+            if user.coins < bet:
+                await message.answer("❌ You don't have enough coins to place this bet!")
+                return
+
+            # Clean up any previous ended game state
+            await delete_game_state(user_id, db)
+
+            # Increment daily mines count and deduct bet coins
+            user.daily_mines_count += 1
+            user.coins -= bet
+            games_left = max(0, DAILY_MINES_LIMIT - user.daily_mines_count)
+            try:
+                await log_transaction(user_id, -bet, "MINES_BET", f"Placed Mines bet ({mines_count} mines)", db)
+            except Exception:
+                pass
+            await db.commit()
+
+            # Generate mines
+            mines = set(random.sample(range(25), mines_count))
+            
+            # Save game state
+            game_state = {
+                "bet": bet,
+                "mines_count": mines_count,
+                "mines": mines,
+                "revealed": set(),
+                "ended": False,
+                "nickname": user.nickname or message.from_user.first_name or "Trainer",
+                "last_activity": time.time(),
+                "chat_id": message.chat.id
+            }
+            
+            text = (
+                f"💣 <b>MINES GAME STARTED</b> 💣\n"
+                f"<blockquote>👤 Trainer: <b>{html.escape(game_state['nickname'])}</b>\n"
+                f"💰 Bet: <b>{bet:,} coins</b>\n"
+                f"💣 Mines: <b>{mines_count} 💣</b>\n"
+                f"📈 Multiplier: <b>1.0x</b>\n"
+                f"🎮 Daily Games Left: <b>{games_left}/{DAILY_MINES_LIMIT}</b>\n"
+                f"⏳ Auto-end timer: <b>120s of inactivity</b></blockquote>\n"
+                f"👉 Click on the tiles below to find diamonds! Avoid the mines!"
             )
-            db.add(user)
-            await db.flush()
-
-        # Enforce Daily Limit (4 games per day)
-        today = datetime.utcnow().date().isoformat()
-        if user.last_mines_date != today:
-            user.daily_mines_count = 0
-            user.last_mines_date = today
-
-        if user.daily_mines_count >= DAILY_MINES_LIMIT:
-            await message.answer(
-                f"⚠️ <b>Daily Mines Limit Reached!</b>\n"
-                f"You have already played <b>{DAILY_MINES_LIMIT}/{DAILY_MINES_LIMIT}</b> Mines games today.\n"
-                f"Come back tomorrow after midnight UTC for 4 more games!",
-                parse_mode="HTML"
-            )
-            return
-
-        if user.coins < bet:
-            await message.answer("❌ You don't have enough coins to place this bet!")
-            return
-
-        # Increment daily mines count and deduct bet coins
-        user.daily_mines_count += 1
-        user.coins -= bet
-        games_left = DAILY_MINES_LIMIT - user.daily_mines_count
-        try:
-            await log_transaction(user_id, -bet, "MINES_BET", f"Placed Mines bet ({mines_count} mines)", db)
-        except Exception:
-            pass
-        await db.commit()
-
-        # Generate mines
-        mines = set(random.sample(range(25), mines_count))
-        
-        # Save game state
-        game_state = {
-            "bet": bet,
-            "mines_count": mines_count,
-            "mines": mines,
-            "revealed": set(),
-            "ended": False,
-            "nickname": user.nickname or message.from_user.first_name or "Trainer",
-            "last_activity": time.time()
-        }
-        
-        text = (
-            f"💣 <b>MINES GAME STARTED</b> 💣\n"
-            f"<blockquote>👤 Trainer: <b>{html.escape(game_state['nickname'])}</b>\n"
-            f"💰 Bet: <b>{bet:,} coins</b>\n"
-            f"💣 Mines: <b>{mines_count} 💣</b>\n"
-            f"📈 Multiplier: <b>1.0x</b>\n"
-            f"🎮 Daily Games Left: <b>{games_left}/{DAILY_MINES_LIMIT}</b>\n"
-            f"⏳ Auto-end timer: <b>120s of inactivity</b></blockquote>\n"
-            f"👉 Click on the tiles below to find diamonds! Avoid the mines!"
-        )
-        
-        sent_msg = await message.answer(text, reply_markup=get_mines_keyboard(user_id, game_state), parse_mode="HTML")
-        await save_game_state(user_id, game_state, db, chat_id=message.chat.id, message_id=sent_msg.message_id)
-        reset_inactivity_timer(user_id, message.bot)
+            
+            sent_msg = await message.answer(text, reply_markup=get_mines_keyboard(user_id, game_state), parse_mode="HTML")
+            game_state["message_id"] = sent_msg.message_id
+            await save_game_state(user_id, game_state, db, chat_id=message.chat.id, message_id=sent_msg.message_id)
+            reset_inactivity_timer(user_id, message.bot)
+    except Exception as e:
+        print(f"Error starting mines game for user {user_id}: {e}")
+        await message.answer("❌ An error occurred while starting Mines. Please try again.")
 
 @router.callback_query(F.data.startswith("mines_rev_"))
 async def cb_mines_reveal(callback: CallbackQuery, db: AsyncSession):
@@ -464,7 +512,7 @@ async def cb_mines_reveal(callback: CallbackQuery, db: AsyncSession):
             res = await db.execute(stmt)
             user = res.scalar_one_or_none()
             if user:
-                user.coins += win_amt
+                user.coins = (user.coins or 0) + win_amt
                 try:
                     await log_transaction(user_id, win_amt, "MINES_WIN", f"Mines Max Win at {multiplier}x", db)
                 except Exception:
@@ -547,7 +595,7 @@ async def cb_mines_cashout(callback: CallbackQuery, db: AsyncSession):
         res = await db.execute(stmt)
         user = res.scalar_one_or_none()
         if user:
-            user.coins += win_amt
+            user.coins = (user.coins or 0) + win_amt
             try:
                 await log_transaction(user_id, win_amt, "MINES_CASHOUT", f"Mines Cashout at {multiplier}x ({win_amt:,} coins)", db)
             except Exception:

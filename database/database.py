@@ -117,6 +117,12 @@ async def init_db():
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS catches_today INTEGER DEFAULT 0;",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_mines_date VARCHAR(20);",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_mines_count INTEGER DEFAULT 0;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_darts_date VARCHAR(20);",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_darts_count INTEGER DEFAULT 0;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_dice_date VARCHAR(20);",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_dice_count INTEGER DEFAULT 0;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_goal_date VARCHAR(20);",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_goal_count INTEGER DEFAULT 0;",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS trainer_level INTEGER DEFAULT 1;",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS trainer_xp INTEGER DEFAULT 0;",
             # Fix active_mines_games schema if old columns exist
@@ -182,6 +188,12 @@ async def init_db():
                     ("catches_today", "INTEGER DEFAULT 0"),
                     ("last_mines_date", "VARCHAR(20)"),
                     ("daily_mines_count", "INTEGER DEFAULT 0"),
+                    ("last_darts_date", "VARCHAR(20)"),
+                    ("daily_darts_count", "INTEGER DEFAULT 0"),
+                    ("last_dice_date", "VARCHAR(20)"),
+                    ("daily_dice_count", "INTEGER DEFAULT 0"),
+                    ("last_goal_date", "VARCHAR(20)"),
+                    ("daily_goal_count", "INTEGER DEFAULT 0"),
                     ("trainer_level", "INTEGER DEFAULT 1"),
                     ("trainer_xp", "INTEGER DEFAULT 0")
                 ]

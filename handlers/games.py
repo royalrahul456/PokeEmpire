@@ -39,10 +39,43 @@ from keyboards.inline import (
 
 router = Router()
 
-# In-memory dictionary to track active trivia/scribble games per chat
+DAILY_DARTS_LIMIT = 4
+DAILY_DICE_LIMIT = 4
+DAILY_GOAL_LIMIT = 3
+
+# In-memory dictionary to track active mini-games per chat (chat_id -> {game_type: game_dict})
 active_games = {}
 # In-memory dictionary to track trainer trivia command cooldowns
 last_trivia_time = {}
+
+def get_chat_game(chat_id: int, game_type: str = None) -> dict | None:
+    """Retrieves an active game state for a chat, optionally filtered by game type."""
+    chat_dict = active_games.get(chat_id)
+    if not chat_dict:
+        return None
+    if isinstance(chat_dict, dict) and any(k in ["silhouette", "voltorb", "typematch", "nameguess", "scribble", "trivia", "initializing"] for k in chat_dict.keys()):
+        if game_type:
+            return chat_dict.get(game_type)
+        return next(iter(chat_dict.values()), None)
+    if game_type is None or chat_dict.get("type") == game_type:
+        return chat_dict
+    return None
+
+def set_chat_game(chat_id: int, game_type: str, game_state: dict):
+    """Sets an active game state for a chat under its specific game type."""
+    if chat_id not in active_games or not isinstance(active_games[chat_id], dict) or "type" in active_games[chat_id]:
+        active_games[chat_id] = {}
+    active_games[chat_id][game_type] = game_state
+
+def remove_chat_game(chat_id: int, game_type: str):
+    """Removes an active game of a specific type from a chat."""
+    if chat_id in active_games:
+        if isinstance(active_games[chat_id], dict):
+            active_games[chat_id].pop(game_type, None)
+            if not active_games[chat_id]:
+                active_games.pop(chat_id, None)
+        else:
+            active_games.pop(chat_id, None)
 
 @router.message(Command("daily", ignore_mention=True))
 async def cmd_daily(message: Message, db: AsyncSession):
@@ -328,7 +361,12 @@ async def cmd_dice(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     parts = message.text.split()
     if len(parts) < 2 or not parts[1].isdigit():
-        await message.answer("⚠️ <b>Dice Duel Format:</b> <code>/dice &lt;bet_amount&gt;</code>\n<i>(e.g., <code>/dice 500</code>)</i>", parse_mode="HTML")
+        await message.answer(
+            f"⚠️ <b>Dice Duel Format:</b> <code>/dice &lt;bet_amount&gt;</code>\n"
+            f"• Daily Limit: <b>{DAILY_DICE_LIMIT} duels per day</b>\n"
+            f"• E.g. <code>/dice 500</code>",
+            parse_mode="HTML"
+        )
         return
 
     bet = int(parts[1])
@@ -340,12 +378,43 @@ async def cmd_dice(message: Message, db: AsyncSession):
     res = await db.execute(stmt)
     user = res.scalar_one_or_none()
 
-    if not user or user.coins < bet:
-        user_coins = user.coins if user else 0
-        await message.answer(f"❌ You do not have enough coins! Balance: 💰 <code>{user_coins:,} coins</code>.", parse_mode="HTML")
+    if not user:
+        user = User(
+            id=user_id,
+            username=message.from_user.username,
+            nickname=message.from_user.first_name or "Trainer",
+            coins=1000
+        )
+        db.add(user)
+        await db.flush()
+
+    if user.coins is None:
+        user.coins = 0
+    if user.daily_dice_count is None:
+        user.daily_dice_count = 0
+
+    # Enforce Daily Limit (4 duels per day)
+    today = datetime.utcnow().date().isoformat()
+    if user.last_dice_date != today:
+        user.daily_dice_count = 0
+        user.last_dice_date = today
+
+    if user.daily_dice_count >= DAILY_DICE_LIMIT:
+        await message.answer(
+            f"⚠️ <b>Daily Dice Limit Reached!</b>\n"
+            f"You have already played <b>{DAILY_DICE_LIMIT}/{DAILY_DICE_LIMIT}</b> Dice duels today.\n"
+            f"Come back tomorrow after midnight UTC for {DAILY_DICE_LIMIT} more duels!",
+            parse_mode="HTML"
+        )
         return
 
+    if user.coins < bet:
+        await message.answer(f"❌ You do not have enough coins! Balance: 💰 <code>{user.coins:,} coins</code>.", parse_mode="HTML")
+        return
+
+    user.daily_dice_count += 1
     user.coins -= bet
+    duels_left = max(0, DAILY_DICE_LIMIT - user.daily_dice_count)
     await db.flush()
 
     sender_name = html.escape(user.nickname or user.username or message.from_user.first_name or "Trainer")
@@ -375,6 +444,7 @@ async def cmd_dice(message: Message, db: AsyncSession):
             f"🤖 Bot rolled: <b>{bot_roll}</b> 🎲\n"
             f"🎉 Result: <b>Victory!</b>\n"
             f"💰 Won: <b>+{win_amt:,} coins</b> (Net: <code>+{bet:,}</code>)\n"
+            f"🎮 Daily Duels Left: <b>{duels_left}/{DAILY_DICE_LIMIT}</b>\n"
             f"💳 Balance: <code>💰 {user.coins:,} coins</code></blockquote>"
         )
     elif user_roll == bot_roll:
@@ -385,6 +455,7 @@ async def cmd_dice(message: Message, db: AsyncSession):
             f"<blockquote>👤 You rolled: <b>{user_roll}</b> 🎲\n"
             f"🤖 Bot rolled: <b>{bot_roll}</b> 🎲\n"
             f"🤝 Result: <b>Tie / Draw!</b> (Bet refunded)\n"
+            f"🎮 Daily Duels Left: <b>{duels_left}/{DAILY_DICE_LIMIT}</b>\n"
             f"💳 Balance: <code>💰 {user.coins:,} coins</code></blockquote>"
         )
     else:
@@ -400,6 +471,7 @@ async def cmd_dice(message: Message, db: AsyncSession):
             f"🤖 Bot rolled: <b>{bot_roll}</b> 🎲\n"
             f"💀 Result: <b>Defeat!</b>\n"
             f"💰 Lost: <b>-{bet:,} coins</b>\n"
+            f"🎮 Daily Duels Left: <b>{duels_left}/{DAILY_DICE_LIMIT}</b>\n"
             f"💳 Balance: <code>💰 {user.coins:,} coins</code></blockquote>"
         )
 
@@ -417,7 +489,12 @@ async def cmd_darts(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     parts = message.text.split()
     if len(parts) < 2 or not parts[1].isdigit():
-        await message.answer("⚠️ <b>Darts Format:</b> <code>/darts &lt;bet_amount&gt;</code>\n<i>(e.g., <code>/darts 500</code>)</i>", parse_mode="HTML")
+        await message.answer(
+            f"⚠️ <b>Darts Format:</b> <code>/darts &lt;bet_amount&gt;</code>\n"
+            f"• Daily Limit: <b>{DAILY_DARTS_LIMIT} throws per day</b>\n"
+            f"• E.g. <code>/darts 500</code>",
+            parse_mode="HTML"
+        )
         return
 
     bet = int(parts[1])
@@ -429,12 +506,43 @@ async def cmd_darts(message: Message, db: AsyncSession):
     res = await db.execute(stmt)
     user = res.scalar_one_or_none()
 
-    if not user or user.coins < bet:
-        user_coins = user.coins if user else 0
-        await message.answer(f"❌ You do not have enough coins! Balance: 💰 <code>{user_coins:,} coins</code>.", parse_mode="HTML")
+    if not user:
+        user = User(
+            id=user_id,
+            username=message.from_user.username,
+            nickname=message.from_user.first_name or "Trainer",
+            coins=1000
+        )
+        db.add(user)
+        await db.flush()
+
+    if user.coins is None:
+        user.coins = 0
+    if user.daily_darts_count is None:
+        user.daily_darts_count = 0
+
+    # Enforce Daily Limit (4 throws per day)
+    today = datetime.utcnow().date().isoformat()
+    if user.last_darts_date != today:
+        user.daily_darts_count = 0
+        user.last_darts_date = today
+
+    if user.daily_darts_count >= DAILY_DARTS_LIMIT:
+        await message.answer(
+            f"⚠️ <b>Daily Darts Limit Reached!</b>\n"
+            f"You have already thrown <b>{DAILY_DARTS_LIMIT}/{DAILY_DARTS_LIMIT}</b> Darts games today.\n"
+            f"Come back tomorrow after midnight UTC for {DAILY_DARTS_LIMIT} more throws!",
+            parse_mode="HTML"
+        )
         return
 
+    if user.coins < bet:
+        await message.answer(f"❌ You do not have enough coins! Balance: 💰 <code>{user.coins:,} coins</code>.", parse_mode="HTML")
+        return
+
+    user.daily_darts_count += 1
     user.coins -= bet
+    throws_left = max(0, DAILY_DARTS_LIMIT - user.daily_darts_count)
     await db.flush()
 
     sender_name = html.escape(user.nickname or user.username or message.from_user.first_name or "Trainer")
@@ -482,6 +590,7 @@ async def cmd_darts(message: Message, db: AsyncSession):
         f"<blockquote>👤 Trainer: <b>{sender_name}</b>\n"
         f"💰 Multiplier: <b>{multiplier}x</b>\n"
         f"💵 Payout: <b>+{win_amt:,} coins</b> (Net: <code>{'+' if net_profit >= 0 else ''}{net_profit:,}</code>)\n"
+        f"🎮 Daily Throws Left: <b>{throws_left}/{DAILY_DARTS_LIMIT}</b>\n"
         f"💳 Balance: <code>💰 {user.coins:,} coins</code></blockquote>"
     )
     builder = InlineKeyboardBuilder()
@@ -571,7 +680,12 @@ async def cmd_football(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     parts = message.text.split()
     if len(parts) < 2 or not parts[1].isdigit():
-        await message.answer("⚠️ <b>Football Penalty Format:</b> <code>/football &lt;bet_amount&gt;</code>\n<i>(e.g., <code>/football 500</code>)</i>", parse_mode="HTML")
+        await message.answer(
+            f"⚠️ <b>Football Penalty Format:</b> <code>/football &lt;bet_amount&gt;</code>\n"
+            f"• Daily Limit: <b>{DAILY_GOAL_LIMIT} kicks per day</b>\n"
+            f"• E.g. <code>/football 500</code>",
+            parse_mode="HTML"
+        )
         return
 
     bet = int(parts[1])
@@ -583,12 +697,43 @@ async def cmd_football(message: Message, db: AsyncSession):
     res = await db.execute(stmt)
     user = res.scalar_one_or_none()
 
-    if not user or user.coins < bet:
-        user_coins = user.coins if user else 0
-        await message.answer(f"❌ You do not have enough coins! Balance: 💰 <code>{user_coins:,} coins</code>.", parse_mode="HTML")
+    if not user:
+        user = User(
+            id=user_id,
+            username=message.from_user.username,
+            nickname=message.from_user.first_name or "Trainer",
+            coins=1000
+        )
+        db.add(user)
+        await db.flush()
+
+    if user.coins is None:
+        user.coins = 0
+    if user.daily_goal_count is None:
+        user.daily_goal_count = 0
+
+    # Enforce Daily Limit (3 kicks per day)
+    today = datetime.utcnow().date().isoformat()
+    if user.last_goal_date != today:
+        user.daily_goal_count = 0
+        user.last_goal_date = today
+
+    if user.daily_goal_count >= DAILY_GOAL_LIMIT:
+        await message.answer(
+            f"⚠️ <b>Daily Goal Limit Reached!</b>\n"
+            f"You have already taken <b>{DAILY_GOAL_LIMIT}/{DAILY_GOAL_LIMIT}</b> Penalty Kicks today.\n"
+            f"Come back tomorrow after midnight UTC for {DAILY_GOAL_LIMIT} more kicks!",
+            parse_mode="HTML"
+        )
         return
 
+    if user.coins < bet:
+        await message.answer(f"❌ You do not have enough coins! Balance: 💰 <code>{user.coins:,} coins</code>.", parse_mode="HTML")
+        return
+
+    user.daily_goal_count += 1
     user.coins -= bet
+    kicks_left = max(0, DAILY_GOAL_LIMIT - user.daily_goal_count)
     await db.flush()
 
     sender_name = html.escape(user.nickname or user.username or message.from_user.first_name or "Trainer")
@@ -630,6 +775,7 @@ async def cmd_football(message: Message, db: AsyncSession):
         f"<blockquote>👤 Trainer: <b>{sender_name}</b>\n"
         f"💰 Multiplier: <b>{multiplier}x</b>\n"
         f"💵 Payout: <b>+{win_amt:,} coins</b> (Net: <code>{'+' if net_profit >= 0 else ''}{net_profit:,}</code>)\n"
+        f"🎮 Daily Kicks Left: <b>{kicks_left}/{DAILY_GOAL_LIMIT}</b>\n"
         f"💳 Balance: <code>💰 {user.coins:,} coins</code></blockquote>"
     )
     builder = InlineKeyboardBuilder()
@@ -875,56 +1021,53 @@ async def cleanup_voltorb_messages(bot: Bot, chat_id: int, game: dict):
 
 async def silhouette_timeout_task(chat_id: int, message_id: int, bot: Bot):
     await asyncio.sleep(60)
-    if chat_id in active_games:
-        game = active_games[chat_id]
-        if game.get("type") == "silhouette" and game.get("message_id") == message_id:
-            del active_games[chat_id]
-            await cleanup_silhouette_messages(bot, chat_id, game)
-            try:
-                ans_name = game.get("pokemon_name") or game["answer"].title()
-                msg = await bot.send_message(
-                    chat_id=chat_id,
-                    text=f"⏳ <b>Silhouette Simulation Expired!</b>\nThe wild Pokémon vanished back into the shadows.\n💡 The Pokémon was: <b>{ans_name}</b>",
-                    parse_mode="HTML"
-                )
-                asyncio.create_task(delete_message_after(msg, 60))
-            except Exception:
-                pass
+    game = get_chat_game(chat_id, "silhouette")
+    if game and game.get("message_id") == message_id:
+        remove_chat_game(chat_id, "silhouette")
+        await cleanup_silhouette_messages(bot, chat_id, game)
+        try:
+            ans_name = game.get("pokemon_name") or game["answer"].title()
+            msg = await bot.send_message(
+                chat_id=chat_id,
+                text=f"⏳ <b>Silhouette Simulation Expired!</b>\nThe wild Pokémon vanished back into the shadows.\n💡 The Pokémon was: <b>{ans_name}</b>",
+                parse_mode="HTML"
+            )
+            asyncio.create_task(delete_message_after(msg, 60))
+        except Exception:
+            pass
 
 async def typematch_timeout_task(chat_id: int, message_id: int, bot: Bot):
     await asyncio.sleep(60)
-    if chat_id in active_games:
-        game = active_games[chat_id]
-        if game.get("type") == "typematch" and game.get("message_id") == message_id:
-            del active_games[chat_id]
-            await cleanup_typematch_messages(bot, chat_id, game)
-            try:
-                ans_list = ", ".join(t.title() for t in game.get("valid_answers", []))
-                msg = await bot.send_message(
-                    chat_id=chat_id,
-                    text=f"⏳ <b>Type Matchup Simulation Expired!</b>\nBattle Academy combat timer ended.\n💡 Valid Elemental Counters were: <b>{ans_list}</b>",
-                    parse_mode="HTML"
-                )
-                asyncio.create_task(delete_message_after(msg, 60))
-            except Exception:
-                pass
+    game = get_chat_game(chat_id, "typematch")
+    if game and game.get("message_id") == message_id:
+        remove_chat_game(chat_id, "typematch")
+        await cleanup_typematch_messages(bot, chat_id, game)
+        try:
+            ans_list = ", ".join(t.title() for t in game.get("valid_answers", []))
+            msg = await bot.send_message(
+                chat_id=chat_id,
+                text=f"⏳ <b>Type Matchup Simulation Expired!</b>\nBattle Academy combat timer ended.\n💡 Valid Elemental Counters were: <b>{ans_list}</b>",
+                parse_mode="HTML"
+            )
+            asyncio.create_task(delete_message_after(msg, 60))
+        except Exception:
+            pass
 
 async def voltorb_timeout_task(chat_id: int, message_id: int, bot: Bot):
     await asyncio.sleep(60)
-    if chat_id in active_games:
-        game = active_games[chat_id]
-        if game.get("type") == "voltorb" and game.get("message_id") == message_id:
-            del active_games[chat_id]
-            await cleanup_voltorb_messages(bot, chat_id, game)
-            try:
-                msg = await bot.send_message(
-                    chat_id=chat_id,
-                    text=f"⏳ <b>Vault Security Lockdown!</b>\n💥 <i>BOOM! Voltorb detonated and sealed the terminal.</i>\n🔐 Correct Security PIN was: <code>{game['target']}</code>",
-                    parse_mode="HTML"
-                )
-                asyncio.create_task(delete_message_after(msg, 60))
-            except Exception:
-                pass
+    game = get_chat_game(chat_id, "voltorb")
+    if game and game.get("message_id") == message_id:
+        remove_chat_game(chat_id, "voltorb")
+        await cleanup_voltorb_messages(bot, chat_id, game)
+        try:
+            msg = await bot.send_message(
+                chat_id=chat_id,
+                text=f"⏳ <b>Vault Security Lockdown!</b>\n💥 <i>BOOM! Voltorb detonated and sealed the terminal.</i>\n🔐 Correct Security PIN was: <code>{game['target']}</code>",
+                parse_mode="HTML"
+            )
+            asyncio.create_task(delete_message_after(msg, 60))
+        except Exception:
+            pass
 
 async def delete_message_after(message: Message, delay: int):
     await asyncio.sleep(delay)
@@ -935,90 +1078,91 @@ async def delete_message_after(message: Message, delay: int):
 
 async def scribble_timeout_task(chat_id: int, message_id: int, bot: Bot):
     await asyncio.sleep(60)
-    if chat_id in active_games:
-        game = active_games[chat_id]
-        if game.get("type") == "scribble" and game.get("message_id") == message_id:
-            del active_games[chat_id]
-            await cleanup_scribble_messages(bot, chat_id, game)
-            try:
-                msg = await bot.send_message(
-                    chat_id=chat_id,
-                    text=f"⏳ <b>Time is up!</b> No one guessed the correct answer in time.\n💡 Correct Answer: <b>{game['answer'].title()}</b>",
-                    parse_mode="HTML"
-                )
-                asyncio.create_task(delete_message_after(msg, 60))
-            except Exception:
-                pass
-            
-            # Automatically start next auto game if enabled
-            if game.get("is_auto"):
-                await asyncio.sleep(2)
-                async with SessionLocal() as db:
-                    try:
-                        chat = await bot.get_chat(chat_id)
-                        is_official = (chat.username and chat.username.lower() == "pokeempireunion")
-                    except Exception:
-                        is_official = False
-                    
-                    if is_official and chat_id not in active_games:
-                        scrib_ok = is_scribble_enabled(chat_id)
-                        nameg_ok = is_nameguess_enabled(chat_id)
-                        if scrib_ok and nameg_ok:
-                            if random.choice([True, False]):
-                                await start_auto_nameguess_game(chat_id, bot, db)
-                            else:
-                                await start_auto_scribble_game(chat_id, bot, db)
-                        elif scrib_ok:
-                            await start_auto_scribble_game(chat_id, bot, db)
-                        elif nameg_ok:
+    game = get_chat_game(chat_id, "scribble")
+    if game and game.get("message_id") == message_id:
+        remove_chat_game(chat_id, "scribble")
+        await cleanup_scribble_messages(bot, chat_id, game)
+        try:
+            msg = await bot.send_message(
+                chat_id=chat_id,
+                text=f"⏳ <b>Time is up!</b> No one guessed the correct answer in time.\n💡 Correct Answer: <b>{game['answer'].title()}</b>",
+                parse_mode="HTML"
+            )
+            asyncio.create_task(delete_message_after(msg, 60))
+        except Exception:
+            pass
+        
+        # Automatically start next auto game if enabled
+        if game.get("is_auto"):
+            await asyncio.sleep(2)
+            async with SessionLocal() as db:
+                try:
+                    chat = await bot.get_chat(chat_id)
+                    is_official = (chat.username and chat.username.lower() == "pokeempireunion")
+                except Exception:
+                    is_official = False
+                
+                if is_official and not get_chat_game(chat_id, "scribble") and not get_chat_game(chat_id, "nameguess"):
+                    scrib_ok = is_scribble_enabled(chat_id)
+                    nameg_ok = is_nameguess_enabled(chat_id)
+                    if scrib_ok and nameg_ok:
+                        if random.choice([True, False]):
                             await start_auto_nameguess_game(chat_id, bot, db)
+                        else:
+                            await start_auto_scribble_game(chat_id, bot, db)
+                    elif scrib_ok:
+                        await start_auto_scribble_game(chat_id, bot, db)
+                    elif nameg_ok:
+                        await start_auto_nameguess_game(chat_id, bot, db)
 
 async def nameguess_timeout_task(chat_id: int, message_id: int, bot: Bot):
     await asyncio.sleep(60)
-    if chat_id in active_games:
-        game = active_games[chat_id]
-        if game.get("type") == "nameguess" and game.get("message_id") == message_id:
-            del active_games[chat_id]
-            await cleanup_nameguess_messages(bot, chat_id, game)
-            try:
-                msg = await bot.send_message(
-                    chat_id=chat_id,
-                    text=f"⏳ <b>Time is up!</b> No one guessed the Pokémon in time.\n💡 Correct Answer: <b>{game['answer'].title()}</b>",
-                    parse_mode="HTML"
-                )
-                asyncio.create_task(delete_message_after(msg, 60))
-            except Exception:
-                pass
-            
-            # Automatically start next auto game if enabled
-            if game.get("is_auto"):
-                await asyncio.sleep(2)
-                async with SessionLocal() as db:
-                    try:
-                        chat = await bot.get_chat(chat_id)
-                        is_official = (chat.username and chat.username.lower() == "pokeempireunion")
-                    except Exception:
-                        is_official = False
-                    
-                    if is_official and chat_id not in active_games:
-                        scrib_ok = is_scribble_enabled(chat_id)
-                        nameg_ok = is_nameguess_enabled(chat_id)
-                        if scrib_ok and nameg_ok:
-                            if random.choice([True, False]):
-                                await start_auto_nameguess_game(chat_id, bot, db)
-                            else:
-                                await start_auto_scribble_game(chat_id, bot, db)
-                        elif scrib_ok:
-                            await start_auto_scribble_game(chat_id, bot, db)
-                        elif nameg_ok:
+    game = get_chat_game(chat_id, "nameguess")
+    if game and game.get("message_id") == message_id:
+        remove_chat_game(chat_id, "nameguess")
+        await cleanup_nameguess_messages(bot, chat_id, game)
+        try:
+            msg = await bot.send_message(
+                chat_id=chat_id,
+                text=f"⏳ <b>Time is up!</b> No one guessed the Pokémon in time.\n💡 Correct Answer: <b>{game['answer'].title()}</b>",
+                parse_mode="HTML"
+            )
+            asyncio.create_task(delete_message_after(msg, 60))
+        except Exception:
+            pass
+        
+        # Automatically start next auto game if enabled
+        if game.get("is_auto"):
+            await asyncio.sleep(2)
+            async with SessionLocal() as db:
+                try:
+                    chat = await bot.get_chat(chat_id)
+                    is_official = (chat.username and chat.username.lower() == "pokeempireunion")
+                except Exception:
+                    is_official = False
+                
+                if is_official and not get_chat_game(chat_id, "scribble") and not get_chat_game(chat_id, "nameguess"):
+                    scrib_ok = is_scribble_enabled(chat_id)
+                    nameg_ok = is_nameguess_enabled(chat_id)
+                    if scrib_ok and nameg_ok:
+                        if random.choice([True, False]):
                             await start_auto_nameguess_game(chat_id, bot, db)
+                        else:
+                            await start_auto_scribble_game(chat_id, bot, db)
+                    elif scrib_ok:
+                        await start_auto_scribble_game(chat_id, bot, db)
+                    elif nameg_ok:
+                        await start_auto_nameguess_game(chat_id, bot, db)
 
 async def start_auto_scribble_game(chat_id: int, bot: Bot, db: AsyncSession):
+    if get_chat_game(chat_id, "scribble") or get_chat_game(chat_id, "nameguess"):
+        return
+
     # Set a synchronous lock to prevent overlapping auto-starts in the same chat
-    active_games[chat_id] = {
+    set_chat_game(chat_id, "scribble", {
         "type": "initializing",
         "created_at": time.time()
-    }
+    })
     
     try:
         # Select random Pokémon
@@ -1027,9 +1171,9 @@ async def start_auto_scribble_game(chat_id: int, bot: Bot, db: AsyncSession):
         pokemon = res.scalar_one_or_none()
 
         if not pokemon:
-            # Clean up lock
-            if chat_id in active_games and active_games[chat_id].get("type") == "initializing":
-                del active_games[chat_id]
+            init_g = get_chat_game(chat_id, "scribble")
+            if init_g and init_g.get("type") == "initializing":
+                remove_chat_game(chat_id, "scribble")
             return
 
         name = pokemon.name.lower()
@@ -1041,12 +1185,13 @@ async def start_auto_scribble_game(chat_id: int, bot: Bot, db: AsyncSession):
             random.shuffle(name_list)
             scrambled = "".join(name_list)
 
-        active_games[chat_id] = {
+        game_data = {
             "type": "scribble",
             "answer": name,
             "created_at": time.time(),
             "is_auto": True
         }
+        set_chat_game(chat_id, "scribble", game_data)
 
         # Format message in clean card style
         text = (
@@ -1071,22 +1216,25 @@ async def start_auto_scribble_game(chat_id: int, bot: Bot, db: AsyncSession):
             parse_mode="Markdown"
         )
         
-        active_games[chat_id]["message_id"] = sent_msg.message_id
+        game_data["message_id"] = sent_msg.message_id
         
         # Start background timeout task
         asyncio.create_task(scribble_timeout_task(chat_id, sent_msg.message_id, bot))
         
     except Exception as e:
-        # Clean up lock on error
-        if chat_id in active_games and active_games[chat_id].get("type") == "initializing":
-            del active_games[chat_id]
+        init_g = get_chat_game(chat_id, "scribble")
+        if init_g and init_g.get("type") == "initializing":
+            remove_chat_game(chat_id, "scribble")
         raise e
 
 async def start_auto_nameguess_game(chat_id: int, bot: Bot, db: AsyncSession):
-    active_games[chat_id] = {
+    if get_chat_game(chat_id, "nameguess") or get_chat_game(chat_id, "scribble"):
+        return
+
+    set_chat_game(chat_id, "nameguess", {
         "type": "initializing",
         "created_at": time.time()
-    }
+    })
     
     try:
         stmt = select(Pokemon).order_by(func.random()).limit(1)
@@ -1094,20 +1242,22 @@ async def start_auto_nameguess_game(chat_id: int, bot: Bot, db: AsyncSession):
         pokemon = res.scalar_one_or_none()
 
         if not pokemon:
-            if chat_id in active_games and active_games[chat_id].get("type") == "initializing":
-                del active_games[chat_id]
+            init_g = get_chat_game(chat_id, "nameguess")
+            if init_g and init_g.get("type") == "initializing":
+                remove_chat_game(chat_id, "nameguess")
             return
 
         name = pokemon.name.lower()
         initial_hint = generate_hint(name)
 
-        active_games[chat_id] = {
+        game_data = {
             "type": "nameguess",
             "answer": name,
             "pokemon_name": pokemon.name,
             "created_at": time.time(),
             "is_auto": True
         }
+        set_chat_game(chat_id, "nameguess", game_data)
 
         type_info = f" | Type: <b>{pokemon.type1}{'/' + pokemon.type2 if pokemon.type2 else ''}</b>" if getattr(pokemon, 'type1', None) else ""
         gen_info = f" | Gen: <b>{pokemon.generation}</b>" if getattr(pokemon, 'generation', None) else ""
@@ -1139,12 +1289,13 @@ async def start_auto_nameguess_game(chat_id: int, bot: Bot, db: AsyncSession):
             parse_mode="HTML"
         )
         
-        active_games[chat_id]["message_id"] = sent_msg.message_id
+        game_data["message_id"] = sent_msg.message_id
         asyncio.create_task(nameguess_timeout_task(chat_id, sent_msg.message_id, bot))
         
     except Exception as e:
-        if chat_id in active_games and active_games[chat_id].get("type") == "initializing":
-            del active_games[chat_id]
+        init_g = get_chat_game(chat_id, "nameguess")
+        if init_g and init_g.get("type") == "initializing":
+            remove_chat_game(chat_id, "nameguess")
         print(f"Error in start_auto_nameguess_game: {e}")
 
 # Settings are now dynamically managed by utils.settings cache & DB
@@ -1414,31 +1565,30 @@ TRIVIA_QUESTIONS = [
 
 async def trivia_timeout_task(chat_id: int, message_id: int, bot: Bot):
     await asyncio.sleep(60)
-    if chat_id in active_games:
-        game = active_games[chat_id]
-        if game.get("type") == "trivia" and game.get("message_id") == message_id:
-            del active_games[chat_id]
-            try:
-                escaped_q = html.escape(game['question'])
-                escaped_ans = html.escape(game['answer'])
-                text = (
-                    f"⏳ <b>TRIVIA EXPIRED</b> ⏳\n"
-                    f"───────────────\n\n"
-                    f"<b>Question:</b>\n"
-                    f"{escaped_q}\n\n"
-                    f"❌ Time is up! No one answered in time.\n"
-                    f"💡 Correct Answer: <b>{escaped_ans}</b>"
-                )
-                msg = await bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=message_id,
-                    text=text,
-                    reply_markup=None,
-                    parse_mode="HTML"
-                )
-                asyncio.create_task(delete_message_after(msg, 60))
-            except Exception as e:
-                print(f"Error editing trivia timeout message: {e}")
+    game = get_chat_game(chat_id, "trivia")
+    if game and game.get("message_id") == message_id:
+        remove_chat_game(chat_id, "trivia")
+        try:
+            escaped_q = html.escape(game['question'])
+            escaped_ans = html.escape(game['answer'])
+            text = (
+                f"⏳ <b>TRIVIA EXPIRED</b> ⏳\n"
+                f"───────────────\n\n"
+                f"<b>Question:</b>\n"
+                f"{escaped_q}\n\n"
+                f"❌ Time is up! No one answered in time.\n"
+                f"💡 Correct Answer: <b>{escaped_ans}</b>"
+            )
+            msg = await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=text,
+                reply_markup=None,
+                parse_mode="HTML"
+            )
+            asyncio.create_task(delete_message_after(msg, 60))
+        except Exception as e:
+            print(f"Error editing trivia timeout message: {e}")
 
 async def initiate_trivia_game(chat_id: int, db: AsyncSession, is_auto: bool = False) -> Optional[Tuple[str, InlineKeyboardMarkup]]:
     """Starts a trivia game logic and returns the formatted question text and reply markup, or None on error."""
@@ -1451,7 +1601,7 @@ async def initiate_trivia_game(chat_id: int, db: AsyncSession, is_auto: bool = F
     options = list(q_data["options"])
     random.shuffle(options)
 
-    active_games[chat_id] = {
+    game_data = {
         "type": "trivia",
         "question": q_data["question"],
         "options": options,
@@ -1460,6 +1610,7 @@ async def initiate_trivia_game(chat_id: int, db: AsyncSession, is_auto: bool = F
         "is_auto": is_auto,
         "guesses": set()
     }
+    set_chat_game(chat_id, "trivia", game_data)
 
     builder = InlineKeyboardBuilder()
     for idx, opt in enumerate(options):
@@ -1496,12 +1647,9 @@ async def cmd_trivia(message: Message, db: AsyncSession):
             await message.answer(f"⏳ **Trivia Cooldown!** You can use `/trivia` again in **{minutes}m {seconds}s**.")
             return
 
-    if chat_id in active_games:
-        game = active_games[chat_id]
-        # Only allow preempting/overwriting the active game if it's an automatic scribble game
-        if game.get("type") == "trivia" or not game.get("is_auto"):
-            await message.answer("⚠️ There is already an active trivia game in this chat! Answer it first.")
-            return
+    if get_chat_game(chat_id, "trivia"):
+        await message.answer("⚠️ There is already an active trivia game in this chat! Answer it first.")
+        return
 
     res = await initiate_trivia_game(chat_id, db, is_auto=False)
     if not res:
@@ -1513,7 +1661,9 @@ async def cmd_trivia(message: Message, db: AsyncSession):
     # Set trainer cooldown
     last_trivia_time[user_id] = time.time()
     sent_msg = await message.answer(trivia_text, reply_markup=reply_markup, parse_mode="HTML")
-    active_games[chat_id]["message_id"] = sent_msg.message_id
+    game = get_chat_game(chat_id, "trivia")
+    if game:
+        game["message_id"] = sent_msg.message_id
     asyncio.create_task(trivia_timeout_task(chat_id, sent_msg.message_id, message.bot))
 
 @router.message(Command("scribble", ignore_mention=True))
@@ -1525,8 +1675,8 @@ async def cmd_scribble(message: Message, db: AsyncSession):
 
     chat_id = message.chat.id
 
-    if chat_id in active_games:
-        await message.answer("⚠️ There is already an active trivia or scribble game in this chat! Answer it first.")
+    if get_chat_game(chat_id, "scribble"):
+        await message.answer("⚠️ There is already an active scribble game in this chat! Answer it first.")
         return
 
     # Select random Pokémon
@@ -1547,12 +1697,13 @@ async def cmd_scribble(message: Message, db: AsyncSession):
         random.shuffle(name_list)
         scrambled = "".join(name_list)
 
-    active_games[chat_id] = {
+    game_data = {
         "type": "scribble",
         "answer": name,
         "created_at": time.time(),
         "is_auto": False
     }
+    set_chat_game(chat_id, "scribble", game_data)
 
     text = (
         f"💬 **Word Scramble!**\n"
@@ -1570,136 +1721,211 @@ async def cmd_scribble(message: Message, db: AsyncSession):
     )
 
     sent_msg = await message.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
-    active_games[chat_id]["message_id"] = sent_msg.message_id
+    game_data["message_id"] = sent_msg.message_id
 
     # Start background timeout task
     asyncio.create_task(scribble_timeout_task(chat_id, sent_msg.message_id, message.bot))
 
 # Custom filter to check if there is an active game in the chat
 def has_active_game(message: Message) -> bool:
-    return message.chat.id in active_games
+    chat_dict = active_games.get(message.chat.id)
+    return bool(chat_dict)
 
 # Message handler to check active game answers (excluding commands)
 @router.message(F.text, ~F.text.startswith("/"), has_active_game)
 async def check_game_answers(message: Message, db: AsyncSession):
     chat_id = message.chat.id
-    game = active_games[chat_id]
-
-    # Ignore checks if the game state is in initializing lock
-    if game.get("type") == "initializing":
+    chat_dict = active_games.get(chat_id)
+    if not chat_dict:
         return
 
-    # Check timeout (60 seconds)
-    if time.time() - game["created_at"] > 60:
+    if isinstance(chat_dict, dict) and "type" in chat_dict:
+        games_to_check = {chat_dict["type"]: chat_dict}
+    elif isinstance(chat_dict, dict):
+        games_to_check = dict(chat_dict)
+    else:
         return
 
-    # For trivia, we ignore text guesses entirely as we now use buttons
-    if game["type"] == "trivia":
-        return
+    text = message.text.strip()
 
-    # Handle Voltorb Lock Guessing
-    if game["type"] == "voltorb":
-        guess_text = message.text.strip()
-        if not guess_text.isdigit():
-            return
-        guess_num = int(guess_text)
-        target = game["target"]
-        
-        if guess_num == target:
+    # 1. Handle Voltorb Lock Guessing
+    voltorb_game = games_to_check.get("voltorb")
+    if voltorb_game and voltorb_game.get("type") != "initializing":
+        if time.time() - voltorb_game.get("created_at", 0) <= 60 and text.isdigit():
+            guess_num = int(text)
+            target = voltorb_game["target"]
+            
+            if guess_num == target:
+                from aiogram.types import ReactionTypeEmoji
+                try:
+                    await message.react(reaction=[ReactionTypeEmoji(emoji="🎉")])
+                except Exception:
+                    pass
+
+                user_id = message.from_user.id
+                stmt = select(User).where(User.id == user_id)
+                res = await db.execute(stmt)
+                user = res.scalar_one_or_none()
+                if not user:
+                    user = User(id=user_id, username=message.from_user.username, nickname=message.from_user.first_name)
+                    db.add(user)
+                    await db.flush()
+
+                attempts_used = voltorb_game["attempts"] + 1
+                reward = max(150, (voltorb_game["max_attempts"] - attempts_used + 1) * 150)
+                user.coins += reward
+                try:
+                    from utils.trainer_level import log_transaction
+                    await log_transaction(user_id, reward, "VOLTORB_WIN", f"Disarmed Voltorb Security PIN ({target})", db)
+                except Exception:
+                    pass
+                await db.commit()
+
+                remove_chat_game(chat_id, "voltorb")
+                await cleanup_voltorb_messages(message.bot, chat_id, voltorb_game)
+
+                victory_text = (
+                    f"🎉 <b>VAULT UNLOCKED & DISARMED!</b> 🎉\n"
+                    f"───────────────\n"
+                    f"<blockquote>🔐 <b>Security PIN</b>: <code>{target}</code>\n"
+                    f"⚡ <b>Attempts</b>: <b>{attempts_used}/{voltorb_game['max_attempts']}</b>\n"
+                    f"💰 <b>Reward</b>: <b>+{reward} coins</b>\n"
+                    f"👥 <b>Hacker</b>: {message.from_user.mention_html()}</blockquote>"
+                )
+                v_msg = await message.reply(victory_text, parse_mode="HTML")
+                asyncio.create_task(delete_message_after(v_msg, 60))
+                return
+            elif guess_num < target:
+                voltorb_game["attempts"] += 1
+                voltorb_game["low_bound"] = max(voltorb_game["low_bound"], guess_num + 1)
+                if voltorb_game["attempts"] >= voltorb_game["max_attempts"]:
+                    remove_chat_game(chat_id, "voltorb")
+                    await cleanup_voltorb_messages(message.bot, chat_id, voltorb_game)
+                    boom_text = (
+                        f"💥 <b>BOOM! VOLTORB SELF-DESTRUCTED!</b> 💥\n"
+                        f"───────────────\n"
+                        f"<blockquote>❌ <b>Security Breach Failed!</b> Max attempts (6/6) reached.\n"
+                        f"🔐 <b>The correct PIN was</b>: <code>{target}</code></blockquote>"
+                    )
+                    b_msg = await message.reply(boom_text, parse_mode="HTML")
+                    asyncio.create_task(delete_message_after(b_msg, 60))
+                    return
+                else:
+                    rem = voltorb_game["max_attempts"] - voltorb_game["attempts"]
+                    h_text = f"🔺 <b>HIGHER!</b> | Range: <code>[{voltorb_game['low_bound']} – {voltorb_game['high_bound']}]</code> | Attempts left: <b>{rem}</b>"
+                    h_msg = await message.reply(h_text, parse_mode="HTML")
+                    voltorb_game["last_hint_msg_id"] = h_msg.message_id
+                    asyncio.create_task(delete_message_after(h_msg, 15))
+                    return
+            else: # guess_num > target
+                voltorb_game["attempts"] += 1
+                voltorb_game["high_bound"] = min(voltorb_game["high_bound"], guess_num - 1)
+                if voltorb_game["attempts"] >= voltorb_game["max_attempts"]:
+                    remove_chat_game(chat_id, "voltorb")
+                    await cleanup_voltorb_messages(message.bot, chat_id, voltorb_game)
+                    boom_text = (
+                        f"💥 <b>BOOM! VOLTORB SELF-DESTRUCTED!</b> 💥\n"
+                        f"───────────────\n"
+                        f"<blockquote>❌ <b>Security Breach Failed!</b> Max attempts (6/6) reached.\n"
+                        f"🔐 <b>The correct PIN was</b>: <code>{target}</code></blockquote>"
+                    )
+                    b_msg = await message.reply(boom_text, parse_mode="HTML")
+                    asyncio.create_task(delete_message_after(b_msg, 60))
+                    return
+                else:
+                    rem = voltorb_game["max_attempts"] - voltorb_game["attempts"]
+                    h_text = f"🔻 <b>LOWER!</b> | Range: <code>[{voltorb_game['low_bound']} – {voltorb_game['high_bound']}]</code> | Attempts left: <b>{rem}</b>"
+                    h_msg = await message.reply(h_text, parse_mode="HTML")
+                    voltorb_game["last_hint_msg_id"] = h_msg.message_id
+                    asyncio.create_task(delete_message_after(h_msg, 15))
+                    return
+
+    # 2. Handle Type Matchup Blitz Guessing
+    typematch_game = games_to_check.get("typematch")
+    if typematch_game and typematch_game.get("type") != "initializing":
+        if time.time() - typematch_game.get("created_at", 0) <= 60:
+            guess_raw = text.lower()
+            valid_answers = typematch_game.get("valid_answers", [])
+            if guess_raw in valid_answers:
+                from aiogram.types import ReactionTypeEmoji
+                try:
+                    await message.react(reaction=[ReactionTypeEmoji(emoji="🎉")])
+                except Exception:
+                    pass
+
+                user_id = message.from_user.id
+                nickname = message.from_user.first_name
+
+                stmt = select(User).where(User.id == user_id)
+                res = await db.execute(stmt)
+                user = res.scalar_one_or_none()
+
+                if not user:
+                    user = User(id=user_id, username=message.from_user.username, nickname=nickname)
+                    db.add(user)
+                    await db.flush()
+
+                reward = random.randint(350, 500)
+                user.coins += reward
+                try:
+                    from utils.trainer_level import log_transaction
+                    await log_transaction(user_id, reward, "TYPEMATCH_WIN", f"Won Type Matchup Blitz ({guess_raw.title()})", db)
+                except Exception:
+                    pass
+
+                await db.commit()
+
+                remove_chat_game(chat_id, "typematch")
+                await cleanup_typematch_messages(message.bot, chat_id, typematch_game)
+
+                all_valid_str = ", ".join(t.title() for t in valid_answers)
+                vic_card = (
+                    f"⚡ <b>ELEMENTAL ADVANTAGE STRUCK!</b> ⚡\n"
+                    f"◈ ────────────────────────── ◈\n"
+                    f"🎯 <b>Winning Counter:</b> <b>{guess_raw.title()}</b>\n"
+                    f"💡 <b>All Valid Types:</b> <code>{all_valid_str}</code>\n"
+                    f"💰 <b>Earned:</b> <b>+{reward} coins</b>\n"
+                    f"👥 <b>Master Tactician:</b> {message.from_user.mention_html()}\n"
+                    f"◈ ────────────────────────── ◈"
+                )
+                v_msg = await message.reply(vic_card, parse_mode="HTML")
+                asyncio.create_task(delete_message_after(v_msg, 60))
+                return
+
+    # 3. Handle Text-based Pokémon Guessing Games (Silhouette, Nameguess, Scribble)
+    import re
+    def normalize_poke_name(val: str) -> str:
+        return re.sub(r'[^a-z0-9]', '', val.lower())
+
+    guess = text.lower()
+    norm_guess = normalize_poke_name(guess)
+
+    for gtype in ["silhouette", "nameguess", "scribble"]:
+        game = games_to_check.get(gtype)
+        if not game or game.get("type") == "initializing":
+            continue
+        if time.time() - game.get("created_at", 0) > 60:
+            continue
+
+        correct_answer = game.get("answer", "").lower()
+        if not correct_answer:
+            continue
+
+        norm_correct = normalize_poke_name(correct_answer)
+        norm_base = normalize_poke_name(correct_answer.split('-')[0])
+
+        is_match = (
+            guess == correct_answer or
+            (norm_guess and norm_guess == norm_correct) or
+            (len(norm_guess) >= 3 and norm_guess == norm_base)
+        )
+
+        if is_match:
             from aiogram.types import ReactionTypeEmoji
             try:
                 await message.react(reaction=[ReactionTypeEmoji(emoji="🎉")])
-            except Exception:
-                pass
-
-            user_id = message.from_user.id
-            stmt = select(User).where(User.id == user_id)
-            res = await db.execute(stmt)
-            user = res.scalar_one_or_none()
-            if not user:
-                user = User(id=user_id, username=message.from_user.username, nickname=message.from_user.first_name)
-                db.add(user)
-                await db.flush()
-
-            attempts_used = game["attempts"] + 1
-            reward = max(150, (game["max_attempts"] - attempts_used + 1) * 150)
-            user.coins += reward
-            try:
-                from utils.trainer_level import log_transaction
-                await log_transaction(user_id, reward, "VOLTORB_WIN", f"Disarmed Voltorb Security PIN ({target})", db)
-            except Exception:
-                pass
-            await db.commit()
-
-            del active_games[chat_id]
-            await cleanup_voltorb_messages(message.bot, chat_id, game)
-
-            victory_text = (
-                f"🎉 <b>VAULT UNLOCKED & DISARMED!</b> 🎉\n"
-                f"───────────────\n"
-                f"<blockquote>🔐 <b>Security PIN</b>: <code>{target}</code>\n"
-                f"⚡ <b>Attempts</b>: <b>{attempts_used}/{game['max_attempts']}</b>\n"
-                f"💰 <b>Reward</b>: <b>+{reward} coins</b>\n"
-                f"👥 <b>Hacker</b>: {message.from_user.mention_html()}</blockquote>"
-            )
-            v_msg = await message.reply(victory_text, parse_mode="HTML")
-            asyncio.create_task(delete_message_after(v_msg, 60))
-            return
-        elif guess_num < target:
-            game["attempts"] += 1
-            game["low_bound"] = max(game["low_bound"], guess_num + 1)
-            if game["attempts"] >= game["max_attempts"]:
-                del active_games[chat_id]
-                await cleanup_voltorb_messages(message.bot, chat_id, game)
-                boom_text = (
-                    f"💥 <b>BOOM! VOLTORB SELF-DESTRUCTED!</b> 💥\n"
-                    f"───────────────\n"
-                    f"<blockquote>❌ <b>Security Breach Failed!</b> Max attempts (6/6) reached.\n"
-                    f"🔐 <b>The correct PIN was</b>: <code>{target}</code></blockquote>"
-                )
-                b_msg = await message.reply(boom_text, parse_mode="HTML")
-                asyncio.create_task(delete_message_after(b_msg, 60))
-                return
-            else:
-                rem = game["max_attempts"] - game["attempts"]
-                h_text = f"🔺 <b>HIGHER!</b> | Range: <code>[{game['low_bound']} – {game['high_bound']}]</code> | Attempts left: <b>{rem}</b>"
-                h_msg = await message.reply(h_text, parse_mode="HTML")
-                game["last_hint_msg_id"] = h_msg.message_id
-                asyncio.create_task(delete_message_after(h_msg, 15))
-                return
-        else: # guess_num > target
-            game["attempts"] += 1
-            game["high_bound"] = min(game["high_bound"], guess_num - 1)
-            if game["attempts"] >= game["max_attempts"]:
-                del active_games[chat_id]
-                await cleanup_voltorb_messages(message.bot, chat_id, game)
-                boom_text = (
-                    f"💥 <b>BOOM! VOLTORB SELF-DESTRUCTED!</b> 💥\n"
-                    f"───────────────\n"
-                    f"<blockquote>❌ <b>Security Breach Failed!</b> Max attempts (6/6) reached.\n"
-                    f"🔐 <b>The correct PIN was</b>: <code>{target}</code></blockquote>"
-                )
-                b_msg = await message.reply(boom_text, parse_mode="HTML")
-                asyncio.create_task(delete_message_after(b_msg, 60))
-                return
-            else:
-                rem = game["max_attempts"] - game["attempts"]
-                h_text = f"🔻 <b>LOWER!</b> | Range: <code>[{game['low_bound']} – {game['high_bound']}]</code> | Attempts left: <b>{rem}</b>"
-                h_msg = await message.reply(h_text, parse_mode="HTML")
-                game["last_hint_msg_id"] = h_msg.message_id
-                asyncio.create_task(delete_message_after(h_msg, 15))
-                return
-
-    # Handle Type Matchup Blitz Guessing
-    if game["type"] == "typematch":
-        guess_raw = message.text.strip().lower()
-        valid_answers = game.get("valid_answers", [])
-        if guess_raw in valid_answers:
-            from aiogram.types import ReactionTypeEmoji
-            try:
-                await message.react(reaction=[ReactionTypeEmoji(emoji="🎉")])
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"Failed to react to game guess: {e}")
 
             user_id = message.from_user.id
             nickname = message.from_user.first_name
@@ -1713,147 +1939,81 @@ async def check_game_answers(message: Message, db: AsyncSession):
                 db.add(user)
                 await db.flush()
 
-            reward = random.randint(350, 500)
+            if gtype == "silhouette":
+                reward = random.randint(250, 450)
+            elif gtype == "nameguess":
+                if message.chat.type in ["group", "supergroup"] and game.get("is_auto"):
+                    reward = random.randint(150, 250)
+                else:
+                    reward = 200
+            else: # scribble
+                if message.chat.type in ["group", "supergroup"] and game.get("is_auto"):
+                    reward = random.randint(60, 100)
+                else:
+                    reward = 150
+
             user.coins += reward
             try:
                 from utils.trainer_level import log_transaction
-                await log_transaction(user_id, reward, "TYPEMATCH_WIN", f"Won Type Matchup Blitz ({guess_raw.title()})", db)
+                await log_transaction(user_id, reward, f"{gtype.upper()}_WIN", f"Won {gtype.title()} ({correct_answer.title()})", db)
             except Exception:
                 pass
 
             await db.commit()
 
-            del active_games[chat_id]
-            await cleanup_typematch_messages(message.bot, chat_id, game)
-
-            all_valid_str = ", ".join(t.title() for t in valid_answers)
-            vic_card = (
-                f"⚡ <b>ELEMENTAL ADVANTAGE STRUCK!</b> ⚡\n"
-                f"◈ ────────────────────────── ◈\n"
-                f"🎯 <b>Winning Counter:</b> <b>{guess_raw.title()}</b>\n"
-                f"💡 <b>All Valid Types:</b> <code>{all_valid_str}</code>\n"
-                f"💰 <b>Earned:</b> <b>+{reward} coins</b>\n"
-                f"👥 <b>Master Tactician:</b> {message.from_user.mention_html()}\n"
-                f"◈ ────────────────────────── ◈"
-            )
-            v_msg = await message.reply(vic_card, parse_mode="HTML")
-            asyncio.create_task(delete_message_after(v_msg, 60))
-            return
-        else:
-            return
-
-    # Handle Text Guess Matching (Scribble, Nameguess, Silhouette)
-    import re
-    def normalize_poke_name(val: str) -> str:
-        return re.sub(r'[^a-z0-9]', '', val.lower())
-
-    guess = message.text.strip().lower()
-    correct_answer = game["answer"].lower()
-
-    norm_guess = normalize_poke_name(guess)
-    norm_correct = normalize_poke_name(correct_answer)
-    norm_base = normalize_poke_name(correct_answer.split('-')[0])
-
-    is_match = (
-        guess == correct_answer or
-        (norm_guess and norm_guess == norm_correct) or
-        (len(norm_guess) >= 3 and norm_guess == norm_base)
-    )
-
-    if is_match:
-        from aiogram.types import ReactionTypeEmoji
-        try:
-            await message.react(reaction=[ReactionTypeEmoji(emoji="🎉")])
-        except Exception as e:
-            print(f"Failed to react to game guess: {e}")
-
-        user_id = message.from_user.id
-        nickname = message.from_user.first_name
-
-        stmt = select(User).where(User.id == user_id)
-        res = await db.execute(stmt)
-        user = res.scalar_one_or_none()
-
-        if not user:
-            user = User(id=user_id, username=message.from_user.username, nickname=nickname)
-            db.add(user)
-            await db.flush()
-
-        gtype = game.get("type")
-        if gtype == "silhouette":
-            reward = random.randint(250, 450)
-        elif gtype == "nameguess":
-            if message.chat.type in ["group", "supergroup"] and game.get("is_auto"):
-                reward = random.randint(150, 250)
+            remove_chat_game(chat_id, gtype)
+            if gtype == "silhouette":
+                await cleanup_silhouette_messages(message.bot, chat_id, game)
+            elif gtype == "nameguess":
+                await cleanup_nameguess_messages(message.bot, chat_id, game)
             else:
-                reward = 200
-        else: # scribble
-            if message.chat.type in ["group", "supergroup"] and game.get("is_auto"):
-                reward = random.randint(60, 100)
+                await cleanup_scribble_messages(message.bot, chat_id, game)
+
+            ans_display = game.get("pokemon_name") or game.get("display_name") or correct_answer.title()
+            if gtype == "silhouette":
+                vic_text = (
+                    f"🎉 <b>SILHOUETTE IDENTIFIED!</b> 🎉\n"
+                    f"───────────────\n"
+                    f"<blockquote>👤 <b>Pokémon</b>: <b>{ans_display}</b>\n"
+                    f"💰 <b>Earned</b>: <b>+{reward} coins</b>\n"
+                    f"👥 <b>Field Master</b>: {message.from_user.mention_html()}</blockquote>"
+                )
+            elif gtype == "nameguess":
+                vic_text = (
+                    f"🎉 <b>Correct!</b>\n"
+                    f"───────────────\n"
+                    f"<blockquote>🧠 <b>Pokémon</b>: <b>{ans_display}</b>\n"
+                    f"💰 <b>Earned</b>: <b>+{reward} coins</b>\n"
+                    f"👥 <b>Winner</b>: {message.from_user.mention_html()}</blockquote>"
+                )
             else:
-                reward = 150
+                vic_text = (
+                    f"🎉 <b>Correct!</b>\n"
+                    f"───────────────\n"
+                    f"<blockquote>🛑 <b>Word</b>: <b>{ans_display}</b>\n"
+                    f"💰 <b>Earned</b>: <b>+{reward} coins</b>\n"
+                    f"👥 <b>Winner</b>: {message.from_user.mention_html()}</blockquote>"
+                )
 
-        user.coins += reward
-        try:
-            from utils.trainer_level import log_transaction
-            await log_transaction(user_id, reward, f"{gtype.upper()}_WIN", f"Won {gtype.title()} ({correct_answer.title()})", db)
-        except Exception:
-            pass
+            victory_msg = await message.reply(vic_text, parse_mode="HTML")
+            asyncio.create_task(delete_message_after(victory_msg, 60))
 
-        await db.commit()
-
-        del active_games[chat_id]
-        if gtype == "silhouette":
-            await cleanup_silhouette_messages(message.bot, chat_id, game)
-        elif gtype == "nameguess":
-            await cleanup_nameguess_messages(message.bot, chat_id, game)
-        else:
-            await cleanup_scribble_messages(message.bot, chat_id, game)
-
-        ans_display = game.get("pokemon_name") or game.get("display_name") or correct_answer.title()
-        if gtype == "silhouette":
-            text = (
-                f"🎉 <b>SILHOUETTE IDENTIFIED!</b> 🎉\n"
-                f"───────────────\n"
-                f"<blockquote>👤 <b>Pokémon</b>: <b>{ans_display}</b>\n"
-                f"💰 <b>Earned</b>: <b>+{reward} coins</b>\n"
-                f"👥 <b>Field Master</b>: {message.from_user.mention_html()}</blockquote>"
-            )
-        elif gtype == "nameguess":
-            text = (
-                f"🎉 <b>Correct!</b>\n"
-                f"───────────────\n"
-                f"<blockquote>🧠 <b>Pokémon</b>: <b>{ans_display}</b>\n"
-                f"💰 <b>Earned</b>: <b>+{reward} coins</b>\n"
-                f"👥 <b>Winner</b>: {message.from_user.mention_html()}</blockquote>"
-            )
-        else:
-            text = (
-                f"🎉 <b>Correct!</b>\n"
-                f"───────────────\n"
-                f"<blockquote>🛑 <b>Word</b>: <b>{ans_display}</b>\n"
-                f"💰 <b>Earned</b>: <b>+{reward} coins</b>\n"
-                f"👥 <b>Winner</b>: {message.from_user.mention_html()}</blockquote>"
-            )
-
-        victory_msg = await message.reply(text, parse_mode="HTML")
-        asyncio.create_task(delete_message_after(victory_msg, 60))
-
-        # Automatically start another game in group chats if enabled
-        if message.chat.type in ["group", "supergroup"] and message.chat.username and message.chat.username.lower() == "pokeempireunion":
-            await asyncio.sleep(2)
-            if chat_id not in active_games:
-                scrib_ok = is_scribble_enabled(chat_id)
-                nameg_ok = is_nameguess_enabled(chat_id)
-                if scrib_ok and nameg_ok:
-                    if random.choice([True, False]):
-                        await start_auto_nameguess_game(chat_id, message.bot, db)
-                    else:
+            # Automatically start another game in group chats if enabled
+            if message.chat.type in ["group", "supergroup"] and message.chat.username and message.chat.username.lower() == "pokeempireunion":
+                await asyncio.sleep(2)
+                if not get_chat_game(chat_id, "scribble") and not get_chat_game(chat_id, "nameguess"):
+                    scrib_ok = is_scribble_enabled(chat_id)
+                    nameg_ok = is_nameguess_enabled(chat_id)
+                    if scrib_ok and nameg_ok:
+                        if random.choice([True, False]):
+                            await start_auto_nameguess_game(chat_id, message.bot, db)
+                        else:
+                            await start_auto_scribble_game(chat_id, message.bot, db)
+                    elif scrib_ok:
                         await start_auto_scribble_game(chat_id, message.bot, db)
-                elif scrib_ok:
-                    await start_auto_scribble_game(chat_id, message.bot, db)
-                elif nameg_ok:
-                    await start_auto_nameguess_game(chat_id, message.bot, db)
+                    elif nameg_ok:
+                        await start_auto_nameguess_game(chat_id, message.bot, db)
+            return
 
 # Automatically start a scribble/nameguess game when conversation happens in group chat with no active game
 def no_active_game_in_group(message: Message) -> bool:
@@ -1862,7 +2022,7 @@ def no_active_game_in_group(message: Message) -> bool:
     if not message.chat.username or message.chat.username.lower() != "pokeempireunion":
         return False
     chat_id = message.chat.id
-    return (chat_id not in active_games and 
+    return (not get_chat_game(chat_id, "scribble") and not get_chat_game(chat_id, "nameguess") and 
             (is_scribble_enabled(chat_id) or is_nameguess_enabled(chat_id)))
 
 @router.message(F.text, ~F.text.startswith("/"), no_active_game_in_group)
@@ -2055,8 +2215,8 @@ async def cb_play_trivia(callback: CallbackQuery, db: AsyncSession):
         return
     chat_id = callback.message.chat.id
 
-    if chat_id in active_games:
-        await callback.answer("⚠️ An active game is already running in this chat!", show_alert=True)
+    if get_chat_game(chat_id, "trivia"):
+        await callback.answer("⚠️ A trivia game is already running in this chat!", show_alert=True)
         return
 
     res = await initiate_trivia_game(chat_id, db, is_auto=False)
@@ -2067,7 +2227,9 @@ async def cb_play_trivia(callback: CallbackQuery, db: AsyncSession):
     trivia_text, reply_markup = res
 
     sent_msg = await callback.message.answer(trivia_text, reply_markup=reply_markup, parse_mode="HTML")
-    active_games[chat_id]["message_id"] = sent_msg.message_id
+    game = get_chat_game(chat_id, "trivia")
+    if game:
+        game["message_id"] = sent_msg.message_id
     await callback.answer("Trivia started!")
     asyncio.create_task(trivia_timeout_task(chat_id, sent_msg.message_id, callback.bot))
 
@@ -2079,8 +2241,8 @@ async def cb_play_scribble(callback: CallbackQuery, db: AsyncSession):
         return
     chat_id = callback.message.chat.id
 
-    if chat_id in active_games:
-        await callback.answer("⚠️ An active game is already running in this chat!", show_alert=True)
+    if get_chat_game(chat_id, "scribble"):
+        await callback.answer("⚠️ A scribble game is already running in this chat!", show_alert=True)
         return
 
     # Select random Pokémon
@@ -2101,12 +2263,13 @@ async def cb_play_scribble(callback: CallbackQuery, db: AsyncSession):
         random.shuffle(name_list)
         scrambled = "".join(name_list)
 
-    active_games[chat_id] = {
+    game_data = {
         "type": "scribble",
         "answer": name,
         "created_at": time.time(),
         "is_auto": False
     }
+    set_chat_game(chat_id, "scribble", game_data)
 
     text = (
         f"💬 **Word Scramble!**\n"
@@ -2124,7 +2287,7 @@ async def cb_play_scribble(callback: CallbackQuery, db: AsyncSession):
     )
 
     sent_msg = await callback.message.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
-    active_games[chat_id]["message_id"] = sent_msg.message_id
+    game_data["message_id"] = sent_msg.message_id
 
     await callback.answer("Scribble started!")
 
@@ -2139,13 +2302,9 @@ async def cb_play_scribble(callback: CallbackQuery, db: AsyncSession):
 @router.callback_query(F.data == "scribble_hint")
 async def cb_scribble_hint(callback: CallbackQuery):
     chat_id = callback.message.chat.id
+    game = get_chat_game(chat_id, "scribble")
     
-    if chat_id not in active_games:
-        await callback.answer("⚠️ No active scribble game in this chat.", show_alert=True)
-        return
-        
-    game = active_games[chat_id]
-    if game.get("type") != "scribble":
+    if not game:
         await callback.answer("⚠️ No active scribble game in this chat.", show_alert=True)
         return
         
@@ -2175,13 +2334,9 @@ async def cb_scribble_hint(callback: CallbackQuery):
 async def cb_scribble_stop(callback: CallbackQuery):
     chat_id = callback.message.chat.id
     user_id = callback.from_user.id
+    game = get_chat_game(chat_id, "scribble")
     
-    if chat_id not in active_games:
-        await callback.answer("⚠️ No active scribble game to stop.", show_alert=True)
-        return
-        
-    game = active_games[chat_id]
-    if game.get("type") != "scribble":
+    if not game:
         await callback.answer("⚠️ No active scribble game to stop.", show_alert=True)
         return
 
@@ -2191,7 +2346,7 @@ async def cb_scribble_stop(callback: CallbackQuery):
         is_allowed = True
     else:
         # Group chat: only admin or owner
-        if user_id in config.ADMIN_IDS:
+        if user_id in config.ADMIN_IDS or user_id in getattr(config, "CO_OWNER_IDS", []) or user_id in config.OWNER_IDS:
             is_allowed = True
         else:
             try:
@@ -2205,7 +2360,7 @@ async def cb_scribble_stop(callback: CallbackQuery):
         return
         
     # Clean up the game state
-    del active_games[chat_id]
+    remove_chat_game(chat_id, "scribble")
     
     # Delete the prompt and hint messages
     await cleanup_scribble_messages(callback.bot, chat_id, game)
@@ -2218,13 +2373,9 @@ async def cb_scribble_stop(callback: CallbackQuery):
 @router.callback_query(F.data == "nameguess_hint")
 async def cb_nameguess_hint(callback: CallbackQuery):
     chat_id = callback.message.chat.id
+    game = get_chat_game(chat_id, "nameguess")
     
-    if chat_id not in active_games:
-        await callback.answer("⚠️ No active NameGuess game in this chat.", show_alert=True)
-        return
-        
-    game = active_games[chat_id]
-    if game.get("type") != "nameguess":
+    if not game:
         await callback.answer("⚠️ No active NameGuess game in this chat.", show_alert=True)
         return
         
@@ -2253,13 +2404,9 @@ async def cb_nameguess_hint(callback: CallbackQuery):
 async def cb_nameguess_stop(callback: CallbackQuery):
     chat_id = callback.message.chat.id
     user_id = callback.from_user.id
+    game = get_chat_game(chat_id, "nameguess")
     
-    if chat_id not in active_games:
-        await callback.answer("⚠️ No active NameGuess game to stop.", show_alert=True)
-        return
-        
-    game = active_games[chat_id]
-    if game.get("type") != "nameguess":
+    if not game:
         await callback.answer("⚠️ No active NameGuess game to stop.", show_alert=True)
         return
 
@@ -2269,7 +2416,7 @@ async def cb_nameguess_stop(callback: CallbackQuery):
         is_allowed = True
     else:
         # Group chat: only admin or owner
-        if user_id in config.ADMIN_IDS:
+        if user_id in config.ADMIN_IDS or user_id in getattr(config, "CO_OWNER_IDS", []) or user_id in config.OWNER_IDS:
             is_allowed = True
         else:
             try:
@@ -2282,7 +2429,7 @@ async def cb_nameguess_stop(callback: CallbackQuery):
         await callback.answer("❌ Only group administrators or bot owners can stop the game.", show_alert=True)
         return
         
-    del active_games[chat_id]
+    remove_chat_game(chat_id, "nameguess")
     await cleanup_nameguess_messages(callback.bot, chat_id, game)
     
     ans_display = game.get("pokemon_name") or game["answer"].title()
@@ -2303,8 +2450,8 @@ async def cmd_nameguess(message: Message, db: AsyncSession):
     chat_id = message.chat.id
     user_id = message.from_user.id
             
-    if chat_id in active_games:
-        await message.answer("⚠️ There is already an active game (trivia/scribble/nameguess) in this chat! Answer it first.")
+    if get_chat_game(chat_id, "nameguess"):
+        await message.answer("⚠️ There is already an active NameGuess quiz in this chat! Answer it first.")
         return
 
     # Select random Pokémon
@@ -2319,13 +2466,14 @@ async def cmd_nameguess(message: Message, db: AsyncSession):
     name = pokemon.name.lower()
     initial_hint = generate_hint(name)
 
-    active_games[chat_id] = {
+    game_data = {
         "type": "nameguess",
         "answer": name,
         "pokemon_name": pokemon.name,
         "created_at": time.time(),
         "is_auto": False
     }
+    set_chat_game(chat_id, "nameguess", game_data)
 
     type_info = f" | Type: <b>{pokemon.type1}{'/' + pokemon.type2 if pokemon.type2 else ''}</b>" if getattr(pokemon, 'type1', None) else ""
     gen_info = f" | Gen: <b>{pokemon.generation}</b>" if getattr(pokemon, 'generation', None) else ""
@@ -2358,11 +2506,10 @@ async def cmd_nameguess(message: Message, db: AsyncSession):
             parse_mode="HTML",
             message_to_reply=message
         )
-        active_games[chat_id]["message_id"] = sent_msg.message_id
+        game_data["message_id"] = sent_msg.message_id
         asyncio.create_task(nameguess_timeout_task(chat_id, sent_msg.message_id, message.bot))
     except Exception as e:
-        if chat_id in active_games:
-            del active_games[chat_id]
+        remove_chat_game(chat_id, "nameguess")
         print(f"Error initiating nameguess: {e}")
         await message.answer("❌ Error initiating NameGuess. Please try again.")
 
@@ -2382,11 +2529,11 @@ async def cb_play_nameguess(callback: CallbackQuery, db: AsyncSession):
 @router.callback_query(F.data == "silhouette_hint")
 async def cb_silhouette_hint(callback: CallbackQuery):
     chat_id = callback.message.chat.id
-    if chat_id not in active_games or active_games[chat_id].get("type") != "silhouette":
+    game = get_chat_game(chat_id, "silhouette")
+    if not game:
         await callback.answer("⚠️ No active Silhouette Trial in this chat.", show_alert=True)
         return
         
-    game = active_games[chat_id]
     if "hint_text" in game:
         await callback.answer(f"💡 Hint already revealed: {game['hint_text']}", show_alert=True)
         return
@@ -2407,17 +2554,17 @@ async def cb_silhouette_hint(callback: CallbackQuery):
 async def cb_silhouette_stop(callback: CallbackQuery):
     chat_id = callback.message.chat.id
     user_id = callback.from_user.id
+    game = get_chat_game(chat_id, "silhouette")
     
-    if chat_id not in active_games or active_games[chat_id].get("type") != "silhouette":
+    if not game:
         await callback.answer("⚠️ No active Silhouette game to stop.", show_alert=True)
         return
         
-    game = active_games[chat_id]
     is_allowed = False
     if callback.message.chat.type == "private":
         is_allowed = True
     else:
-        if user_id in config.ADMIN_IDS:
+        if user_id in config.ADMIN_IDS or user_id in getattr(config, "CO_OWNER_IDS", []) or user_id in config.OWNER_IDS:
             is_allowed = True
         else:
             try:
@@ -2430,7 +2577,7 @@ async def cb_silhouette_stop(callback: CallbackQuery):
         await callback.answer("❌ Only group administrators or bot owners can stop the game.", show_alert=True)
         return
         
-    del active_games[chat_id]
+    remove_chat_game(chat_id, "silhouette")
     await cleanup_silhouette_messages(callback.bot, chat_id, game)
     
     ans_display = game.get("pokemon_name") or game["answer"].title()
@@ -2448,8 +2595,8 @@ async def cmd_silhouette(message: Message, db: AsyncSession):
         return
 
     chat_id = message.chat.id
-    if chat_id in active_games:
-        await message.answer("⚠️ There is already an active game running in this chat! Complete or stop it first.")
+    if get_chat_game(chat_id, "silhouette"):
+        await message.answer("⚠️ There is already an active Silhouette Trial in this chat! Identify or abort it first.")
         return
 
     # Select random Pokémon with valid image
@@ -2466,7 +2613,7 @@ async def cmd_silhouette(message: Message, db: AsyncSession):
     type_info = f" | Type: <b>{pokemon.type1}{'/' + pokemon.type2 if pokemon.type2 else ''}</b>" if getattr(pokemon, 'type1', None) else ""
     gen_info = f" | Gen: <b>{pokemon.generation}</b>" if getattr(pokemon, 'generation', None) else ""
 
-    active_games[chat_id] = {
+    game_data = {
         "type": "silhouette",
         "answer": name,
         "pokemon_name": pokemon.name,
@@ -2474,6 +2621,7 @@ async def cmd_silhouette(message: Message, db: AsyncSession):
         "created_at": time.time(),
         "is_auto": False
     }
+    set_chat_game(chat_id, "silhouette", game_data)
 
     text = (
         f"👤 <b>THE SILHOUETTE TRIAL</b> 👤\n"
@@ -2514,11 +2662,10 @@ async def cmd_silhouette(message: Message, db: AsyncSession):
                 parse_mode="HTML",
                 message_to_reply=message
             )
-        active_games[chat_id]["message_id"] = sent_msg.message_id
+        game_data["message_id"] = sent_msg.message_id
         asyncio.create_task(silhouette_timeout_task(chat_id, sent_msg.message_id, message.bot))
     except Exception as e:
-        if chat_id in active_games:
-            del active_games[chat_id]
+        remove_chat_game(chat_id, "silhouette")
         print(f"Error launching silhouette: {e}")
         await message.answer("❌ Error generating silhouette simulation. Please try again.")
 
@@ -2538,11 +2685,11 @@ async def cb_play_silhouette(callback: CallbackQuery, db: AsyncSession):
 @router.callback_query(F.data == "typematch_hint")
 async def cb_typematch_hint(callback: CallbackQuery):
     chat_id = callback.message.chat.id
-    if chat_id not in active_games or active_games[chat_id].get("type") != "typematch":
+    game = get_chat_game(chat_id, "typematch")
+    if not game:
         await callback.answer("⚠️ No active Type Matchup Blitz in this chat.", show_alert=True)
         return
         
-    game = active_games[chat_id]
     if game.get("hint_given"):
         await callback.answer("💡 Hint already revealed in chat!", show_alert=True)
         return
@@ -2569,17 +2716,17 @@ async def cb_typematch_hint(callback: CallbackQuery):
 async def cb_typematch_stop(callback: CallbackQuery):
     chat_id = callback.message.chat.id
     user_id = callback.from_user.id
+    game = get_chat_game(chat_id, "typematch")
     
-    if chat_id not in active_games or active_games[chat_id].get("type") != "typematch":
+    if not game:
         await callback.answer("⚠️ No active Type Matchup Blitz to stop.", show_alert=True)
         return
         
-    game = active_games[chat_id]
     is_allowed = False
     if callback.message.chat.type == "private":
         is_allowed = True
     else:
-        if user_id in config.ADMIN_IDS:
+        if user_id in config.ADMIN_IDS or user_id in getattr(config, "CO_OWNER_IDS", []) or user_id in config.OWNER_IDS:
             is_allowed = True
         else:
             try:
@@ -2592,7 +2739,7 @@ async def cb_typematch_stop(callback: CallbackQuery):
         await callback.answer("❌ Only group administrators or bot owners can stop the game.", show_alert=True)
         return
         
-    del active_games[chat_id]
+    remove_chat_game(chat_id, "typematch")
     await cleanup_typematch_messages(callback.bot, chat_id, game)
     
     ans_list = ", ".join(t.title() for t in game.get("valid_answers", []))
@@ -2610,8 +2757,8 @@ async def cmd_typematch(message: Message, db: AsyncSession):
         return
 
     chat_id = message.chat.id
-    if chat_id in active_games:
-        await message.answer("⚠️ There is already an active game running in this chat! Complete or stop it first.")
+    if get_chat_game(chat_id, "typematch"):
+        await message.answer("⚠️ There is already an active Type Matchup Blitz in this chat! Answer or stop it first.")
         return
 
     # Choose scenario mode (Offensive vs Defensive)
@@ -2668,7 +2815,7 @@ async def cmd_typematch(message: Message, db: AsyncSession):
             f"<i>Type any resistant or immune type directly in chat to defend!</i>"
         )
 
-    active_games[chat_id] = {
+    game_data = {
         "type": "typematch",
         "mode": mode,
         "valid_answers": valid_answers,
@@ -2677,6 +2824,7 @@ async def cmd_typematch(message: Message, db: AsyncSession):
         "created_at": time.time(),
         "is_auto": False
     }
+    set_chat_game(chat_id, "typematch", game_data)
 
     builder = InlineKeyboardBuilder()
     builder.row(
@@ -2699,11 +2847,10 @@ async def cmd_typematch(message: Message, db: AsyncSession):
         else:
             sent_msg = await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
             
-        active_games[chat_id]["message_id"] = sent_msg.message_id
+        game_data["message_id"] = sent_msg.message_id
         asyncio.create_task(typematch_timeout_task(chat_id, sent_msg.message_id, message.bot))
     except Exception as e:
-        if chat_id in active_games:
-            del active_games[chat_id]
+        remove_chat_game(chat_id, "typematch")
         print(f"Error launching typematch: {e}")
         await message.answer("❌ Error initiating Type Matchup Blitz. Please try again.")
 
@@ -2724,17 +2871,17 @@ async def cb_play_typematch(callback: CallbackQuery, db: AsyncSession):
 async def cb_voltorb_stop(callback: CallbackQuery):
     chat_id = callback.message.chat.id
     user_id = callback.from_user.id
+    game = get_chat_game(chat_id, "voltorb")
     
-    if chat_id not in active_games or active_games[chat_id].get("type") != "voltorb":
+    if not game:
         await callback.answer("⚠️ No active Voltorb Lock in this chat.", show_alert=True)
         return
         
-    game = active_games[chat_id]
     is_allowed = False
     if callback.message.chat.type == "private":
         is_allowed = True
     else:
-        if user_id in config.ADMIN_IDS:
+        if user_id in config.ADMIN_IDS or user_id in getattr(config, "CO_OWNER_IDS", []) or user_id in config.OWNER_IDS:
             is_allowed = True
         else:
             try:
@@ -2747,7 +2894,7 @@ async def cb_voltorb_stop(callback: CallbackQuery):
         await callback.answer("❌ Only group administrators or bot owners can stop the game.", show_alert=True)
         return
         
-    del active_games[chat_id]
+    remove_chat_game(chat_id, "voltorb")
     await cleanup_voltorb_messages(callback.bot, chat_id, game)
     
     await callback.message.answer(
@@ -2764,12 +2911,12 @@ async def cmd_voltorb(message: Message, db: AsyncSession):
         return
 
     chat_id = message.chat.id
-    if chat_id in active_games:
-        await message.answer("⚠️ There is already an active game running in this chat! Complete or stop it first.")
+    if get_chat_game(chat_id, "voltorb"):
+        await message.answer("⚠️ There is already an active Voltorb Lock in this chat! Hack or abort it first.")
         return
 
     target = random.randint(1, 50)
-    active_games[chat_id] = {
+    game_data = {
         "type": "voltorb",
         "target": target,
         "attempts": 0,
@@ -2779,6 +2926,7 @@ async def cmd_voltorb(message: Message, db: AsyncSession):
         "created_at": time.time(),
         "is_auto": False
     }
+    set_chat_game(chat_id, "voltorb", game_data)
 
     text = (
         f"⚡ <b>THE VOLTORB LOCK & KEY</b> ⚡\n"
@@ -2800,11 +2948,10 @@ async def cmd_voltorb(message: Message, db: AsyncSession):
 
     try:
         sent_msg = await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
-        active_games[chat_id]["message_id"] = sent_msg.message_id
+        game_data["message_id"] = sent_msg.message_id
         asyncio.create_task(voltorb_timeout_task(chat_id, sent_msg.message_id, message.bot))
     except Exception as e:
-        if chat_id in active_games:
-            del active_games[chat_id]
+        remove_chat_game(chat_id, "voltorb")
         print(f"Error launching voltorb: {e}")
         await message.answer("❌ Error initializing Voltorb Lock. Please try again.")
 
@@ -2822,12 +2969,13 @@ async def cb_play_voltorb(callback: CallbackQuery, db: AsyncSession):
 # ==========================================
 
 @router.message(Command("abort", "cancelgame", "stopgame", "endgame", ignore_mention=True))
-async def cmd_abort_game(message: Message):
+async def cmd_abort_game(message: Message, db: AsyncSession):
     chat_id = message.chat.id
     user_id = message.from_user.id if message.from_user else 0
     user_name = html.escape(message.from_user.first_name if message.from_user else "Trainer")
 
-    if chat_id not in active_games:
+    chat_dict = active_games.get(chat_id)
+    if not chat_dict:
         # Check active XO games in this chat
         from handlers.xo import active_xo_games
         xo_found = False
@@ -2854,9 +3002,6 @@ async def cmd_abort_game(message: Message):
         await message.answer("ℹ️ No active game is currently running in this chat.")
         return
 
-    game = active_games[chat_id]
-    game_type = game.get("type", "game")
-
     # Authorization check
     is_allowed = False
     if message.chat.type == "private":
@@ -2871,59 +3016,55 @@ async def cmd_abort_game(message: Message):
             except Exception:
                 is_allowed = True
 
-    del active_games[chat_id]
+    if not is_allowed:
+        await message.answer("❌ You are not authorized to stop the active games.")
+        return
 
-    if game_type == "silhouette":
-        await cleanup_silhouette_messages(message.bot, chat_id, game)
-        ans_display = game.get("pokemon_name") or game.get("answer", "Unknown").title()
+    # Extract all games to abort
+    if isinstance(chat_dict, dict) and "type" in chat_dict:
+        games_to_abort = {chat_dict["type"]: chat_dict}
+    elif isinstance(chat_dict, dict):
+        games_to_abort = dict(chat_dict)
+    else:
+        games_to_abort = {}
+
+    active_games.pop(chat_id, None)
+    aborted_names = []
+
+    for gtype, game in games_to_abort.items():
+        if gtype == "silhouette":
+            await cleanup_silhouette_messages(message.bot, chat_id, game)
+            ans_display = game.get("pokemon_name") or game.get("answer", "Unknown").title()
+            aborted_names.append(f"• <b>Silhouette Trial</b> (Pokémon: <b>{ans_display}</b>)")
+        elif gtype == "voltorb":
+            await cleanup_voltorb_messages(message.bot, chat_id, game)
+            aborted_names.append(f"• <b>Voltorb Lock</b> (PIN: <code>{game.get('target', 'N/A')}</code>)")
+        elif gtype == "typematch":
+            await cleanup_typematch_messages(message.bot, chat_id, game)
+            ans_list = ", ".join(t.title() for t in game.get("valid_answers", []))
+            aborted_names.append(f"• <b>Type Matchup Blitz</b> (Counters: <b>{ans_list}</b>)")
+        elif gtype == "scribble":
+            await cleanup_scribble_messages(message.bot, chat_id, game)
+            ans_word = game.get("word") or game.get("answer") or "N/A"
+            aborted_names.append(f"• <b>Scribble Game</b> (Word: <b>{ans_word.title()}</b>)")
+        elif gtype == "nameguess":
+            await cleanup_nameguess_messages(message.bot, chat_id, game)
+            ans_display = game.get("pokemon_name") or game.get("answer", "Unknown").title()
+            aborted_names.append(f"• <b>NameGuess Quiz</b> (Pokémon: <b>{ans_display}</b>)")
+        elif gtype == "trivia":
+            ans_display = game.get("answer", "N/A")
+            aborted_names.append(f"• <b>Trivia Challenge</b> (Answer: <b>{ans_display}</b>)")
+        else:
+            aborted_names.append(f"• <b>{gtype.title()} Game</b>")
+
+    if aborted_names:
+        summary_text = "\n".join(aborted_names)
         await message.answer(
-            f"🛑 <b>Silhouette Trial aborted</b> by {user_name}.\n"
-            f"💡 The Pokémon was: <b>{ans_display}</b>",
-            parse_mode="HTML"
-        )
-    elif game_type == "voltorb":
-        await cleanup_voltorb_messages(message.bot, chat_id, game)
-        await message.answer(
-            f"🛑 <b>Voltorb Lock breach aborted</b> by {user_name}.\n"
-            f"🔐 Security PIN was: <code>{game.get('target', 'N/A')}</code>",
-            parse_mode="HTML"
-        )
-    elif game_type == "typematch":
-        await cleanup_typematch_messages(message.bot, chat_id, game)
-        ans_list = ", ".join(t.title() for t in game.get("valid_answers", []))
-        await message.answer(
-            f"🛑 <b>Type Matchup Blitz aborted</b> by {user_name}.\n"
-            f"💡 Valid Elemental Counters were: <b>{ans_list}</b>",
-            parse_mode="HTML"
-        )
-    elif game_type == "scribble":
-        await cleanup_scribble_messages(message.bot, chat_id, game)
-        ans_word = game.get("word") or game.get("answer") or "N/A"
-        await message.answer(
-            f"🛑 <b>Scribble game aborted</b> by {user_name}.\n"
-            f"💡 The word was: <b>{ans_word.title()}</b>",
-            parse_mode="HTML"
-        )
-    elif game_type == "nameguess":
-        await cleanup_nameguess_messages(message.bot, chat_id, game)
-        ans_display = game.get("pokemon_name") or game.get("answer", "Unknown").title()
-        await message.answer(
-            f"🛑 <b>NameGuess Quiz aborted</b> by {user_name}.\n"
-            f"💡 The Pokémon was: <b>{ans_display}</b>",
-            parse_mode="HTML"
-        )
-    elif game_type == "trivia":
-        ans_display = game.get("answer", "N/A")
-        await message.answer(
-            f"🛑 <b>Trivia challenge aborted</b> by {user_name}.\n"
-            f"💡 Correct Answer was: <b>{ans_display}</b>",
+            f"🛑 <b>Active mini-game(s) aborted by {user_name}:</b>\n\n{summary_text}",
             parse_mode="HTML"
         )
     else:
-        await message.answer(
-            f"🛑 <b>Active {game_type.title()} game aborted</b> by {user_name}.",
-            parse_mode="HTML"
-        )
+        await message.answer(f"🛑 <b>Active game(s) aborted by {user_name}.</b>", parse_mode="HTML")
 
 
 # ==========================================
@@ -2974,13 +3115,9 @@ async def cb_trivia_answer(callback: CallbackQuery, db: AsyncSession):
     user_id = callback.from_user.id
     nickname = callback.from_user.first_name
     
-    if chat_id not in active_games:
+    game = get_chat_game(chat_id, "trivia")
+    if not game:
         await callback.answer("⚠️ This trivia game has ended or expired.", show_alert=True)
-        return
-        
-    game = active_games[chat_id]
-    if game.get("type") != "trivia":
-        await callback.answer("⚠️ No active trivia game found.", show_alert=True)
         return
         
     if user_id in game["guesses"]:
@@ -2988,7 +3125,7 @@ async def cb_trivia_answer(callback: CallbackQuery, db: AsyncSession):
         return
         
     if time.time() - game["created_at"] > 60:
-        del active_games[chat_id]
+        remove_chat_game(chat_id, "trivia")
         await callback.message.edit_text(
             f"⏳ <b>TRIVIA EXPIRED</b> ⏳\n"
             f"───────────────\n\n"
@@ -3024,7 +3161,7 @@ async def cb_trivia_answer(callback: CallbackQuery, db: AsyncSession):
         user.coins += reward
         await db.commit()
 
-        del active_games[chat_id]
+        remove_chat_game(chat_id, "trivia")
 
         escaped_q = html.escape(game['question'])
         escaped_ans = html.escape(game['answer'])
@@ -3047,7 +3184,7 @@ async def cb_trivia_answer(callback: CallbackQuery, db: AsyncSession):
         await callback.answer("❌ Incorrect answer! You are locked out of this question.", show_alert=True)
         
         if callback.message.chat.type == "private":
-            del active_games[chat_id]
+            remove_chat_game(chat_id, "trivia")
             escaped_ans = html.escape(game['answer'])
             msg = await callback.message.edit_text(
                 f"❓ <b>TRIVIA OVER</b> ❓\n"

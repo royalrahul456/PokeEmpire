@@ -1,5 +1,6 @@
 import os
 import json
+import config
 from sqlalchemy import select, update, delete
 from database.database import SessionLocal
 from database.models import GroupSetting, GlobalSetting

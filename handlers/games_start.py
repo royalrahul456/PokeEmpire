@@ -675,28 +675,72 @@ async def cmd_games_set_cover(message: Message):
         return
         
     user_id = message.from_user.id if message.from_user else 0
-    if user_id not in config.ADMIN_IDS and user_id not in getattr(config, "CO_OWNER_IDS", []) and user_id not in config.OWNER_IDS:
+    is_auth = user_id in config.ADMIN_IDS or user_id in getattr(config, "CO_OWNER_IDS", []) or user_id in getattr(config, "OWNER_IDS", [])
+    if not is_auth:
         await message.answer("❌ Denied. Only the bot owner or co-owners can configure covers.")
         return
         
-    parts = message.text.split()
+    raw_text = message.text or message.caption or ""
+    parts = raw_text.split()
     if len(parts) < 2:
         await message.answer("⚠️ Format: `/setcover <start/main/xo/pokedex/leaderboard> [file_id]`")
         return
         
     key = parts[1].lower()
-    if key == "main":
-        key = "start"
+    if key in ["main", "ttc", "tictactoe"]:
+        key = "start" if key == "main" else "xo"
         
     if key not in ["start", "xo", "pokedex", "leaderboard"]:
         await message.answer("❌ Invalid cover key. Choose `start`, `main`, `xo`, `pokedex`, or `leaderboard`.")
+        return
+
+    # Check if media is attached directly or via reply
+    media_msg = None
+    if message.photo or message.video or message.animation:
+        media_msg = message
+    elif message.reply_to_message and (message.reply_to_message.photo or message.reply_to_message.video or message.reply_to_message.animation):
+        media_msg = message.reply_to_message
+
+    if media_msg:
+        media_type = "photo" if media_msg.photo else ("video" if media_msg.video else "animation")
+        media_value = media_msg.photo[-1].file_id if media_msg.photo else (media_msg.video.file_id if media_msg.video else media_msg.animation.file_id)
+        
+        cover_dir = os.path.join("data", "covers")
+        if os.path.exists(getattr(config, "PERSISTENT_VOLUME", "/app/data_volume")):
+            cover_dir = os.path.join(getattr(config, "PERSISTENT_VOLUME", "/app/data_volume"), "covers")
+        os.makedirs(cover_dir, exist_ok=True)
+        ext = "mp4" if media_type == "video" else ("gif" if media_type == "animation" else "jpg")
+        local_path = os.path.join(cover_dir, f"{key}.{ext}")
+        saved_val = media_value
+        try:
+            await message.bot.download(file=media_value, destination=local_path)
+            if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
+                saved_val = local_path
+        except Exception as e:
+            print(f"Error downloading cover media in cmd_games_set_cover: {e}")
+            
+        await set_custom_cover(key, media_type, saved_val)
+        await message.answer(f"✅ <b>Success!</b> Cover media for <code>{key}</code> has been updated to this {media_type}.", parse_mode="HTML")
         return
         
     if len(parts) >= 3:
         file_id = parts[2]
         media_type = "video" if file_id.startswith("BAA") else "photo"
-        await set_custom_cover(key, media_type, file_id)
-        await message.answer(f"✅ <b>Success!</b> Cover media for <code>{key}</code> has been updated to this custom {media_type} using the provided ID.", parse_mode="HTML")
+        cover_dir = os.path.join("data", "covers")
+        if os.path.exists(getattr(config, "PERSISTENT_VOLUME", "/app/data_volume")):
+            cover_dir = os.path.join(getattr(config, "PERSISTENT_VOLUME", "/app/data_volume"), "covers")
+        os.makedirs(cover_dir, exist_ok=True)
+        ext = "mp4" if media_type == "video" else "jpg"
+        local_path = os.path.join(cover_dir, f"{key}.{ext}")
+        saved_val = file_id
+        try:
+            await message.bot.download(file=file_id, destination=local_path)
+            if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
+                saved_val = local_path
+        except Exception:
+            pass
+        await set_custom_cover(key, media_type, saved_val)
+        await message.answer(f"✅ <b>Success!</b> Cover media for <code>{key}</code> has been updated to this custom {media_type}.", parse_mode="HTML")
         return
         
     active_games_cover_updates[message.from_user.id] = key
@@ -705,18 +749,20 @@ async def cmd_games_set_cover(message: Message):
 @router.message(Command("resetcover", ignore_mention=True))
 async def cmd_games_reset_cover(message: Message):
     user_id = message.from_user.id if message.from_user else 0
-    if user_id not in config.ADMIN_IDS and user_id not in getattr(config, "CO_OWNER_IDS", []) and user_id not in config.OWNER_IDS:
-        await message.answer("❌ Denied. Only the bot owner can configure covers.")
+    is_auth = user_id in config.ADMIN_IDS or user_id in getattr(config, "CO_OWNER_IDS", []) or user_id in getattr(config, "OWNER_IDS", [])
+    if not is_auth:
+        await message.answer("❌ Denied. Only the bot owner or co-owners can configure covers.")
         return
         
-    parts = message.text.split()
+    raw_text = message.text or message.caption or ""
+    parts = raw_text.split()
     if len(parts) < 2:
         await message.answer("⚠️ Format: `/resetcover <start/main/xo/pokedex/leaderboard>`")
         return
         
     key = parts[1].lower()
-    if key == "main":
-        key = "start"
+    if key in ["main", "ttc", "tictactoe"]:
+        key = "start" if key == "main" else "xo"
         
     if key not in ["start", "xo", "pokedex", "leaderboard"]:
         await message.answer("❌ Invalid cover key. Choose `start`, `main`, `xo`, `pokedex`, or `leaderboard`.")
@@ -725,7 +771,7 @@ async def cmd_games_reset_cover(message: Message):
     await delete_custom_cover(key)
     await message.answer(f"✅ Cover for <code>{key}</code> has been reset to default.", parse_mode="HTML")
 
-@router.message(F.chat.type == "private", F.from_user.id.in_(config.ADMIN_IDS), lambda msg: msg.from_user.id in active_games_cover_updates)
+@router.message(F.chat.type == "private", lambda msg: (msg.from_user.id in config.ADMIN_IDS or msg.from_user.id in getattr(config, "CO_OWNER_IDS", []) or msg.from_user.id in getattr(config, "OWNER_IDS", [])) and msg.from_user.id in active_games_cover_updates)
 async def on_games_owner_media_received(message: Message):
     user_id = message.from_user.id
     key = active_games_cover_updates.pop(user_id, None)

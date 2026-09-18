@@ -16,6 +16,8 @@ from utils.settings import send_cover_media
 
 router = Router()
 
+from aiogram.exceptions import TelegramBadRequest
+
 # In-memory dictionary for active XO games
 # Keys:
 # - For AI: f"xo_ai_{chat_id}_{user_id}"
@@ -23,26 +25,56 @@ router = Router()
 active_xo_games = {}
 
 async def edit_xo_message(callback: CallbackQuery, text: str, reply_markup: Optional[InlineKeyboardMarkup] = None):
-    """Safely edits either a media message (caption) or a text message (text)."""
+    """Safely edits either a media message (caption) or a text message (text) with bidirectional fallback."""
     msg = callback.message
     if not msg:
         return
-    try:
-        if msg.photo or msg.video or msg.animation or msg.document:
+    
+    # Try caption if any media is present or if msg has caption
+    is_media = bool(getattr(msg, "photo", None) or getattr(msg, "video", None) or getattr(msg, "animation", None) or getattr(msg, "document", None) or getattr(msg, "caption", None))
+    
+    if is_media:
+        try:
             await msg.edit_caption(
                 caption=text,
                 reply_markup=reply_markup,
                 parse_mode="HTML"
             )
-        else:
+            return
+        except TelegramBadRequest as e:
+            if "not modified" in str(e).lower():
+                return
+            # If Telegram complains there is no caption to edit, fallback to edit_text
+            try:
+                await msg.edit_text(text=text, reply_markup=reply_markup, parse_mode="HTML")
+                return
+            except Exception as e2:
+                if "not modified" not in str(e2).lower():
+                    print(f"Error editing XO message (text fallback): {e2}")
+        except Exception as e:
+            if "not modified" not in str(e).lower():
+                print(f"Error editing XO message: {e}")
+    else:
+        try:
             await msg.edit_text(
                 text=text,
                 reply_markup=reply_markup,
                 parse_mode="HTML"
             )
-    except Exception as e:
-        if "message is not modified" not in str(e).lower():
-            print(f"Error editing XO message: {e}")
+            return
+        except TelegramBadRequest as e:
+            if "not modified" in str(e).lower():
+                return
+            # If Telegram complains there is no text to edit, fallback to edit_caption
+            try:
+                await msg.edit_caption(caption=text, reply_markup=reply_markup, parse_mode="HTML")
+                return
+            except Exception as e2:
+                if "not modified" not in str(e2).lower():
+                    print(f"Error editing XO message (caption fallback): {e2}")
+        except Exception as e:
+            if "not modified" not in str(e).lower():
+                print(f"Error editing XO message: {e}")
 
 
 # -------------------------------------------------------------
@@ -203,15 +235,15 @@ async def delete_message_after(message: Message, delay: int):
 
 @router.message(Command("xo", "ttc", "tictactoe", ignore_mention=True))
 async def cmd_xo(message: Message, db: AsyncSession):
-    if message.chat.type == "private":
-        await message.answer(GROUP_ONLY_GAMES_NOTICE, reply_markup=get_official_group_keyboard(), parse_mode="HTML")
-        return
-
-    user_id = message.from_user.id
-    parts = message.text.split()
+    user_id = message.from_user.id if message.from_user else 0
+    raw_text = message.text or message.caption or ""
+    parts = raw_text.split()
     
     # Check if a PvP challenge is initiated
     if len(parts) >= 2:
+        if message.chat.type == "private":
+            await message.answer("⚠️ PvP challenges can only be played in group chats.")
+            return
         # Format: /xo <bet> <@username/reply>
         bet_str = parts[1]
         if not bet_str.isdigit():

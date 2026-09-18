@@ -329,21 +329,45 @@ async def send_cover_media(chat_id: int, key: str, caption: str, reply_markup, b
     
     # If media_value is a file_id, try to download and cache locally for cross-bot sharing
     if media_value and isinstance(media_value, str) and not os.path.exists(media_value) and not media_value.startswith("http"):
+        cover_dir = os.path.join("data", "covers")
+        if os.path.exists(getattr(config, "PERSISTENT_VOLUME", "/app/data_volume")):
+            cover_dir = os.path.join(getattr(config, "PERSISTENT_VOLUME", "/app/data_volume"), "covers")
+        os.makedirs(cover_dir, exist_ok=True)
+        ext = "mp4" if media_type == "video" else ("gif" if media_type == "animation" else "jpg")
+        dest = os.path.join(cover_dir, f"{key}.{ext}")
+        
+        # 1. Try downloading with current bot
+        downloaded = False
         try:
-            cover_dir = os.path.join("data", "covers")
-            if os.path.exists(getattr(config, "PERSISTENT_VOLUME", "/app/data_volume")):
-                cover_dir = os.path.join(getattr(config, "PERSISTENT_VOLUME", "/app/data_volume"), "covers")
-            os.makedirs(cover_dir, exist_ok=True)
-            ext = "mp4" if media_type == "video" else ("gif" if media_type == "animation" else "jpg")
-            dest = os.path.join(cover_dir, f"{key}.{ext}")
             await bot.download(file=media_value, destination=dest)
             if os.path.exists(dest) and os.path.getsize(dest) > 0:
                 media_value = dest
+                downloaded = True
         except Exception:
             pass
 
-    if not media_type:
-        # Fallback to default
+        # 2. If current bot cannot access file_id, try with other bot token (e.g. Main Bot token)
+        if not downloaded:
+            for candidate_token in [getattr(config, "BOT_TOKEN", None), getattr(config, "GAMES_BOT_TOKEN", None)]:
+                if candidate_token and candidate_token != getattr(bot, "token", None):
+                    fallback_bot = None
+                    try:
+                        fallback_bot = Bot(token=candidate_token)
+                        await fallback_bot.download(file=media_value, destination=dest)
+                        if os.path.exists(dest) and os.path.getsize(dest) > 0:
+                            media_value = dest
+                            downloaded = True
+                            break
+                    except Exception:
+                        pass
+                    finally:
+                        if fallback_bot:
+                            try:
+                                await fallback_bot.session.close()
+                            except Exception:
+                                pass
+
+    if not media_type or (isinstance(media_value, str) and not os.path.exists(media_value) and not media_value.startswith("http") and not media_type):
         if default_file and os.path.exists(default_file):
             media_type = "photo"
             media_value = default_file
@@ -351,15 +375,33 @@ async def send_cover_media(chat_id: int, key: str, caption: str, reply_markup, b
             media_type = "photo"
             media_value = default_url
 
-    return await send_safe_media(
-        bot=bot,
-        chat_id=chat_id,
-        media_type=media_type,
-        media_value=media_value,
-        caption=caption,
-        reply_markup=reply_markup,
-        parse_mode=parse_mode
-    )
+    try:
+        return await send_safe_media(
+            bot=bot,
+            chat_id=chat_id,
+            media_type=media_type,
+            media_value=media_value,
+            caption=caption,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode
+        )
+    except Exception as e:
+        print(f"⚠️ send_cover_media failed for {key} with custom media ({e}). Retrying with default fallback...")
+        fb_val = default_file if (default_file and os.path.exists(default_file)) else default_url
+        if fb_val:
+            try:
+                return await send_safe_media(
+                    bot=bot,
+                    chat_id=chat_id,
+                    media_type="photo",
+                    media_value=fb_val,
+                    caption=caption,
+                    reply_markup=reply_markup,
+                    parse_mode=parse_mode
+                )
+            except Exception:
+                pass
+        return await bot.send_message(chat_id=chat_id, text=caption, reply_markup=reply_markup, parse_mode=parse_mode)
 
 
 async def get_all_custom_rarities(db) -> dict:

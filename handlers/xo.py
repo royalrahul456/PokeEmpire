@@ -250,8 +250,8 @@ async def cmd_xo(message: Message, db: AsyncSession):
             await message.answer("⚠️ Bet amount must be a number.")
             return
         bet = int(bet_str)
-        if bet < 10 or bet > 10000:
-            await message.answer("⚠️ Bet must be between 10 and 10,000 coins.")
+        if bet < 10 or bet > 5000:
+            await message.answer("⚠️ Bet must be between 10 and 5,000 coins.")
             return
             
         target_user = None
@@ -367,7 +367,7 @@ async def cb_xo_pvp_info(callback: CallbackQuery):
         f"👉 <b>How to challenge</b>:\n"
         f"• <code>/xo &lt;bet&gt; @username</code>\n"
         f"• Reply to their message with <code>/xo &lt;bet&gt;</code>\n\n"
-        f"⚠️ <i>Bets can range from 10 to 10,000 coins. Both players must have enough coins.</i>"
+        f"⚠️ <i>Bets can range from 10 to 5,000 coins. Both players must have enough coins.</i>"
     )
     builder = InlineKeyboardBuilder()
     builder.row(create_styled_button(text="🔙 Back to Menu", key="back", style="primary", callback_data=f"xo_menu_back_{user_id}"))

@@ -203,8 +203,8 @@ async def cmd_coinflip(message: Message, db: AsyncSession):
         return
     bet = int(bet_str)
 
-    if bet < 10 or bet > 10000:
-        await message.answer("⚠️ Bet must be between 10 and 10,000 coins.")
+    if bet < 10 or bet > 5000:
+        await message.answer("⚠️ Bet must be between 10 and 5,000 coins.")
         return
 
     # Parse guess
@@ -278,8 +278,8 @@ async def cmd_rps(message: Message, db: AsyncSession):
         return
     bet = int(bet_str)
 
-    if bet < 10 or bet > 10000:
-        await message.answer("⚠️ Bet must be between 10 and 10,000 coins.")
+    if bet < 10 or bet > 5000:
+        await message.answer("⚠️ Bet must be between 10 and 5,000 coins.")
         return
 
     choice = parts[2].lower()
@@ -370,8 +370,8 @@ async def cmd_dice(message: Message, db: AsyncSession):
         return
 
     bet = int(parts[1])
-    if bet < 10 or bet > 100000:
-        await message.answer("⚠️ Bet must be between 10 and 100,000 coins.", parse_mode="HTML")
+    if bet < 10 or bet > 5000:
+        await message.answer("⚠️ Bet must be between 10 and 5,000 coins.", parse_mode="HTML")
         return
 
     stmt = select(User).where(User.id == user_id)
@@ -498,8 +498,8 @@ async def cmd_darts(message: Message, db: AsyncSession):
         return
 
     bet = int(parts[1])
-    if bet < 10 or bet > 100000:
-        await message.answer("⚠️ Bet must be between 10 and 100,000 coins.", parse_mode="HTML")
+    if bet < 10 or bet > 5000:
+        await message.answer("⚠️ Bet must be between 10 and 5,000 coins.", parse_mode="HTML")
         return
 
     stmt = select(User).where(User.id == user_id)
@@ -610,8 +610,8 @@ async def cmd_basketball(message: Message, db: AsyncSession):
         return
 
     bet = int(parts[1])
-    if bet < 10 or bet > 100000:
-        await message.answer("⚠️ Bet must be between 10 and 100,000 coins.", parse_mode="HTML")
+    if bet < 10 or bet > 5000:
+        await message.answer("⚠️ Bet must be between 10 and 5,000 coins.", parse_mode="HTML")
         return
 
     stmt = select(User).where(User.id == user_id)
@@ -689,8 +689,8 @@ async def cmd_football(message: Message, db: AsyncSession):
         return
 
     bet = int(parts[1])
-    if bet < 10 or bet > 100000:
-        await message.answer("⚠️ Bet must be between 10 and 100,000 coins.", parse_mode="HTML")
+    if bet < 10 or bet > 5000:
+        await message.answer("⚠️ Bet must be between 10 and 5,000 coins.", parse_mode="HTML")
         return
 
     stmt = select(User).where(User.id == user_id)
@@ -795,8 +795,8 @@ async def cmd_bowling(message: Message, db: AsyncSession):
         return
 
     bet = int(parts[1])
-    if bet < 10 or bet > 100000:
-        await message.answer("⚠️ Bet must be between 10 and 100,000 coins.", parse_mode="HTML")
+    if bet < 10 or bet > 5000:
+        await message.answer("⚠️ Bet must be between 10 and 5,000 coins.", parse_mode="HTML")
         return
 
     stmt = select(User).where(User.id == user_id)

@@ -113,10 +113,13 @@ async def cmd_battle(message: Message, db: AsyncSession):
     # Parse bet_part
     if bet_part.isdigit():
         bet = int(bet_part)
+        if bet > 5000:
+            await message.answer("⚠️ Battle bet cannot exceed 5,000 coins (or use `nocoin`).")
+            return
     elif bet_part.lower() in ["nocoin", "friendly", "0", "free", "no"]:
         bet = 0
     else:
-        await message.answer("⚠️ Invalid bet amount. Use a positive number or `nocoin`.")
+        await message.answer("⚠️ Invalid bet amount. Use a positive number (up to 5,000) or `nocoin`.")
         return
 
     # Check for active battle involvements

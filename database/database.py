@@ -101,7 +101,7 @@ async def init_db():
     """Initialize the database, creating all tables and seeding Pokémon list."""
     global engine, SessionLocal
     try:
-        await asyncio.wait_for(_create_all_tables(), timeout=4.0)
+        await asyncio.wait_for(_create_all_tables(), timeout=20.0)
     except (asyncio.TimeoutError, Exception) as e:
         safe_print(f"ℹ️ Table creation check completed ({e}).")
 

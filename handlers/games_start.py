@@ -657,3 +657,112 @@ async def cb_check_streak(callback: CallbackQuery, db: AsyncSession):
 async def cmd_arena_streak(message: Message, db: AsyncSession):
     from handlers.games import cmd_streak
     await cmd_streak(message, db)
+
+
+# ==========================================
+# COVER MEDIA CONFIGURATION FOR GAMES BOT
+# ==========================================
+
+import os
+from utils.settings import set_custom_cover, delete_custom_cover
+
+active_games_cover_updates = {}
+
+@router.message(Command("setcover", ignore_mention=True))
+async def cmd_games_set_cover(message: Message):
+    if message.chat.type != "private":
+        await message.answer("⚠️ This command can only be used in private DMs.")
+        return
+        
+    user_id = message.from_user.id if message.from_user else 0
+    if user_id not in config.ADMIN_IDS and user_id not in getattr(config, "CO_OWNER_IDS", []) and user_id not in config.OWNER_IDS:
+        await message.answer("❌ Denied. Only the bot owner or co-owners can configure covers.")
+        return
+        
+    parts = message.text.split()
+    if len(parts) < 2:
+        await message.answer("⚠️ Format: `/setcover <start/main/xo/pokedex/leaderboard> [file_id]`")
+        return
+        
+    key = parts[1].lower()
+    if key == "main":
+        key = "start"
+        
+    if key not in ["start", "xo", "pokedex", "leaderboard"]:
+        await message.answer("❌ Invalid cover key. Choose `start`, `main`, `xo`, `pokedex`, or `leaderboard`.")
+        return
+        
+    if len(parts) >= 3:
+        file_id = parts[2]
+        media_type = "video" if file_id.startswith("BAA") else "photo"
+        await set_custom_cover(key, media_type, file_id)
+        await message.answer(f"✅ <b>Success!</b> Cover media for <code>{key}</code> has been updated to this custom {media_type} using the provided ID.", parse_mode="HTML")
+        return
+        
+    active_games_cover_updates[message.from_user.id] = key
+    await message.answer(f"📷 <b>Ready!</b> Send the photo, video, or animation (GIF) you want to use as the cover for <code>{key}</code>.", parse_mode="HTML")
+
+@router.message(Command("resetcover", ignore_mention=True))
+async def cmd_games_reset_cover(message: Message):
+    user_id = message.from_user.id if message.from_user else 0
+    if user_id not in config.ADMIN_IDS and user_id not in getattr(config, "CO_OWNER_IDS", []) and user_id not in config.OWNER_IDS:
+        await message.answer("❌ Denied. Only the bot owner can configure covers.")
+        return
+        
+    parts = message.text.split()
+    if len(parts) < 2:
+        await message.answer("⚠️ Format: `/resetcover <start/main/xo/pokedex/leaderboard>`")
+        return
+        
+    key = parts[1].lower()
+    if key == "main":
+        key = "start"
+        
+    if key not in ["start", "xo", "pokedex", "leaderboard"]:
+        await message.answer("❌ Invalid cover key. Choose `start`, `main`, `xo`, `pokedex`, or `leaderboard`.")
+        return
+        
+    await delete_custom_cover(key)
+    await message.answer(f"✅ Cover for <code>{key}</code> has been reset to default.", parse_mode="HTML")
+
+@router.message(F.chat.type == "private", F.from_user.id.in_(config.ADMIN_IDS), lambda msg: msg.from_user.id in active_games_cover_updates)
+async def on_games_owner_media_received(message: Message):
+    user_id = message.from_user.id
+    key = active_games_cover_updates.pop(user_id, None)
+    if not key:
+        return
+        
+    media_type = None
+    media_value = None
+    
+    if message.photo:
+        media_type = "photo"
+        media_value = message.photo[-1].file_id
+    elif message.video:
+        media_type = "video"
+        media_value = message.video.file_id
+    elif message.animation:
+        media_type = "animation"
+        media_value = message.animation.file_id
+        
+    if not media_type:
+        await message.answer("❌ Invalid message type. Please send a photo, video, or animation (GIF) to update the cover.")
+        active_games_cover_updates[user_id] = key
+        return
+
+    saved_value = media_value
+    try:
+        cover_dir = os.path.join("data", "covers")
+        if os.path.exists(getattr(config, "PERSISTENT_VOLUME", "/app/data_volume")):
+            cover_dir = os.path.join(getattr(config, "PERSISTENT_VOLUME", "/app/data_volume"), "covers")
+        os.makedirs(cover_dir, exist_ok=True)
+        ext = "mp4" if media_type == "video" else ("gif" if media_type == "animation" else "jpg")
+        local_path = os.path.join(cover_dir, f"{key}.{ext}")
+        await message.bot.download(file=media_value, destination=local_path)
+        if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
+            saved_value = local_path
+    except Exception as e:
+        print(f"Error downloading cover media in games_start: {e}")
+        
+    await set_custom_cover(key, media_type, saved_value)
+    await message.answer(f"✅ <b>Success!</b> The cover media for <code>{key}</code> has been updated to this {media_type}.", parse_mode="HTML")

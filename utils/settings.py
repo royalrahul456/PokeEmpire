@@ -159,7 +159,20 @@ async def save_spawn_settings(settings: dict):
 
 # Custom covers helper functions
 def get_custom_cover(key: str) -> tuple:
-    """Returns (media_type, media_value) or (None, None)"""
+    """Returns (media_type, media_value) or (None, None). Checks local disk first, then cache."""
+    # 1. Check local files on disk
+    cover_dirs = [os.path.join("data", "covers")]
+    if os.path.exists(getattr(config, "PERSISTENT_VOLUME", "/app/data_volume")):
+        cover_dirs.insert(0, os.path.join(getattr(config, "PERSISTENT_VOLUME", "/app/data_volume"), "covers"))
+
+    for c_dir in cover_dirs:
+        if os.path.exists(c_dir):
+            for ext, mtype in [("mp4", "video"), ("webm", "video"), ("gif", "animation"), ("jpg", "photo"), ("jpeg", "photo"), ("png", "photo")]:
+                candidate = os.path.join(c_dir, f"{key}.{ext}")
+                if os.path.exists(candidate) and os.path.getsize(candidate) > 0:
+                    return mtype, candidate
+
+    # 2. Check global settings cache
     config_json = global_settings_cache.get(f"cover_{key}", None)
     if config_json:
         try:
@@ -167,6 +180,26 @@ def get_custom_cover(key: str) -> tuple:
             return data.get("type"), data.get("value")
         except Exception:
             pass
+    return None, None
+
+async def get_custom_cover_async(key: str) -> tuple:
+    """Async retrieval: checks disk, cache, and if missing, queries DB."""
+    m_type, m_val = get_custom_cover(key)
+    if m_type is not None:
+        return m_type, m_val
+
+    try:
+        async with SessionLocal() as db:
+            stmt = select(GlobalSetting).where(GlobalSetting.key == f"cover_{key}")
+            res = await db.execute(stmt)
+            gs = res.scalar_one_or_none()
+            if gs and gs.value:
+                global_settings_cache[f"cover_{key}"] = gs.value
+                data = json.loads(gs.value)
+                return data.get("type"), data.get("value")
+    except Exception as e:
+        print(f"Error querying custom cover from DB: {e}")
+
     return None, None
 
 async def set_custom_cover(key: str, media_type: str, media_value: str):
@@ -187,6 +220,22 @@ async def set_custom_cover(key: str, media_type: str, media_value: str):
 async def delete_custom_cover(key: str):
     if f"cover_{key}" in global_settings_cache:
         del global_settings_cache[f"cover_{key}"]
+
+    # Remove any local files on disk
+    cover_dirs = [os.path.join("data", "covers")]
+    if os.path.exists(getattr(config, "PERSISTENT_VOLUME", "/app/data_volume")):
+        cover_dirs.insert(0, os.path.join(getattr(config, "PERSISTENT_VOLUME", "/app/data_volume"), "covers"))
+
+    for c_dir in cover_dirs:
+        if os.path.exists(c_dir):
+            for ext in ["mp4", "webm", "gif", "jpg", "jpeg", "png"]:
+                candidate = os.path.join(c_dir, f"{key}.{ext}")
+                if os.path.exists(candidate):
+                    try:
+                        os.remove(candidate)
+                    except Exception:
+                        pass
+
     async with SessionLocal() as db:
         stmt = delete(GlobalSetting).where(GlobalSetting.key == f"cover_{key}")
         await db.execute(stmt)
@@ -276,8 +325,23 @@ async def send_safe_media(
 
 async def send_cover_media(chat_id: int, key: str, caption: str, reply_markup, bot: Bot, default_url=None, default_file=None, parse_mode="HTML"):
     """Sends the configured custom media (photo, video, or animation) or falls back to defaults."""
-    media_type, media_value = get_custom_cover(key)
+    media_type, media_value = await get_custom_cover_async(key)
     
+    # If media_value is a file_id, try to download and cache locally for cross-bot sharing
+    if media_value and isinstance(media_value, str) and not os.path.exists(media_value) and not media_value.startswith("http"):
+        try:
+            cover_dir = os.path.join("data", "covers")
+            if os.path.exists(getattr(config, "PERSISTENT_VOLUME", "/app/data_volume")):
+                cover_dir = os.path.join(getattr(config, "PERSISTENT_VOLUME", "/app/data_volume"), "covers")
+            os.makedirs(cover_dir, exist_ok=True)
+            ext = "mp4" if media_type == "video" else ("gif" if media_type == "animation" else "jpg")
+            dest = os.path.join(cover_dir, f"{key}.{ext}")
+            await bot.download(file=media_value, destination=dest)
+            if os.path.exists(dest) and os.path.getsize(dest) > 0:
+                media_value = dest
+        except Exception:
+            pass
+
     if not media_type:
         # Fallback to default
         if default_file and os.path.exists(default_file):

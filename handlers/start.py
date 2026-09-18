@@ -1167,8 +1167,23 @@ async def on_owner_media_received(message: Message):
         # Restore state so they can try again
         active_cover_updates[user_id] = key
         return
+
+    # Download media file locally so both Main Bot and Games Bot can access and send it seamlessly
+    saved_value = media_value
+    try:
+        cover_dir = os.path.join("data", "covers")
+        if os.path.exists(getattr(config, "PERSISTENT_VOLUME", "/app/data_volume")):
+            cover_dir = os.path.join(getattr(config, "PERSISTENT_VOLUME", "/app/data_volume"), "covers")
+        os.makedirs(cover_dir, exist_ok=True)
+        ext = "mp4" if media_type == "video" else ("gif" if media_type == "animation" else "jpg")
+        local_path = os.path.join(cover_dir, f"{key}.{ext}")
+        await message.bot.download(file=media_value, destination=local_path)
+        if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
+            saved_value = local_path
+    except Exception as e:
+        print(f"Error downloading cover media: {e}")
         
-    await set_custom_cover(key, media_type, media_value)
+    await set_custom_cover(key, media_type, saved_value)
     await message.answer(f"✅ <b>Success!</b> The cover media for <code>{key}</code> has been updated to this {media_type}.", parse_mode="HTML")
 
 # Group Admin Settings Console Callbacks

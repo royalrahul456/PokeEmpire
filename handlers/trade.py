@@ -8,8 +8,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, func
 import config
-from database.models import User, Pokemon, UserPokemon
 from utils.formatters import get_rarity_emoji, escape_md
+from utils.settings import is_pokemon_soulbound
 from keyboards.inline import create_styled_button, get_pay_confirm_keyboard
 
 logger = logging.getLogger(__name__)
@@ -419,6 +419,17 @@ async def cmd_trade(message: Message, db: AsyncSession):
             return
         my_up, my_p = my_pair
 
+        # Soulbound check for Proposer's Pokémon
+        if await is_pokemon_soulbound(my_p, my_up, db):
+            await message.answer(
+                f"🔒 <b>SOULBOUND PROTECTION!</b>\n"
+                f"───────────────\n"
+                f"<blockquote>❌ <b>{my_p.name.title()}</b> belongs to the <b>Exclusive / Event Winner</b> rarity tier and is permanently bound to your account.\n\n"
+                f"It cannot be traded or transferred.</blockquote>",
+                parse_mode="HTML"
+            )
+            return
+
         # 2. Query Partner's Pokémon (if swap requested)
         their_up, their_p = None, None
         if their_pokedex_id is not None:
@@ -442,6 +453,17 @@ async def cmd_trade(message: Message, db: AsyncSession):
                 )
                 return
             their_up, their_p = their_pair
+
+            # Soulbound check for Partner's Pokémon
+            if await is_pokemon_soulbound(their_p, their_up, db):
+                await message.answer(
+                    f"🔒 <b>SOULBOUND PROTECTION!</b>\n"
+                    f"───────────────\n"
+                    f"<blockquote>❌ The requested Pokémon (<b>{their_p.name.title()}</b>) belongs to the <b>Exclusive / Event Winner</b> rarity tier and is permanently bound to its owner.\n\n"
+                    f"It cannot be traded.</blockquote>",
+                    parse_mode="HTML"
+                )
+                return
 
         # Safe IV calculation
         my_iv_hp = my_up.iv_hp or 0
@@ -551,6 +573,12 @@ async def cb_trade_accept(callback: CallbackQuery, db: AsyncSession):
                 await callback.message.edit_text("❌ <b>TRADE FAILED</b>: Requested Pokémon is no longer owned by Partner.", parse_mode="HTML")
                 return
             their_up, their_p = their_pair
+
+        # Verify soulbound status before swapping ownership
+        if await is_pokemon_soulbound(my_p, my_up, db) or (their_p and their_up and await is_pokemon_soulbound(their_p, their_up, db)):
+            await callback.answer("❌ Trade failed! Soulbound/Exclusive Pokémon cannot be traded.", show_alert=True)
+            await callback.message.edit_text("❌ <b>TRADE FAILED</b>: Soulbound / Exclusive Pokémon cannot be transferred.", parse_mode="HTML")
+            return
 
         # Perform trade ownership swap
         my_up.user_id = target_id

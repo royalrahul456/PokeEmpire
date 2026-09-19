@@ -11,7 +11,7 @@ import time
 from datetime import datetime, timedelta
 from database.models import User, Pokemon, UserPokemon, Auction, AuctionBid
 from utils.formatters import get_rarity_emoji
-from utils.settings import get_custom_rarity_forms, get_all_custom_rarities, send_safe_media
+from utils.settings import get_custom_rarity_forms, get_all_custom_rarities, send_safe_media, is_pokemon_soulbound
 from handlers.admin import get_single_form_media_value, parse_stored_media_value
 
 router = Router()
@@ -589,6 +589,18 @@ async def cmd_create_auction(message: Message, db: AsyncSession):
             await message.answer(f"❌ You don't own any <b>{pokemon.name.title()}</b> ({form_label}) in your inventory.", parse_mode="HTML")
             return
     else:
+        # Check soulbound/exclusive protection (Owners bypass)
+        if not is_owner:
+            if await is_pokemon_soulbound(pokemon, user_poke, db):
+                await message.answer(
+                    "🔒 <b>SOULBOUND PROTECTION!</b>\n"
+                    "───────────────\n"
+                    "<blockquote>❌ This Pokémon belongs to the <b>Exclusive / Event Winner</b> rarity tier and is permanently bound to your account.\n\n"
+                    "It cannot be listed on auctions or transferred.</blockquote>",
+                    parse_mode="HTML"
+                )
+                return
+
         pokemon_id = user_poke.pokemon_id
         form_index = user_poke.form_index
         is_shiny = user_poke.is_shiny

@@ -10,7 +10,8 @@ from sqlalchemy.orm import joinedload
 from database.models import User, UserPokemon, Pokemon
 from utils.formatters import get_hp_bar, get_progress_bar, get_rarity_emoji, escape_md
 from utils.favorite import get_favorite_id, set_favorite_id
-from utils.settings import send_cover_media, get_custom_cover, get_custom_rarity_forms, get_all_custom_rarities, send_safe_media
+from utils.settings import send_cover_media, get_custom_cover, get_custom_rarity_forms, get_all_custom_rarities, send_safe_media, is_pokemon_soulbound
+import config
 
 from keyboards.inline import create_styled_button, get_tx_pagination_keyboard, get_gift_confirm_keyboard
 
@@ -2283,6 +2284,22 @@ async def cmd_gift(message: Message, db: AsyncSession):
         await message.answer(f"❌ You do not own a <b>{f_name}</b> form of Pokédex #{pokedex_id:03d}!", parse_mode="HTML")
         return
 
+    # Check soulbound/exclusive status (Bot Owner & Admins bypass)
+    is_sender_admin = (
+        message.from_user.id in config.ADMIN_IDS
+        or message.from_user.id in getattr(config, "CO_OWNER_IDS", [])
+        or message.from_user.id in getattr(config, "OWNER_IDS", [])
+    )
+    if not is_sender_admin and await is_pokemon_soulbound(up.pokemon, up, db):
+        await message.answer(
+            f"🔒 <b>SOULBOUND PROTECTION!</b>\n"
+            f"───────────────\n"
+            f"<blockquote>❌ <b>{up.pokemon.name.title()}</b> belongs to the <b>Exclusive / Event Winner</b> rarity tier and is permanently bound to your account.\n\n"
+            f"It cannot be gifted or transferred.</blockquote>",
+            parse_mode="HTML"
+        )
+        return
+
     shiny_badge = "✨ Shiny " if up.is_shiny else ""
     form_names = {
         0: "",
@@ -2335,6 +2352,20 @@ async def cb_gift_confirm(callback: CallbackQuery, db: AsyncSession):
             await callback.answer("❌ Pokémon is no longer in your bag!", show_alert=True)
             try:
                 await callback.message.edit_text("❌ <b>Gift Failed</b>: Pokémon is no longer in your bag.", parse_mode="HTML")
+            except Exception:
+                pass
+            return
+
+        # Soulbound check on confirmation (Admins & Owners bypass)
+        is_sender_admin = (
+            sender_id in config.ADMIN_IDS
+            or sender_id in getattr(config, "CO_OWNER_IDS", [])
+            or sender_id in getattr(config, "OWNER_IDS", [])
+        )
+        if not is_sender_admin and await is_pokemon_soulbound(up.pokemon, up, db):
+            await callback.answer("❌ This Pokémon is soulbound/exclusive and cannot be gifted.", show_alert=True)
+            try:
+                await callback.message.edit_text("❌ <b>Gift Failed</b>: Soulbound / Exclusive Pokémon cannot be transferred.", parse_mode="HTML")
             except Exception:
                 pass
             return

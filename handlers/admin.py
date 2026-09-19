@@ -553,11 +553,209 @@ async def cmd_delete_coins(message: Message, db: AsyncSession):
     
     await message.answer(caption, parse_mode="HTML")
 
+
+@router.message(Command("delpokemon", "dltpokemon", "removepokemon", "deletepokemon", "takepokemon", ignore_mention=True))
+async def cmd_delete_pokemon(message: Message, db: AsyncSession):
+    user_id = message.from_user.id if message.from_user else 0
+    is_auth = (
+        user_id in config.ADMIN_IDS
+        or user_id in getattr(config, "CO_OWNER_IDS", [])
+        or user_id in getattr(config, "OWNER_IDS", [])
+    )
+    if not is_auth:
+        await message.answer("❌ Denied. Only Bot Admins & Bot Owners can delete Pokémon from users.")
+        return
+
+    parts = message.text.split()
+    target_user = None
+    poke_arg = None
+
+    if message.reply_to_message:
+        if len(parts) < 2:
+            await message.answer(
+                "⚠️ <b>Format (by reply):</b> <code>/delpokemon &lt;pokedex_id/name&gt;[.form_index]</code>\n"
+                "<i>(e.g., <code>/delpokemon 6.1</code> or <code>/delpokemon #006-1234</code> or <code>/delpokemon all</code>)</i>",
+                parse_mode="HTML"
+            )
+            return
+        poke_arg = parts[1].strip()
+        target_tg_user = message.reply_to_message.from_user
+        if not target_tg_user:
+            await message.answer("❌ Invalid target user.")
+            return
+
+        stmt = select(User).where(User.id == target_tg_user.id)
+        res = await db.execute(stmt)
+        target_user = res.scalar_one_or_none()
+        if not target_user:
+            await message.answer("❌ Target user is not registered in the database.")
+            return
+    else:
+        if len(parts) < 3:
+            await message.answer(
+                "⚠️ <b>Format:</b> <code>/delpokemon &lt;@username/user_id&gt; &lt;pokedex_id/name&gt;[.form_index]</code>\n"
+                "<i>(or reply to their message with <code>/delpokemon &lt;pokedex_id/name&gt;[.form_index]</code>)</i>",
+                parse_mode="HTML"
+            )
+            return
+
+        target_str = parts[1].strip()
+        poke_arg = parts[2].strip()
+
+        if target_str.isdigit():
+            u_id = int(target_str)
+            stmt = select(User).where(User.id == u_id)
+            res = await db.execute(stmt)
+            target_user = res.scalar_one_or_none()
+            if not target_user:
+                await message.answer(f"❌ User ID {u_id} is not registered in the database.")
+                return
+        elif target_str.startswith("@"):
+            username = target_str.replace("@", "").strip()
+            stmt = select(User).where(func.lower(User.username) == username.lower())
+            res = await db.execute(stmt)
+            target_user = res.scalar_one_or_none()
+            if not target_user:
+                await message.answer(f"❌ User with username @{username} not found in database.")
+                return
+        else:
+            await message.answer("⚠️ Target must be a user ID or @username.")
+            return
+
+    # Case 1: Delete all
+    if poke_arg.lower() == "all":
+        count_stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == target_user.id)
+        count_res = await db.execute(count_stmt)
+        total_pokes = count_res.scalar() or 0
+
+        del_stmt = delete(UserPokemon).where(UserPokemon.user_id == target_user.id)
+        await db.execute(del_stmt)
+        await db.commit()
+
+        admin_name = message.from_user.first_name or "Admin"
+        target_name = target_user.nickname or target_user.username or "Trainer"
+        await message.answer(
+            f"🗑️ <b>ALL POKÉMON REMOVED!</b>\n"
+            f"───────────────\n"
+            f"<blockquote>👮‍♂️ Admin: <b>{html.escape(admin_name)}</b>\n"
+            f"👤 Target: <b>{html.escape(target_name)}</b> (<code>{target_user.id}</code>)\n"
+            f"🔥 Deleted: <b>{total_pokes} Pokémon</b> from inventory</blockquote>",
+            parse_mode="HTML"
+        )
+        return
+
+    # Case 2: Delete by serial number
+    if poke_arg.startswith("#") and len(poke_arg) > 4:
+        stmt = select(UserPokemon).where(
+            UserPokemon.user_id == target_user.id,
+            func.lower(UserPokemon.serial_number) == poke_arg.lower()
+        ).limit(1)
+        res = await db.execute(stmt)
+        user_poke = res.scalar_one_or_none()
+        if not user_poke:
+            await message.answer(f"❌ Could not find Pokémon with serial number <code>{poke_arg}</code> in their inventory.", parse_mode="HTML")
+            return
+
+        stmt_p = select(Pokemon).where(Pokemon.id == user_poke.pokemon_id)
+        res_p = await db.execute(stmt_p)
+        pokemon = res_p.scalar_one_or_none()
+
+        await db.delete(user_poke)
+        await db.commit()
+
+        admin_name = message.from_user.first_name or "Admin"
+        target_name = target_user.nickname or target_user.username or "Trainer"
+        poke_name = pokemon.name.title() if pokemon else "Pokémon"
+        await message.answer(
+            f"🗑️ <b>POKÉMON REMOVED!</b>\n"
+            f"───────────────\n"
+            f"<blockquote>👮‍♂️ Admin: <b>{html.escape(admin_name)}</b>\n"
+            f"👤 Target: <b>{html.escape(target_name)}</b> (<code>{target_user.id}</code>)\n"
+            f"📛 Pokémon: <b>{poke_name}</b> (🎫 <code>{poke_arg}</code>)\n"
+            f"🗑️ Status: <b>Removed from inventory</b></blockquote>",
+            parse_mode="HTML"
+        )
+        return
+
+    # Case 3: Delete by pokedex_id or name (with optional form_index)
+    form_index = None
+    poke_query = poke_arg
+    if "." in poke_arg:
+        pq, fq = poke_arg.split(".", 1)
+        if fq.isdigit():
+            form_index = int(fq)
+        poke_query = pq
+
+    if poke_query.isdigit():
+        stmt_p = select(Pokemon).where(Pokemon.id == int(poke_query))
+    else:
+        stmt_p = select(Pokemon).where(func.lower(Pokemon.name) == poke_query.lower())
+    res_p = await db.execute(stmt_p)
+    pokemon = res_p.scalar_one_or_none()
+
+    if not pokemon:
+        await message.answer(f"❌ Pokémon '{poke_query}' not found in database.")
+        return
+
+    if form_index is not None:
+        stmt_up = select(UserPokemon).where(
+            UserPokemon.user_id == target_user.id,
+            UserPokemon.pokemon_id == pokemon.id,
+            UserPokemon.form_index == form_index
+        ).order_by(UserPokemon.id.desc()).limit(1)
+    else:
+        stmt_up = select(UserPokemon).where(
+            UserPokemon.user_id == target_user.id,
+            UserPokemon.pokemon_id == pokemon.id
+        ).order_by(UserPokemon.form_index.desc(), UserPokemon.id.desc()).limit(1)
+
+    res_up = await db.execute(stmt_up)
+    user_poke = res_up.scalar_one_or_none()
+
+    if not user_poke:
+        form_str = f" (Form {form_index})" if form_index is not None else ""
+        await message.answer(f"❌ Trainer does not own any <b>{pokemon.name.title()}</b>{form_str} in their inventory.", parse_mode="HTML")
+        return
+
+    f_idx = user_poke.form_index
+    serial = user_poke.serial_number
+    shiny_tag = "✨ Shiny " if user_poke.is_shiny else ""
+
+    await db.delete(user_poke)
+    await db.commit()
+
+    custom_forms = await get_custom_rarity_forms(db)
+    form_names = {0: "", 1: "AMV ", 2: "Dmax ", 3: "Gmax ", 4: "Z-Move ", 5: "Terastal "}
+    for c_idx, (r_name, _) in custom_forms.items():
+        form_names[c_idx] = f"{r_name} "
+    form_label = form_names.get(f_idx, f"Form {f_idx} ")
+    r_emoji = get_rarity_emoji(pokemon.rarity)
+    serial_str = f" (🎫 {serial})" if serial else ""
+
+    admin_name = message.from_user.first_name or "Admin"
+    target_name = target_user.nickname or target_user.username or "Trainer"
+
+    await message.answer(
+        f"🗑️ <b>POKÉMON REMOVED!</b>\n"
+        f"───────────────\n"
+        f"<blockquote>👮‍♂️ Admin: <b>{html.escape(admin_name)}</b>\n"
+        f"👤 Target: <b>{html.escape(target_name)}</b> (<code>{target_user.id}</code>)\n"
+        f"📛 Pokémon: {r_emoji} {shiny_tag}{form_label}<b>{pokemon.name.title()}</b>{serial_str}\n"
+        f"🗑️ Status: <b>Removed from inventory</b></blockquote>",
+        parse_mode="HTML"
+    )
+
+
 @router.message(Command("giftpokemon", ignore_mention=True))
 async def cmd_gift_pokemon(message: Message, db: AsyncSession):
-    # Only bot owner can use this
-    if not config.ADMIN_IDS or message.from_user.id not in config.ADMIN_IDS:
-        await message.answer("❌ Denied. Only the Bot Owner can use this command.")
+    user_id = message.from_user.id if message.from_user else 0
+    is_auth = (
+        user_id in config.ADMIN_IDS
+        or user_id in getattr(config, "CO_OWNER_IDS", [])
+        or user_id in getattr(config, "OWNER_IDS", [])
+    )
+    if not is_auth:
+        await message.answer("❌ Denied. Only Bot Admins & Owners can use this command.")
         return
 
     # Parse arguments

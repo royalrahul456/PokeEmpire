@@ -444,3 +444,41 @@ async def get_custom_rarity_forms(db) -> dict[int, tuple[str, str]]:
         next_idx += 1
         
     return mapping
+
+
+async def is_pokemon_soulbound(pokemon, user_pokemon=None, db=None) -> bool:
+    """Checks if a Pokémon or its form belongs to the soulbound/event-winner exclusive rarity tier."""
+    keywords = ("exclusive", "event", "winner", "bound")
+
+    # 1. Check Pokémon base rarity
+    if pokemon and getattr(pokemon, "rarity", None):
+        r = str(pokemon.rarity).lower()
+        if any(k in r for k in keywords):
+            return True
+
+    # 2. Check UserPokemon form_index (custom form rarity)
+    if user_pokemon and getattr(user_pokemon, "form_index", 0) > 0 and db:
+        try:
+            custom_forms = await get_custom_rarity_forms(db)
+            if user_pokemon.form_index in custom_forms:
+                form_name, _ = custom_forms[user_pokemon.form_index]
+                fn = str(form_name).lower()
+                if any(k in fn for k in keywords):
+                    return True
+        except Exception:
+            pass
+
+    # 3. Check custom_rarities list in DB if available
+    if db and pokemon and getattr(pokemon, "rarity", None):
+        try:
+            custom_rarities = await get_all_custom_rarities(db)
+            for r_name in custom_rarities.keys():
+                rn_lower = str(r_name).lower()
+                if any(k in rn_lower for k in keywords):
+                    if str(pokemon.rarity).lower() == rn_lower:
+                        return True
+        except Exception:
+            pass
+
+    return False
+

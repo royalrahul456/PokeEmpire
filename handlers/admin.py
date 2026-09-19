@@ -3009,3 +3009,180 @@ async def cmd_fine(message: Message, db: AsyncSession):
     )
     await message.answer(fine_card, parse_mode="HTML")
 
+
+@router.message(Command("setdexname", ignore_mention=True))
+async def cmd_set_dex_name(message: Message, db: AsyncSession):
+    user_id = message.from_user.id if message.from_user else 0
+    is_auth = (
+        user_id in config.ADMIN_IDS
+        or user_id in getattr(config, "CO_OWNER_IDS", [])
+        or user_id in getattr(config, "OWNER_IDS", [])
+    )
+    if not is_auth:
+        await message.answer("❌ Denied. Only Bot Admins & Owners can change Pokédex names.")
+        return
+
+    target_user_obj = None
+    target_id = None
+    target_name = None
+    new_dex_name = None
+
+    # Case 1: Reply to a message
+    if message.reply_to_message and message.reply_to_message.from_user:
+        replied = message.reply_to_message.from_user
+        if replied.is_bot:
+            await message.answer("❌ You cannot set Pokédex name for a bot!")
+            return
+
+        parts = message.text.split(maxsplit=1)
+        if len(parts) < 2 or not parts[1].strip():
+            await message.answer("⚠️ <b>Usage (by reply):</b> <code>/setdexname &lt;new_pokedex_name&gt;</code>", parse_mode="HTML")
+            return
+
+        new_dex_name = parts[1].strip()
+        target_id = replied.id
+        stmt = select(User).where(User.id == target_id)
+        res = await db.execute(stmt)
+        target_user_obj = res.scalar_one_or_none()
+        target_name = html.escape(target_user_obj.pokedex_name or target_user_obj.nickname or replied.first_name or "Trainer") if target_user_obj else html.escape(replied.first_name or "Trainer")
+
+    # Case 2: Mention or ID in text
+    else:
+        parts = message.text.split(maxsplit=2)
+        if len(parts) < 3:
+            await message.answer(
+                "⚠️ <b>Set Pokédex Name Usage:</b>\n"
+                "• Reply to a user's message with: <code>/setdexname &lt;new_pokedex_name&gt;</code>\n"
+                "• Or type: <code>/setdexname &lt;user_id/@username&gt; &lt;new_pokedex_name&gt;</code>\n"
+                "<i>(Maximum 50 characters)</i>",
+                parse_mode="HTML"
+            )
+            return
+
+        target_arg = parts[1].strip()
+        new_dex_name = parts[2].strip()
+
+        if target_arg.isdigit():
+            target_id = int(target_arg)
+            stmt = select(User).where(User.id == target_id)
+            res = await db.execute(stmt)
+            target_user_obj = res.scalar_one_or_none()
+            target_name = html.escape(target_user_obj.pokedex_name or target_user_obj.nickname or "Trainer") if target_user_obj else f"User {target_id}"
+        else:
+            clean_uname = target_arg.lstrip("@").lower()
+            stmt = select(User).where(func.lower(User.username) == clean_uname)
+            res = await db.execute(stmt)
+            target_user_obj = res.scalar_one_or_none()
+            if target_user_obj:
+                target_id = target_user_obj.id
+                target_name = html.escape(target_user_obj.pokedex_name or target_user_obj.nickname or target_user_obj.username or "Trainer")
+            else:
+                await message.answer(f"❌ Could not find trainer <code>@{clean_uname}</code> in database.", parse_mode="HTML")
+                return
+
+    if not target_user_obj:
+        await message.answer("❌ This user has no registered account or data in PokeEmpire.")
+        return
+
+    if len(new_dex_name) > 50:
+        await message.answer("⚠️ Pokédex name cannot exceed 50 characters.")
+        return
+
+    old_dex_name = target_user_obj.pokedex_name or target_user_obj.nickname or "Default"
+    target_user_obj.pokedex_name = new_dex_name
+    await db.commit()
+
+    admin_name = html.escape(message.from_user.first_name or "Admin") if message.from_user else "Admin"
+    await message.answer(
+        f"📖 <b>POKÉDEX NAME UPDATED</b> 📖\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"👤 <b>Trainer:</b> <b>{target_name}</b> (<code>{target_id}</code>)\n"
+        f"🏷 <b>Previous Name:</b> <code>{html.escape(old_dex_name)}</code>\n"
+        f"✨ <b>New Pokédex Name:</b> <b>{html.escape(new_dex_name)}</b>\n"
+        f"👮‍♂️ <b>Updated by Admin:</b> <b>{admin_name}</b>\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"<i>The new Pokédex title will now appear in their /pokedex!</i>",
+        parse_mode="HTML"
+    )
+
+
+@router.message(Command("resetdexname", ignore_mention=True))
+async def cmd_reset_dex_name(message: Message, db: AsyncSession):
+    user_id = message.from_user.id if message.from_user else 0
+    is_auth = (
+        user_id in config.ADMIN_IDS
+        or user_id in getattr(config, "CO_OWNER_IDS", [])
+        or user_id in getattr(config, "OWNER_IDS", [])
+    )
+    if not is_auth:
+        await message.answer("❌ Denied. Only Bot Admins & Owners can reset Pokédex names.")
+        return
+
+    target_user_obj = None
+    target_id = None
+    target_name = None
+
+    # Case 1: Reply to a message
+    if message.reply_to_message and message.reply_to_message.from_user:
+        replied = message.reply_to_message.from_user
+        if replied.is_bot:
+            await message.answer("❌ Bots do not have a Pokédex!")
+            return
+
+        target_id = replied.id
+        stmt = select(User).where(User.id == target_id)
+        res = await db.execute(stmt)
+        target_user_obj = res.scalar_one_or_none()
+        target_name = html.escape(target_user_obj.pokedex_name or target_user_obj.nickname or replied.first_name or "Trainer") if target_user_obj else html.escape(replied.first_name or "Trainer")
+
+    # Case 2: Mention or ID in text
+    else:
+        parts = message.text.split()
+        if len(parts) < 2:
+            await message.answer(
+                "⚠️ <b>Reset Pokédex Name Usage:</b>\n"
+                "• Reply to a user's message with: <code>/resetdexname</code>\n"
+                "• Or type: <code>/resetdexname &lt;user_id/@username&gt;</code>",
+                parse_mode="HTML"
+            )
+            return
+
+        target_arg = parts[1].strip()
+
+        if target_arg.isdigit():
+            target_id = int(target_arg)
+            stmt = select(User).where(User.id == target_id)
+            res = await db.execute(stmt)
+            target_user_obj = res.scalar_one_or_none()
+            target_name = html.escape(target_user_obj.pokedex_name or target_user_obj.nickname or "Trainer") if target_user_obj else f"User {target_id}"
+        else:
+            clean_uname = target_arg.lstrip("@").lower()
+            stmt = select(User).where(func.lower(User.username) == clean_uname)
+            res = await db.execute(stmt)
+            target_user_obj = res.scalar_one_or_none()
+            if target_user_obj:
+                target_id = target_user_obj.id
+                target_name = html.escape(target_user_obj.pokedex_name or target_user_obj.nickname or target_user_obj.username or "Trainer")
+            else:
+                await message.answer(f"❌ Could not find trainer <code>@{clean_uname}</code> in database.", parse_mode="HTML")
+                return
+
+    if not target_user_obj:
+        await message.answer("❌ This user has no registered account or data in PokeEmpire.")
+        return
+
+    target_user_obj.pokedex_name = None
+    await db.commit()
+
+    admin_name = html.escape(message.from_user.first_name or "Admin") if message.from_user else "Admin"
+    await message.answer(
+        f"🔄 <b>POKÉDEX NAME RESET</b> 🔄\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"👤 <b>Trainer:</b> <b>{target_name}</b> (<code>{target_id}</code>)\n"
+        f"✨ <b>Pokédex Name:</b> <i>Reset to default (nickname / Telegram first name)</i>\n"
+        f"👮‍♂️ <b>Reset by Admin:</b> <b>{admin_name}</b>\n"
+        f"◈ ────────────────────────── ◈",
+        parse_mode="HTML"
+    )
+
+

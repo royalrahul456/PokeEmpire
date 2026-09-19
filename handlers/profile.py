@@ -274,6 +274,12 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
     total_species_res = await db.execute(total_species_stmt)
     total_species = total_species_res.scalar() or 0
 
+    # Resolve display name: custom admin pokedex_name takes priority, then user nickname/passed nickname
+    u_stmt = select(User).where(User.id == user_id)
+    u_res = await db.execute(u_stmt)
+    u_obj = u_res.scalar_one_or_none()
+    display_name = (u_obj.pokedex_name or u_obj.nickname or nickname) if u_obj else nickname
+
     # 2. Get distinct entries caught by this user: (pokemon_id, form_index, total_caught, has_shiny)
     if view_mode == "all":
         stmt = (
@@ -324,7 +330,7 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
     if total_caught_distinct == 0:
         filter_str = f" ({html.escape(filter_label)})" if rarity_filter and rarity_filter != "All" else ""
         text = (
-            f"📖 <b>{html.escape(nickname)}'s Pokédex</b>{filter_str}\n"
+            f"📖 <b>{html.escape(display_name)}'s Pokédex</b>{filter_str}\n"
             f"◈ ────────────────── ◈\n\n"
             f"⚠️ <b>Your Pokédex is empty!</b>\n"
             f"Catch wild Pokémon in group chats to register them in your Pokédex."
@@ -353,7 +359,7 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
 
     filter_str = f" ({html.escape(filter_label)})" if rarity_filter and rarity_filter != "All" else ""
     text = (
-        f"📖 <b>{html.escape(nickname)}'s Pokédex</b>{filter_str}\n"
+        f"📖 <b>{html.escape(display_name)}'s Pokédex</b>{filter_str}\n"
         f"◈ ────────────────── ◈\n"
         f"📊 <b>Completion:</b> <code>{unique_species_caught}/{total_species}</code> species (<b>{percent}%</b>)\n"
         f"<code>[{bar}]</code>\n"
@@ -473,7 +479,7 @@ async def cmd_pokedex(message: Message, db: AsyncSession):
         u_stmt = select(User).where(User.id == user_id)
         u_res = await db.execute(u_stmt)
         user = u_res.scalar_one_or_none()
-        nickname = user.nickname if (user and user.nickname) else (message.from_user.first_name or "Trainer")
+        nickname = (user.pokedex_name or user.nickname) if (user and (user.pokedex_name or user.nickname)) else (message.from_user.first_name or "Trainer")
 
         text, final_page, max_page = await get_pokedex_data(user_id, nickname, page, "All", db)
         

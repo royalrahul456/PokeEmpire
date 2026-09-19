@@ -619,7 +619,7 @@ async def cb_dm_dex(callback: CallbackQuery, db: AsyncSession):
     u_stmt = select(User).where(User.id == user_id)
     u_res = await db.execute(u_stmt)
     user = u_res.scalar_one_or_none()
-    nickname = user.nickname if (user and user.nickname) else (callback.from_user.first_name or "Trainer")
+    nickname = (user.pokedex_name or user.nickname) if (user and (user.pokedex_name or user.nickname)) else (callback.from_user.first_name or "Trainer")
 
     from handlers.profile import get_pokedex_data, get_player_cover_media
     text, final_page, max_page = await get_pokedex_data(user_id, nickname, page, "All", db)

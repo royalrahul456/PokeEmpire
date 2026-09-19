@@ -655,7 +655,7 @@ async def cmd_achievements(message: Message, db: AsyncSession):
     unlocked_count = sum(1 for _, target in ACHIEVEMENTS if total_catches >= target)
 
     lines = []
-    lines.append(f"🏆 <b>Achievements — {html.escape(user.nickname or nickname)}</b>")
+    lines.append(f"🏆 <b>Achievements — {html.escape(user.profile_name or user.nickname or nickname)}</b>")
     lines.append(f"Unlocked: {unlocked_count}/8\n")
 
     for title, target in ACHIEVEMENTS:
@@ -691,7 +691,7 @@ async def cmd_balance(message: Message, db: AsyncSession):
             db.add(user)
             await db.commit()
 
-        name = html.escape(user.nickname or message.from_user.first_name or "Trainer")
+        name = html.escape(user.profile_name or user.nickname or message.from_user.first_name or "Trainer")
         text = (
             f"💰 <b>TRAINER BALANCE</b> 💰\n"
             f"───────────────\n"
@@ -743,7 +743,7 @@ async def cmd_streak(message: Message, db: AsyncSession):
         bar_chars = "█" * 10
         
     text = (
-        f"🔥 <b>Daily Streak — {html.escape(user.nickname or user.username or message.from_user.first_name or 'Trainer')}</b>\n\n"
+        f"🔥 <b>Daily Streak — {html.escape(user.profile_name or user.nickname or user.username or message.from_user.first_name or 'Trainer')}</b>\n\n"
         f"<blockquote>💧 <b>Status</b>: <code>{status_str}</code>\n"
         f"🎁 <b>Current</b>: <code>{current_days} days</code>\n"
         f"🏆 <b>Best</b>: <code>{best_days} days</code>\n"
@@ -791,7 +791,7 @@ async def cmd_streak_leaderboard(message: Message, db: AsyncSession):
     for idx, (uid, uinfo) in enumerate(filtered_users):
         user = users_dict.get(uid)
         username = user.username if user else None
-        nickname = user.nickname if user else f"Trainer_{uid}"
+        nickname = (user.profile_name or user.nickname) if user else f"Trainer_{uid}"
         curr = uinfo.get("current_streak", 0)
         best = uinfo.get("best_streak", 0)
         
@@ -893,7 +893,7 @@ async def cmd_profile(message: Message, db: AsyncSession):
         forms_breakdown_text = "\n".join(forms_lines)
 
         formatted_coins = f"{user.coins:,}"
-        user_nickname = user.nickname if (user and user.nickname) else (message.from_user.first_name or "Trainer")
+        user_nickname = (user.profile_name or user.nickname) if (user and (user.profile_name or user.nickname)) else (message.from_user.first_name or "Trainer")
 
         rank_stmt = (
             select(func.count())
@@ -1792,7 +1792,7 @@ async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
         user = u_res.scalar_one_or_none()
         
         formatted_coins = f"{user.coins:,}" if user else "0"
-        user_nickname = user.nickname if (user and user.nickname) else (callback.from_user.first_name or "Trainer")
+        user_nickname = (user.profile_name or user.nickname) if (user and (user.profile_name or user.nickname)) else (callback.from_user.first_name or "Trainer")
 
         rank_stmt = (
             select(func.count())

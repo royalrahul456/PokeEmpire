@@ -124,6 +124,7 @@ async def init_db():
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_goal_date VARCHAR(20);",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_goal_count INTEGER DEFAULT 0;",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS pokedex_name VARCHAR(100);",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_name VARCHAR(100);",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS trainer_level INTEGER DEFAULT 1;",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS trainer_xp INTEGER DEFAULT 0;",
             # Fix active_mines_games schema if old columns exist
@@ -196,6 +197,7 @@ async def init_db():
                     ("last_goal_date", "VARCHAR(20)"),
                     ("daily_goal_count", "INTEGER DEFAULT 0"),
                     ("pokedex_name", "VARCHAR(100)"),
+                    ("profile_name", "VARCHAR(100)"),
                     ("trainer_level", "INTEGER DEFAULT 1"),
                     ("trainer_xp", "INTEGER DEFAULT 0")
                 ]

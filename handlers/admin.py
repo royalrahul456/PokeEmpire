@@ -3186,3 +3186,181 @@ async def cmd_reset_dex_name(message: Message, db: AsyncSession):
     )
 
 
+@router.message(Command("setprofilename", "setprofile", "setname", ignore_mention=True))
+async def cmd_set_profile_name(message: Message, db: AsyncSession):
+    user_id = message.from_user.id if message.from_user else 0
+    is_auth = (
+        user_id in config.ADMIN_IDS
+        or user_id in getattr(config, "CO_OWNER_IDS", [])
+        or user_id in getattr(config, "OWNER_IDS", [])
+    )
+    if not is_auth:
+        await message.answer("❌ Denied. Only Bot Admins & Owners can change profile names.")
+        return
+
+    target_user_obj = None
+    target_id = None
+    target_name = None
+    new_profile_name = None
+
+    # Case 1: Reply to a message
+    if message.reply_to_message and message.reply_to_message.from_user:
+        replied = message.reply_to_message.from_user
+        if replied.is_bot:
+            await message.answer("❌ You cannot set profile name for a bot!")
+            return
+
+        parts = message.text.split(maxsplit=1)
+        if len(parts) < 2 or not parts[1].strip():
+            await message.answer("⚠️ <b>Usage (by reply):</b> <code>/setprofilename &lt;new_profile_name&gt;</code>", parse_mode="HTML")
+            return
+
+        new_profile_name = parts[1].strip()
+        target_id = replied.id
+        stmt = select(User).where(User.id == target_id)
+        res = await db.execute(stmt)
+        target_user_obj = res.scalar_one_or_none()
+        target_name = html.escape(target_user_obj.profile_name or target_user_obj.nickname or replied.first_name or "Trainer") if target_user_obj else html.escape(replied.first_name or "Trainer")
+
+    # Case 2: Mention or ID in text
+    else:
+        parts = message.text.split(maxsplit=2)
+        if len(parts) < 3:
+            await message.answer(
+                "⚠️ <b>Set Profile Name Usage:</b>\n"
+                "• Reply to a user's message with: <code>/setprofilename &lt;new_profile_name&gt;</code>\n"
+                "• Or type: <code>/setprofilename &lt;user_id/@username&gt; &lt;new_profile_name&gt;</code>\n"
+                "<i>(Aliases: /setprofile, /setname | Maximum 50 characters)</i>",
+                parse_mode="HTML"
+            )
+            return
+
+        target_arg = parts[1].strip()
+        new_profile_name = parts[2].strip()
+
+        if target_arg.isdigit():
+            target_id = int(target_arg)
+            stmt = select(User).where(User.id == target_id)
+            res = await db.execute(stmt)
+            target_user_obj = res.scalar_one_or_none()
+            target_name = html.escape(target_user_obj.profile_name or target_user_obj.nickname or "Trainer") if target_user_obj else f"User {target_id}"
+        else:
+            clean_uname = target_arg.lstrip("@").lower()
+            stmt = select(User).where(func.lower(User.username) == clean_uname)
+            res = await db.execute(stmt)
+            target_user_obj = res.scalar_one_or_none()
+            if target_user_obj:
+                target_id = target_user_obj.id
+                target_name = html.escape(target_user_obj.profile_name or target_user_obj.nickname or target_user_obj.username or "Trainer")
+            else:
+                await message.answer(f"❌ Could not find trainer <code>@{clean_uname}</code> in database.", parse_mode="HTML")
+                return
+
+    if not target_user_obj:
+        await message.answer("❌ This user has no registered account or data in PokeEmpire.")
+        return
+
+    if len(new_profile_name) > 50:
+        await message.answer("⚠️ Profile name cannot exceed 50 characters.")
+        return
+
+    old_profile_name = target_user_obj.profile_name or target_user_obj.nickname or "Default"
+    target_user_obj.profile_name = new_profile_name
+    await db.commit()
+
+    admin_name = html.escape(message.from_user.first_name or "Admin") if message.from_user else "Admin"
+    await message.answer(
+        f"🏆 <b>PROFILE NAME UPDATED</b> 🏆\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"👤 <b>Trainer:</b> <b>{target_name}</b> (<code>{target_id}</code>)\n"
+        f"🏷 <b>Previous Name:</b> <code>{html.escape(old_profile_name)}</code>\n"
+        f"✨ <b>New Profile Name:</b> <b>{html.escape(new_profile_name)}</b>\n"
+        f"👮‍♂️ <b>Updated by Admin:</b> <b>{admin_name}</b>\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"<i>The new trainer name will now appear in their /profile and rank cards!</i>",
+        parse_mode="HTML"
+    )
+
+
+@router.message(Command("resetprofilename", "resetprofile", "resetname", ignore_mention=True))
+async def cmd_reset_profile_name(message: Message, db: AsyncSession):
+    user_id = message.from_user.id if message.from_user else 0
+    is_auth = (
+        user_id in config.ADMIN_IDS
+        or user_id in getattr(config, "CO_OWNER_IDS", [])
+        or user_id in getattr(config, "OWNER_IDS", [])
+    )
+    if not is_auth:
+        await message.answer("❌ Denied. Only Bot Admins & Owners can reset profile names.")
+        return
+
+    target_user_obj = None
+    target_id = None
+    target_name = None
+
+    # Case 1: Reply to a message
+    if message.reply_to_message and message.reply_to_message.from_user:
+        replied = message.reply_to_message.from_user
+        if replied.is_bot:
+            await message.answer("❌ Bots do not have a profile!")
+            return
+
+        target_id = replied.id
+        stmt = select(User).where(User.id == target_id)
+        res = await db.execute(stmt)
+        target_user_obj = res.scalar_one_or_none()
+        target_name = html.escape(target_user_obj.profile_name or target_user_obj.nickname or replied.first_name or "Trainer") if target_user_obj else html.escape(replied.first_name or "Trainer")
+
+    # Case 2: Mention or ID in text
+    else:
+        parts = message.text.split()
+        if len(parts) < 2:
+            await message.answer(
+                "⚠️ <b>Reset Profile Name Usage:</b>\n"
+                "• Reply to a user's message with: <code>/resetprofilename</code>\n"
+                "• Or type: <code>/resetprofilename &lt;user_id/@username&gt;</code>\n"
+                "<i>(Aliases: /resetprofile, /resetname)</i>",
+                parse_mode="HTML"
+            )
+            return
+
+        target_arg = parts[1].strip()
+
+        if target_arg.isdigit():
+            target_id = int(target_arg)
+            stmt = select(User).where(User.id == target_id)
+            res = await db.execute(stmt)
+            target_user_obj = res.scalar_one_or_none()
+            target_name = html.escape(target_user_obj.profile_name or target_user_obj.nickname or "Trainer") if target_user_obj else f"User {target_id}"
+        else:
+            clean_uname = target_arg.lstrip("@").lower()
+            stmt = select(User).where(func.lower(User.username) == clean_uname)
+            res = await db.execute(stmt)
+            target_user_obj = res.scalar_one_or_none()
+            if target_user_obj:
+                target_id = target_user_obj.id
+                target_name = html.escape(target_user_obj.profile_name or target_user_obj.nickname or target_user_obj.username or "Trainer")
+            else:
+                await message.answer(f"❌ Could not find trainer <code>@{clean_uname}</code> in database.", parse_mode="HTML")
+                return
+
+    if not target_user_obj:
+        await message.answer("❌ This user has no registered account or data in PokeEmpire.")
+        return
+
+    target_user_obj.profile_name = None
+    await db.commit()
+
+    admin_name = html.escape(message.from_user.first_name or "Admin") if message.from_user else "Admin"
+    await message.answer(
+        f"🔄 <b>PROFILE NAME RESET</b> 🔄\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"👤 <b>Trainer:</b> <b>{target_name}</b> (<code>{target_id}</code>)\n"
+        f"✨ <b>Profile Name:</b> <i>Reset to default (nickname / Telegram first name)</i>\n"
+        f"👮‍♂️ <b>Reset by Admin:</b> <b>{admin_name}</b>\n"
+        f"◈ ────────────────────────── ◈",
+        parse_mode="HTML"
+    )
+
+
+

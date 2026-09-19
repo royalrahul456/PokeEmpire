@@ -420,7 +420,7 @@ async def cb_dm_profile(callback: CallbackQuery, db: AsyncSession):
 
     # Formatted coins
     formatted_coins = f"{user.coins:,}"
-    user_nickname = user.nickname if (user and user.nickname) else (callback.from_user.first_name or "Trainer")
+    user_nickname = (user.profile_name or user.nickname) if (user and (user.profile_name or user.nickname)) else (callback.from_user.first_name or "Trainer")
 
     # Calculate global rank position based on catches
     rank_stmt = (

@@ -26,6 +26,7 @@ class User(Base):
     last_goal_date = Column(String(20), nullable=True)
     daily_goal_count = Column(Integer, default=0, nullable=False)
     pokedex_name = Column(String(100), nullable=True)
+    profile_name = Column(String(100), nullable=True)
     trainer_level = Column(Integer, default=1, nullable=False)
     trainer_xp = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)

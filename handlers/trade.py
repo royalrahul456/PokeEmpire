@@ -8,6 +8,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, func
 import config
+from database.models import User, Pokemon, UserPokemon
 from utils.formatters import get_rarity_emoji, escape_md
 from utils.settings import is_pokemon_soulbound
 from keyboards.inline import create_styled_button, get_pay_confirm_keyboard

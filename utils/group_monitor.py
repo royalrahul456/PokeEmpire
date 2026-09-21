@@ -366,36 +366,40 @@ async def track_user_chat_activity(db: AsyncSession, chat_id: int, user, event: 
 
 
 async def reward_chat_topper(db: AsyncSession, chat_id: int, user_id: int, period: str, count: int, event: Message):
-    """Gifts a random Art/AMV or Custom Form Pokemon to the weekly/monthly chat topper."""
-    from database.models import User, Pokemon, UserPokemon, PokemonFormMedia
+    """Gifts a shiny or normal Legendary or Mythical Pokemon (Form 0 only) to the weekly/monthly chat topper."""
+    from database.models import User, Pokemon, UserPokemon
+    from utils.formatters import get_rarity_emoji
     import random
 
-    # Get random Art/AMV or form entry from PokemonFormMedia
-    stmt = select(PokemonFormMedia).order_by(func.random()).limit(1)
+    # Select random Legendary or Mythical Pokemon (Base form 0 only)
+    stmt = (
+        select(Pokemon)
+        .where(Pokemon.rarity.in_(["Legendary", "Mythical"]))
+        .order_by(func.random())
+        .limit(1)
+    )
     res = await db.execute(stmt)
-    pfm = res.scalar_one_or_none()
+    pokemon = res.scalar_one_or_none()
 
-    if pfm:
-        pokemon_id = pfm.pokemon_id
-        form_index = pfm.form_index
-    else:
-        pokemon_id = random.randint(1, 151)
-        form_index = 1
-
-    # Fetch Pokemon details
-    p_stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
-    p_res = await db.execute(p_stmt)
-    pokemon = p_res.scalar_one_or_none()
     if not pokemon:
-        return
+        # Fallback to Mewtwo / Mew / ID 150 / 151 if table empty
+        stmt_fb = select(Pokemon).where(Pokemon.id.in_([150, 151])).order_by(func.random()).limit(1)
+        res_fb = await db.execute(stmt_fb)
+        pokemon = res_fb.scalar_one_or_none()
+        if not pokemon:
+            return
+
+    form_index = 0
+    is_amv = False
+    is_shiny = random.choice([True, False])  # 50% chance Shiny or Normal
 
     # Add reward Pokemon to winner's inventory
     reward_poke = UserPokemon(
         user_id=user_id,
         pokemon_id=pokemon.id,
         form_index=form_index,
-        is_amv=(form_index == 1),
-        is_shiny=False,
+        is_amv=is_amv,
+        is_shiny=is_shiny,
         level=100,
         serial_number="#TOPPER"
     )
@@ -408,10 +412,8 @@ async def reward_chat_topper(db: AsyncSession, chat_id: int, user_id: int, perio
     topper_user = user_res.scalar_one_or_none()
     topper_name = topper_user.nickname if topper_user else "Trainer"
 
-    from utils.settings import get_custom_rarity_forms
-    custom_forms = await get_custom_rarity_forms(db)
-    from handlers.profile import get_form_label
-    form_lbl = get_form_label(form_index, pfm.media_value if pfm else None, custom_forms)
+    r_emoji = get_rarity_emoji(pokemon.rarity or "Legendary")
+    shiny_tag = "✨ Shiny " if is_shiny else ""
 
     try:
         await event.answer(
@@ -419,7 +421,7 @@ async def reward_chat_topper(db: AsyncSession, chat_id: int, user_id: int, perio
             f"───────────────\n"
             f"<blockquote>👤 Trainer: <b>{html.escape(topper_name)}</b>\n"
             f"📊 Activity: <b>{count:,} messages</b> sent this {period.lower()}!\n\n"
-            f"🎨 <b>REWARD GIFT</b>: <b>{pokemon.name.title()} ({form_lbl})</b> added directly to inventory! 🎉</blockquote>",
+            f"🎁 <b>REWARD GIFT</b>: {r_emoji} <b>{shiny_tag}{pokemon.name.title()}</b> added directly to inventory! 🎉</blockquote>",
             parse_mode="HTML"
         )
     except Exception as e:

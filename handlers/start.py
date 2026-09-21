@@ -596,7 +596,7 @@ async def cb_dm_rankings_info(callback: CallbackQuery):
         f"───────────────\n\n"
         f"Track chat message activity and view top chatters in any group chat!\n\n"
         f"👉 <b>How to use</b>: Type <code>/rankings</code> inside any group chat to open the group leaderboard.\n\n"
-        f"<blockquote>👑 <b>Weekly & Monthly Rewards</b>: The #1 top chatter on reset wins a direct <b>Art / AMV / Custom Form Pokémon</b> gift added straight to their inventory! 🎉</blockquote>"
+        f"<blockquote>👑 <b>Weekly & Monthly Rewards</b>: The top chatters on reset win a direct <b>Shiny or Normal Legendary / Mythical Pokémon</b> gift added straight to their inventory! 🎉</blockquote>"
     )
     try:
         await callback.message.edit_caption(caption=rank_text, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")

@@ -157,6 +157,7 @@ async def register_bot_commands(bot: Bot):
         BotCommand(command="ping", description="⚡ Check System & DB Latency"),
         BotCommand(command="addrarity", description="✨ Create custom Pokémon rarity tier"),
         BotCommand(command="addpokemon", description="➕ Register a new Pokémon in database"),
+        BotCommand(command="setpokename", description="✏️ Rename a Pokémon in database (Admin only)"),
         BotCommand(command="syncdatabase", description="🔄 Synchronize database records to channel"),
         BotCommand(command="au", description="🔨 Toggle global auction system"),
         BotCommand(command="auction", description="🏷️ List a Pokémon for auction"),

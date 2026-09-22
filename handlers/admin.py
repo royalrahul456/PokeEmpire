@@ -3561,4 +3561,87 @@ async def cmd_reset_profile_name(message: Message, db: AsyncSession):
     )
 
 
+@router.message(Command("setpokename", "editpokename", "renpokename", "renamepokemon", "changepokename", ignore_mention=True))
+async def cmd_set_pokemon_name(message: Message, db: AsyncSession):
+    user_id = message.from_user.id if message.from_user else 0
+    is_auth = (
+        user_id in config.ADMIN_IDS
+        or user_id in getattr(config, "CO_OWNER_IDS", [])
+        or user_id in getattr(config, "OWNER_IDS", [])
+    )
+    if not is_auth:
+        await message.answer("❌ Denied. Only Bot Admins & Owners can rename Pokémon in the database.")
+        return
+
+    raw_text = message.text or ""
+    parts = raw_text.split()
+    if len(parts) < 3:
+        await message.answer(
+            "⚠️ <b>Set Pokémon Name Usage:</b>\n"
+            "• <code>/setpokename &lt;id|current_name&gt; &lt;new_name&gt;</code>\n\n"
+            "<b>Examples:</b>\n"
+            "• <code>/setpokename 1 bulbasaur_prime</code>\n"
+            "• <code>/setpokename bulbasaur charizard_x</code>\n\n"
+            "<i>(Aliases: /editpokename, /renamepokemon)</i>",
+            parse_mode="HTML"
+        )
+        return
+
+    target_arg = parts[1].strip()
+    new_name = parts[2].strip().lower()
+
+    import re
+    if not re.match(r'^[a-zA-Z0-9_\-\(\)]+$', new_name):
+        await message.answer("❌ Invalid Name format! Allowed characters are letters, numbers, hyphens (-), underscores (_), and parentheses ().")
+        return
+
+    from database.models import Pokemon
+
+    if target_arg.isdigit():
+        poke_id = int(target_arg)
+        stmt = select(Pokemon).where(Pokemon.id == poke_id)
+    else:
+        clean_target = target_arg.lower()
+        stmt = select(Pokemon).where(func.lower(Pokemon.name) == clean_target)
+
+    res = await db.execute(stmt)
+    pokemon = res.scalar_one_or_none()
+
+    if not pokemon:
+        await message.answer(f"❌ Could not find Pokémon <code>{html.escape(target_arg)}</code> in the database.", parse_mode="HTML")
+        return
+
+    # Check if another Pokemon already has this new name
+    dup_stmt = select(Pokemon).where(func.lower(Pokemon.name) == new_name, Pokemon.id != pokemon.id)
+    dup_res = await db.execute(dup_stmt)
+    existing_dup = dup_res.scalar_one_or_none()
+    if existing_dup:
+        await message.answer(
+            f"❌ Cannot rename: Another Pokémon already has the name <code>{html.escape(new_name)}</code> (ID #{existing_dup.id:03d}: {existing_dup.name.title()}).",
+            parse_mode="HTML"
+        )
+        return
+
+    old_name = pokemon.name
+    pokemon.name = new_name
+    await db.commit()
+
+    from utils.formatters import get_rarity_emoji
+    r_emoji = get_rarity_emoji(pokemon.rarity or "Common")
+    admin_name = html.escape(message.from_user.first_name or "Admin") if message.from_user else "Admin"
+
+    card = (
+        f"✨ <b>POKÉMON NAME UPDATED</b> ✨\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"🆔 <b>Pokémon ID:</b> #{pokemon.id:03d}\n"
+        f"💎 <b>Rarity:</b> {r_emoji} <b>{pokemon.rarity}</b>\n"
+        f"🏷 <b>Previous Name:</b> <code>{html.escape(old_name.title())}</code> (<code>{old_name}</code>)\n"
+        f"📛 <b>New Name:</b> <b>{html.escape(new_name.title())}</b> (<code>{new_name}</code>)\n"
+        f"👮‍♂️ <b>Updated by Admin:</b> <b>{admin_name}</b>\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"<i>The new Pokémon name is now live across the database, spawns, Pokédex, and inventories!</i>"
+    )
+    await message.answer(card, parse_mode="HTML")
+
+
 

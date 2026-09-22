@@ -34,7 +34,8 @@ active_cover_updates = {}
 active_battles = {}
 active_renames = {}
 
-@router.message(CommandStart())
+@router.message(Command("start", ignore_mention=True))
+@router.message(CommandStart(ignore_mention=True))
 async def cmd_start(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     username = message.from_user.username

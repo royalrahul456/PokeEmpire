@@ -10,7 +10,10 @@ def load_ban_words() -> list:
         return []
     try:
         with open(BAN_WORDS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+            if isinstance(data, list):
+                return [str(w).strip().lower() for w in data if isinstance(w, str) and w.strip()]
+            return []
     except Exception:
         return []
 
@@ -23,8 +26,10 @@ def _save_ban_words(words: list):
         print(f"Error saving ban words: {e}")
 
 def add_ban_word(word: str) -> bool:
+    if not word or not isinstance(word, str):
+        return False
     word = word.strip().lower()
-    if not word:
+    if not word or len(word) < 2:
         return False
     words = load_ban_words()
     if word in words:
@@ -34,6 +39,8 @@ def add_ban_word(word: str) -> bool:
     return True
 
 def remove_ban_word(word: str) -> bool:
+    if not word or not isinstance(word, str):
+        return False
     word = word.strip().lower()
     if not word:
         return False
@@ -49,13 +56,16 @@ def check_text_for_ban_words(text: str) -> str or None:
     Checks if a string contains any of the banned words (case-insensitive).
     Returns the first banned word found, or None.
     """
-    if not text:
+    if not text or not isinstance(text, str):
         return None
     words = load_ban_words()
+    if not words:
+        return None
     text_lower = text.lower()
     for w in words:
-        # Check as a substring or with word boundary
-        # A simple substring check is more secure against basic bypasses
-        if w in text_lower:
-            return w
+        w_clean = str(w).strip().lower()
+        if not w_clean or len(w_clean) < 2:
+            continue
+        if w_clean in text_lower:
+            return w_clean
     return None

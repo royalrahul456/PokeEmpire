@@ -352,18 +352,20 @@ async def main():
         sys.exit(1)
 
     # Initialize Bot & Dispatcher
-    import aiohttp
-    from aiogram.client.session.aiohttp import AiohttpSession
     if config.TELEGRAM_PROXY:
+        from aiogram.client.session.aiohttp import AiohttpSession
         session = AiohttpSession(proxy=config.TELEGRAM_PROXY)
+        bot = Bot(
+            token=config.BOT_TOKEN,
+            session=session,
+            default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
+        )
+        logger.info(f"Bot client configured to route traffic via proxy: {config.TELEGRAM_PROXY}")
     else:
-        connector = aiohttp.TCPConnector(limit=100, keepalive_timeout=75, ttl_dns_cache=300)
-        session = AiohttpSession(connector=connector)
-    bot = Bot(
-        token=config.BOT_TOKEN,
-        session=session,
-        default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
-    )
+        bot = Bot(
+            token=config.BOT_TOKEN,
+            default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
+        )
     
     # Apply custom premium emoji patch
     from utils.emoji_patch import patch_bot_emojis
@@ -420,15 +422,18 @@ async def main():
         
         # Setup Games bot
         if config.TELEGRAM_PROXY:
+            from aiogram.client.session.aiohttp import AiohttpSession
             games_session = AiohttpSession(proxy=config.TELEGRAM_PROXY)
+            games_bot = Bot(
+                token=config.GAMES_BOT_TOKEN,
+                session=games_session,
+                default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
+            )
         else:
-            games_connector = aiohttp.TCPConnector(limit=100, keepalive_timeout=75, ttl_dns_cache=300)
-            games_session = AiohttpSession(connector=games_connector)
-        games_bot = Bot(
-            token=config.GAMES_BOT_TOKEN,
-            session=games_session,
-            default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
-        )
+            games_bot = Bot(
+                token=config.GAMES_BOT_TOKEN,
+                default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
+            )
             
         patch_bot_emojis(games_bot)
         

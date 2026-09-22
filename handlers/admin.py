@@ -3626,6 +3626,9 @@ async def cmd_set_pokemon_name(message: Message, db: AsyncSession):
     pokemon.name = new_name
     await db.commit()
 
+    from utils.pokemon_cache import refresh_single_pokemon_cache
+    refresh_single_pokemon_cache(pokemon)
+
     from utils.formatters import get_rarity_emoji
     r_emoji = get_rarity_emoji(pokemon.rarity or "Common")
     admin_name = html.escape(message.from_user.first_name or "Admin") if message.from_user else "Admin"

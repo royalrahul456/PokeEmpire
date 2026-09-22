@@ -309,7 +309,22 @@ async def init_db():
             await session.commit()
 
     # PostgreSQL sequence reset check (skipped on routine reboots for maximum startup speed)
-    pass
+    # High-performance composite DB indices for instant sub-millisecond queries
+    perf_indices = [
+        "CREATE INDEX IF NOT EXISTS idx_user_pokemon_user_poke ON user_pokemon (user_id, pokemon_id);",
+        "CREATE INDEX IF NOT EXISTS idx_user_pokemon_user_form ON user_pokemon (user_id, form_index);",
+        "CREATE INDEX IF NOT EXISTS idx_user_pokemon_user_shiny ON user_pokemon (user_id, is_shiny);",
+        "CREATE INDEX IF NOT EXISTS idx_auctions_status_expires ON auctions (status, expires_at);",
+        "CREATE INDEX IF NOT EXISTS idx_chat_msg_stats_chat_user ON chat_message_stats (chat_id, user_id);",
+        "CREATE INDEX IF NOT EXISTS idx_pokemon_rarity ON pokemon (rarity);",
+        "CREATE INDEX IF NOT EXISTS idx_pokemon_form_media_id_form ON pokemon_form_media (pokemon_id, form_index);"
+    ]
+    for idx_sql in perf_indices:
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text(idx_sql))
+        except Exception:
+            pass
 
 async def get_db():
     """Dependency helper to retrieve an active database session."""

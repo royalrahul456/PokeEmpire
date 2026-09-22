@@ -14,6 +14,12 @@ if sys.platform == "win32":
         sys.stderr.reconfigure(encoding='utf-8', errors='replace')
     except Exception:
         pass
+else:
+    try:
+        import uvloop
+        uvloop.install()
+    except Exception:
+        pass
 
 import config
 from database.database import init_db, SessionLocal
@@ -163,19 +169,18 @@ async def main():
     logger.info("Settings cache loaded successfully.")
 
     # Initialize Bot & Dispatcher
+    import aiohttp
+    from aiogram.client.session.aiohttp import AiohttpSession
     if config.TELEGRAM_PROXY:
-        from aiogram.client.session.aiohttp import AiohttpSession
         session = AiohttpSession(proxy=config.TELEGRAM_PROXY)
-        bot = Bot(
-            token=token,
-            session=session,
-            default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
-        )
     else:
-        bot = Bot(
-            token=token,
-            default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
-        )
+        connector = aiohttp.TCPConnector(limit=100, keepalive_timeout=75, ttl_dns_cache=300)
+        session = AiohttpSession(connector=connector)
+    bot = Bot(
+        token=token,
+        session=session,
+        default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
+    )
 
     # Apply custom premium emoji patch
     from utils.emoji_patch import patch_bot_emojis

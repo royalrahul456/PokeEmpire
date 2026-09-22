@@ -392,6 +392,10 @@ async def main():
     from handlers.auction import auction_settlement_worker
     asyncio.create_task(auction_settlement_worker(bot))
 
+    # Start the in-memory chat activity batch flusher worker task
+    from utils.group_monitor import start_chat_activity_worker
+    asyncio.create_task(start_chat_activity_worker())
+
     if is_dual_bot:
         logger.info("🚀 Dual-Bot Mode active: Starting PokeEmpire (Main) + PokeArena (Games) concurrently.")
         

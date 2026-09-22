@@ -203,10 +203,9 @@ class GroupActivityMiddleware(BaseMiddleware):
                             print(f"Error executing anti-flood fine: {err}")
                 return None  # Stop handler execution for this message
 
-        db: AsyncSession = data.get("db")
-        if db and user and not user.is_bot:
+        if user and not user.is_bot:
             try:
-                await track_user_chat_activity(db, chat.id, user, event)
+                track_user_chat_activity(chat.id, user, event)
             except Exception as track_err:
                 print(f"Error tracking user chat activity: {track_err}")
 
@@ -270,99 +269,160 @@ class GroupActivityMiddleware(BaseMiddleware):
         return await handler(event, data)
 
 
-async def track_user_chat_activity(db: AsyncSession, chat_id: int, user, event: Message):
+# In-memory buffer: (chat_id, user_id) -> message count delta
+chat_activity_buffer: Dict[tuple, int] = {}
+# user_id -> (username, first_name)
+user_info_buffer: Dict[int, tuple] = {}
+# chat_id -> event reference for reset announcements
+chat_event_cache: Dict[int, Message] = {}
+
+
+def track_user_chat_activity(chat_id: int, user, event: Message = None):
+    """Instant in-memory buffering without synchronous DB queries."""
     if not user or user.is_bot:
         return
     user_id = user.id
+    pair = (chat_id, user_id)
+    chat_activity_buffer[pair] = chat_activity_buffer.get(pair, 0) + 1
+    user_info_buffer[user_id] = (user.username, user.first_name)
+    if event:
+        chat_event_cache[chat_id] = event
 
+
+async def flush_chat_activity(target_chat_id: int = None):
+    """Flushes buffered chat activity to the database in a single batch."""
+    global chat_activity_buffer
+    if not chat_activity_buffer:
+        return
+
+    if target_chat_id is not None:
+        items_to_flush = {k: v for k, v in chat_activity_buffer.items() if k[0] == target_chat_id}
+        for k in items_to_flush:
+            chat_activity_buffer.pop(k, None)
+    else:
+        items_to_flush = dict(chat_activity_buffer)
+        chat_activity_buffer.clear()
+
+    if not items_to_flush:
+        return
+
+    from database.database import SessionLocal
     from database.models import User, ChatMessageStat
-    u_stmt = select(User).where(User.id == user_id)
-    u_res = await db.execute(u_stmt)
-    u_rec = u_res.scalar_one_or_none()
-    if not u_rec:
-        u_rec = User(
-            id=user_id,
-            username=user.username,
-            nickname=user.first_name or user.username or "Trainer",
-            coins=500
-        )
-        db.add(u_rec)
-        await db.flush()
 
     now_dt = datetime.utcnow()
     today_str = now_dt.strftime("%Y-%m-%d")
     week_str = now_dt.strftime("%Y-%W")
     month_str = now_dt.strftime("%Y-%m")
 
-    stmt = select(ChatMessageStat).where(
-        ChatMessageStat.user_id == user_id,
-        ChatMessageStat.chat_id == chat_id
-    )
-    res = await db.execute(stmt)
-    stat = res.scalar_one_or_none()
+    async with SessionLocal() as db:
+        try:
+            # 1. Ensure all buffered users exist in DB
+            user_ids = list({uid for (_, uid) in items_to_flush.keys()})
+            if user_ids:
+                u_stmt = select(User.id).where(User.id.in_(user_ids))
+                u_res = await db.execute(u_stmt)
+                existing_uids = set(u_res.scalars().all())
 
-    if not stat:
-        stat = ChatMessageStat(
-            user_id=user_id,
-            chat_id=chat_id,
-            daily_count=1,
-            weekly_count=1,
-            monthly_count=1,
-            overall_count=1,
-            last_daily_reset=today_str,
-            last_weekly_reset=week_str,
-            last_monthly_reset=month_str
-        )
-        db.add(stat)
-        await db.commit()
-        return
+                for uid in user_ids:
+                    if uid not in existing_uids:
+                        uname, nname = user_info_buffer.get(uid, (None, "Trainer"))
+                        db.add(User(
+                            id=uid,
+                            username=uname,
+                            nickname=nname or uname or "Trainer",
+                            coins=500
+                        ))
+                await db.flush()
 
-    # Check reset periods
-    # 1. Weekly Reset Check & Reward
-    if stat.last_weekly_reset and stat.last_weekly_reset != week_str:
-        top_weekly_stmt = (
-            select(ChatMessageStat)
-            .where(ChatMessageStat.chat_id == chat_id)
-            .order_by(ChatMessageStat.weekly_count.desc())
-            .limit(1)
-        )
-        top_res = await db.execute(top_weekly_stmt)
-        topper_stat = top_res.scalar_one_or_none()
-        if topper_stat and topper_stat.user_id == user_id and stat.weekly_count > 10:
-            await reward_chat_topper(db, chat_id, user_id, "Weekly", stat.weekly_count, event)
+            # 2. Update/insert ChatMessageStats
+            for (c_id, u_id), delta in items_to_flush.items():
+                stmt = select(ChatMessageStat).where(
+                    ChatMessageStat.chat_id == c_id,
+                    ChatMessageStat.user_id == u_id
+                )
+                res = await db.execute(stmt)
+                stat = res.scalar_one_or_none()
 
-        stat.weekly_count = 1
-        stat.last_weekly_reset = week_str
-    else:
-        stat.weekly_count += 1
+                if not stat:
+                    stat = ChatMessageStat(
+                        user_id=u_id,
+                        chat_id=c_id,
+                        daily_count=delta,
+                        weekly_count=delta,
+                        monthly_count=delta,
+                        overall_count=delta,
+                        last_daily_reset=today_str,
+                        last_weekly_reset=week_str,
+                        last_monthly_reset=month_str
+                    )
+                    db.add(stat)
+                else:
+                    # Weekly Reset Check & Reward
+                    if stat.last_weekly_reset and stat.last_weekly_reset != week_str:
+                        top_weekly_stmt = (
+                            select(ChatMessageStat)
+                            .where(ChatMessageStat.chat_id == c_id)
+                            .order_by(ChatMessageStat.weekly_count.desc())
+                            .limit(1)
+                        )
+                        top_res = await db.execute(top_weekly_stmt)
+                        topper_stat = top_res.scalar_one_or_none()
+                        ev = chat_event_cache.get(c_id)
+                        if topper_stat and topper_stat.user_id == u_id and stat.weekly_count > 10 and ev:
+                            await reward_chat_topper(db, c_id, u_id, "Weekly", stat.weekly_count, ev)
 
-    # 2. Monthly Reset Check & Reward
-    if stat.last_monthly_reset and stat.last_monthly_reset != month_str:
-        top_monthly_stmt = (
-            select(ChatMessageStat)
-            .where(ChatMessageStat.chat_id == chat_id)
-            .order_by(ChatMessageStat.monthly_count.desc())
-            .limit(1)
-        )
-        top_res = await db.execute(top_monthly_stmt)
-        topper_stat = top_res.scalar_one_or_none()
-        if topper_stat and topper_stat.user_id == user_id and stat.monthly_count > 50:
-            await reward_chat_topper(db, chat_id, user_id, "Monthly", stat.monthly_count, event)
+                        stat.weekly_count = delta
+                        stat.last_weekly_reset = week_str
+                    else:
+                        stat.weekly_count += delta
 
-        stat.monthly_count = 1
-        stat.last_monthly_reset = month_str
-    else:
-        stat.monthly_count += 1
+                    # Monthly Reset Check & Reward
+                    if stat.last_monthly_reset and stat.last_monthly_reset != month_str:
+                        top_monthly_stmt = (
+                            select(ChatMessageStat)
+                            .where(ChatMessageStat.chat_id == c_id)
+                            .order_by(ChatMessageStat.monthly_count.desc())
+                            .limit(1)
+                        )
+                        top_res = await db.execute(top_monthly_stmt)
+                        topper_stat = top_res.scalar_one_or_none()
+                        ev = chat_event_cache.get(c_id)
+                        if topper_stat and topper_stat.user_id == u_id and stat.monthly_count > 50 and ev:
+                            await reward_chat_topper(db, c_id, u_id, "Monthly", stat.monthly_count, ev)
 
-    # 3. Daily Reset Check
-    if stat.last_daily_reset != today_str:
-        stat.daily_count = 1
-        stat.last_daily_reset = today_str
-    else:
-        stat.daily_count += 1
+                        stat.monthly_count = delta
+                        stat.last_monthly_reset = month_str
+                    else:
+                        stat.monthly_count += delta
 
-    stat.overall_count += 1
-    await db.commit()
+                    # Daily Reset Check
+                    if stat.last_daily_reset != today_str:
+                        stat.daily_count = delta
+                        stat.last_daily_reset = today_str
+                    else:
+                        stat.daily_count += delta
+
+                    stat.overall_count += delta
+
+            await db.commit()
+        except Exception as e:
+            await db.rollback()
+            print(f"Error flushing chat activity: {e}")
+
+
+async def start_chat_activity_worker():
+    """Periodic background task that flushes in-memory chat activity every 20 seconds."""
+    import asyncio
+    print("🚀 Background Chat Activity Batch Worker Started (20s flush interval)...")
+    while True:
+        try:
+            await asyncio.sleep(20)
+            await flush_chat_activity()
+        except asyncio.CancelledError:
+            await flush_chat_activity()
+            break
+        except Exception as e:
+            print(f"Error in chat activity worker loop: {e}")
 
 
 async def reward_chat_topper(db: AsyncSession, chat_id: int, user_id: int, period: str, count: int, event: Message):

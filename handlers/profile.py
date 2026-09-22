@@ -1396,6 +1396,12 @@ async def cmd_unfav(message: Message, db: AsyncSession):
 
 
 async def build_rankings_payload(chat_id: int, user_id: int, period: str, db: AsyncSession):
+    from utils.group_monitor import flush_chat_activity
+    try:
+        await flush_chat_activity(chat_id)
+    except Exception:
+        pass
+
     period_lower = period.lower()
     from database.models import ChatMessageStat, User
     from datetime import datetime

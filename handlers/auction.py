@@ -1179,14 +1179,14 @@ async def cmd_toggle_auctions(message: Message, db: AsyncSession):
 
 
 async def auction_settlement_worker(bot: Bot):
-    """Ultra-fast background settlement loop running every 2 seconds to settle expired auctions instantly."""
+    """Background settlement loop running every 5 seconds to settle expired auctions promptly."""
     from database.database import SessionLocal
     from database.models import Auction, AuctionBid, User, UserPokemon, Pokemon
     
-    print("⏳ Fast Auction Settlement Worker Loop Started (2s polling)...")
+    print("⏳ Auction Settlement Worker Loop Started (5s polling)...")
     while True:
         try:
-            await asyncio.sleep(2)
+            await asyncio.sleep(5)
             async with SessionLocal() as db:
                 now = datetime.utcnow()
                 stmt = select(Auction).where(Auction.status == "ACTIVE", Auction.expires_at <= now)

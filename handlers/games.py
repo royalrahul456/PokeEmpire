@@ -53,6 +53,26 @@ def get_chat_game(chat_id: int, game_type: str = None) -> dict | None:
     chat_dict = active_games.get(chat_id)
     if not chat_dict:
         return None
+
+    now = time.time()
+    if isinstance(chat_dict, dict):
+        to_remove = []
+        for g_k, g_v in list(chat_dict.items()):
+            if isinstance(g_v, dict):
+                g_type = g_v.get("type")
+                created_at = g_v.get("created_at", 0)
+                if g_type == "initializing" and (now - created_at > 15):
+                    to_remove.append(g_k)
+                elif "message_id" not in g_v and g_type != "initializing" and (now - created_at > 10):
+                    to_remove.append(g_k)
+                elif now - created_at > 90:
+                    to_remove.append(g_k)
+        for g_k in to_remove:
+            chat_dict.pop(g_k, None)
+        if not chat_dict:
+            active_games.pop(chat_id, None)
+            return None
+
     if isinstance(chat_dict, dict) and any(k in ["silhouette", "voltorb", "typematch", "nameguess", "scribble", "trivia", "initializing"] for k in chat_dict.keys()):
         if game_type:
             return chat_dict.get(game_type)
@@ -1164,6 +1184,7 @@ async def start_auto_scribble_game(chat_id: int, bot: Bot, db: AsyncSession):
         "created_at": time.time()
     })
     
+    game_started = False
     try:
         # Select random Pokémon
         stmt = select(Pokemon).order_by(func.random()).limit(1)
@@ -1171,9 +1192,6 @@ async def start_auto_scribble_game(chat_id: int, bot: Bot, db: AsyncSession):
         pokemon = res.scalar_one_or_none()
 
         if not pokemon:
-            init_g = get_chat_game(chat_id, "scribble")
-            if init_g and init_g.get("type") == "initializing":
-                remove_chat_game(chat_id, "scribble")
             return
 
         name = pokemon.name.lower()
@@ -1191,7 +1209,6 @@ async def start_auto_scribble_game(chat_id: int, bot: Bot, db: AsyncSession):
             "created_at": time.time(),
             "is_auto": True
         }
-        set_chat_game(chat_id, "scribble", game_data)
 
         # Format message in clean card style
         text = (
@@ -1217,15 +1234,17 @@ async def start_auto_scribble_game(chat_id: int, bot: Bot, db: AsyncSession):
         )
         
         game_data["message_id"] = sent_msg.message_id
+        set_chat_game(chat_id, "scribble", game_data)
+        game_started = True
         
         # Start background timeout task
         asyncio.create_task(scribble_timeout_task(chat_id, sent_msg.message_id, bot))
         
     except Exception as e:
-        init_g = get_chat_game(chat_id, "scribble")
-        if init_g and init_g.get("type") == "initializing":
+        print(f"Error in start_auto_scribble_game for chat {chat_id}: {e}")
+    finally:
+        if not game_started:
             remove_chat_game(chat_id, "scribble")
-        raise e
 
 async def start_auto_nameguess_game(chat_id: int, bot: Bot, db: AsyncSession):
     if get_chat_game(chat_id, "nameguess") or get_chat_game(chat_id, "scribble"):
@@ -1236,15 +1255,13 @@ async def start_auto_nameguess_game(chat_id: int, bot: Bot, db: AsyncSession):
         "created_at": time.time()
     })
     
+    game_started = False
     try:
         stmt = select(Pokemon).order_by(func.random()).limit(1)
         res = await db.execute(stmt)
         pokemon = res.scalar_one_or_none()
 
         if not pokemon:
-            init_g = get_chat_game(chat_id, "nameguess")
-            if init_g and init_g.get("type") == "initializing":
-                remove_chat_game(chat_id, "nameguess")
             return
 
         name = pokemon.name.lower()
@@ -1257,7 +1274,6 @@ async def start_auto_nameguess_game(chat_id: int, bot: Bot, db: AsyncSession):
             "created_at": time.time(),
             "is_auto": True
         }
-        set_chat_game(chat_id, "nameguess", game_data)
 
         type_info = f" | Type: <b>{pokemon.type1}{'/' + pokemon.type2 if pokemon.type2 else ''}</b>" if getattr(pokemon, 'type1', None) else ""
         gen_info = f" | Gen: <b>{pokemon.generation}</b>" if getattr(pokemon, 'generation', None) else ""
@@ -1290,13 +1306,16 @@ async def start_auto_nameguess_game(chat_id: int, bot: Bot, db: AsyncSession):
         )
         
         game_data["message_id"] = sent_msg.message_id
+        set_chat_game(chat_id, "nameguess", game_data)
+        game_started = True
+        
         asyncio.create_task(nameguess_timeout_task(chat_id, sent_msg.message_id, bot))
         
     except Exception as e:
-        init_g = get_chat_game(chat_id, "nameguess")
-        if init_g and init_g.get("type") == "initializing":
+        print(f"Error in start_auto_nameguess_game for chat {chat_id}: {e}")
+    finally:
+        if not game_started:
             remove_chat_game(chat_id, "nameguess")
-        print(f"Error in start_auto_nameguess_game: {e}")
 
 # Settings are now dynamically managed by utils.settings cache & DB
 

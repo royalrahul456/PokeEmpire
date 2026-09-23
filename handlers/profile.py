@@ -338,7 +338,7 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
         )
         return text, 0, 0
 
-    per_page = 8
+    per_page = 6
     max_page = max(1, (total_caught_distinct + per_page - 1) // per_page)
     page = max(1, min(page, max_page))
     offset = (page - 1) * per_page
@@ -859,9 +859,10 @@ async def cmd_profile(message: Message, db: AsyncSession):
         custom_rarities = await get_all_custom_rarities(db)
 
         breakdown_lines = []
-        for r_name, r_emoji in standard_breakdown:
-            cnt = rarity_counts.get(r_name, 0)
-            breakdown_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
+        for i in range(0, len(standard_breakdown), 2):
+            pair = standard_breakdown[i:i+2]
+            parts = [f"{r_emoji} {r_name}: <b>{rarity_counts.get(r_name, 0)}</b>" for r_name, r_emoji in pair]
+            breakdown_lines.append(f"├─➩ " + " ┊ ".join(parts))
             
         rarity_breakdown_text = "\n".join(breakdown_lines)
 
@@ -877,11 +878,9 @@ async def cmd_profile(message: Message, db: AsyncSession):
         terastal_count = form_counts.get(5, 0)
 
         forms_lines = [
-            f"├─➩ 🎬 AMV / Art: {amv_count}",
-            f"├─➩ ⚡ Dmax: {dmax_count}",
-            f"├─➩ 💥 Gmax: {gmax_count}",
-            f"├─➩ 🌀 Z-Move: {zmove_count}",
-            f"├─➩ 🔮 Terastal: {terastal_count}"
+            f"├─➩ 🎬 Art: <b>{amv_count}</b> ┊ ⚡ Dmax: <b>{dmax_count}</b>",
+            f"├─➩ 💥 Gmax: <b>{gmax_count}</b> ┊ 🌀 Z-Move: <b>{zmove_count}</b>",
+            f"├─➩ 🔮 Terastal: <b>{terastal_count}</b>"
         ]
         
         custom_forms = await get_custom_rarity_forms(db)
@@ -889,7 +888,7 @@ async def cmd_profile(message: Message, db: AsyncSession):
             if f_idx in {1, 2, 3, 4, 5}:
                 continue
             cnt = form_counts.get(f_idx, 0)
-            forms_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
+            forms_lines.append(f"├─➩ {r_emoji} {r_name}: <b>{cnt}</b>")
             
         forms_breakdown_text = "\n".join(forms_lines)
 

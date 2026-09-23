@@ -23,7 +23,7 @@ _chat_spawn_locks: Dict[int, asyncio.Lock] = {}
 
 class SpawnService:
     @staticmethod
-    async def trigger_spawn(db: AsyncSession, chat_id: int, bot: Bot, rarity: str = None) -> bool:
+    async def trigger_spawn(db: AsyncSession, chat_id: int, bot: Bot, rarity: str = None, message_thread_id: int = None) -> bool:
         """Rolls rarity, selects a random Pokémon, rolls shiny status, and spawns it in the group."""
         if chat_id not in _chat_spawn_locks:
             _chat_spawn_locks[chat_id] = asyncio.Lock()
@@ -105,7 +105,8 @@ class SpawnService:
                     photo=spawn_photo,
                     caption=caption,
                     reply_markup=hint_keyboard,
-                    parse_mode="HTML"
+                    parse_mode="HTML",
+                    message_thread_id=message_thread_id
                 )
                 message_id = msg.message_id
             except Exception as e:
@@ -119,10 +120,16 @@ class SpawnService:
                         f"◈ ────────────────── ◈\n"
                         f"👉 <i>Type <code>/catch &lt;name&gt;</code> to catch it!</i>"
                     )
-                    msg = await bot.send_message(chat_id=chat_id, text=fallback, reply_markup=hint_keyboard, parse_mode="HTML")
+                    msg = await bot.send_message(
+                        chat_id=chat_id, 
+                        text=fallback, 
+                        reply_markup=hint_keyboard, 
+                        parse_mode="HTML",
+                        message_thread_id=message_thread_id
+                    )
                     message_id = msg.message_id
-                except Exception:
-                    pass
+                except Exception as text_err:
+                    print(f"Fallback text spawn error in chat {chat_id}: {text_err}")
 
             if not message_id:
                 return False
@@ -142,11 +149,11 @@ class SpawnService:
             await db.commit()
 
             # Trigger background despawn timeout task
-            asyncio.create_task(spawn_timeout_task(chat_id, message_id, bot))
+            asyncio.create_task(spawn_timeout_task(chat_id, message_id, bot, message_thread_id))
 
             return True
 
-async def spawn_timeout_task(chat_id: int, message_id: int, bot: Bot):
+async def spawn_timeout_task(chat_id: int, message_id: int, bot: Bot, message_thread_id: int = None):
     await asyncio.sleep(60)
     
     from database.database import SessionLocal
@@ -173,7 +180,8 @@ async def spawn_timeout_task(chat_id: int, message_id: int, bot: Bot):
             try:
                 await bot.send_message(
                     chat_id=chat_id,
-                    text="🏃‍♂️ **The wild Pokémon fled!** You were too slow."
+                    text="🏃‍♂️ **The wild Pokémon fled!** You were too slow.",
+                    message_thread_id=message_thread_id
                 )
             except Exception:
                 pass

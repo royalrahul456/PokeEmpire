@@ -1286,7 +1286,8 @@ async def cmd_leaderboard(message: Message, db: AsyncSession):
         reply_markup=get_leaderboard_keyboard(),
         bot=message.bot,
         default_url="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/493.png",
-        parse_mode="HTML"
+        parse_mode="HTML",
+        message_to_reply=message
     )
 
 @router.callback_query(F.data.startswith("lb_type_"))
@@ -1520,7 +1521,8 @@ async def cmd_rankings(message: Message, db: AsyncSession):
         caption=text,
         reply_markup=kb,
         bot=message.bot,
-        default_file="data/pokeempire_banner.png"
+        default_file="data/pokeempire_banner.png",
+        message_to_reply=message
     )
 
 

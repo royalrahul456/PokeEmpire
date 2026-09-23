@@ -76,7 +76,8 @@ async def cmd_start(message: Message, db: AsyncSession):
         caption=text,
         reply_markup=reply_markup,
         bot=message.bot,
-        default_file="data/pokeempire_banner.png"
+        default_file="data/pokeempire_banner.png",
+        message_to_reply=message
     )
 
 
@@ -1306,6 +1307,14 @@ async def cb_adm_toggle_spawns(callback: CallbackQuery, db: AsyncSession):
     if gs:
         gs.enabled = not gs.enabled
         await db.commit()
+        from utils.group_monitor import group_settings_cache
+        if chat_id in group_settings_cache:
+            group_settings_cache[chat_id]["enabled"] = gs.enabled
+        else:
+            group_settings_cache[chat_id] = {
+                "spawn_threshold": gs.spawn_threshold,
+                "enabled": gs.enabled
+            }
         await callback.answer(f"Spawns {'enabled' if gs.enabled else 'disabled'}.")
         await refresh_admin_console(callback, chat_id, db)
 
@@ -1328,6 +1337,14 @@ async def cb_adm_adjust_threshold(callback: CallbackQuery, db: AsyncSession):
             next_idx = 3 # fallback to 100
         gs.spawn_threshold = thresholds[next_idx]
         await db.commit()
+        from utils.group_monitor import group_settings_cache
+        if chat_id in group_settings_cache:
+            group_settings_cache[chat_id]["spawn_threshold"] = gs.spawn_threshold
+        else:
+            group_settings_cache[chat_id] = {
+                "spawn_threshold": gs.spawn_threshold,
+                "enabled": gs.enabled
+            }
         await callback.answer(f"Spawn threshold set to {gs.spawn_threshold} messages.")
         await refresh_admin_console(callback, chat_id, db)
 

@@ -250,17 +250,22 @@ async def send_safe_media(
     caption: Optional[str] = None,
     reply_markup: Any = None,
     parse_mode: str = "HTML",
-    message_to_reply: Optional[Message] = None
+    message_to_reply: Optional[Message] = None,
+    message_thread_id: Optional[int] = None
 ) -> Message:
     """
     Safely sends media (photo, video, animation) with automatic type fallback.
-    If a video file_id is stored but Telegram considers it a photo (or vice versa),
-    it retries with alternative media types before falling back to plain text.
+    Supports Telegram Forum/Topic supergroups via message_thread_id and message_to_reply.
+    If media fails or permissions are restricted, it gracefully falls back to text.
     """
+    thread_id = message_thread_id
+    if not thread_id and message_to_reply:
+        thread_id = getattr(message_to_reply, "message_thread_id", None)
+
     if not media_value:
         if message_to_reply:
             return await message_to_reply.answer(text=caption or "", reply_markup=reply_markup, parse_mode=parse_mode)
-        return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=reply_markup, parse_mode=parse_mode)
+        return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=reply_markup, parse_mode=parse_mode, message_thread_id=thread_id)
 
     if isinstance(media_value, str) and os.path.exists(media_value):
         media_value = FSInputFile(media_value)
@@ -285,11 +290,11 @@ async def send_safe_media(
                     return await message_to_reply.answer_photo(photo=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
             else:
                 if mtype == "video":
-                    return await bot.send_video(chat_id=chat_id, video=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+                    return await bot.send_video(chat_id=chat_id, video=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode, message_thread_id=thread_id)
                 elif mtype == "animation":
-                    return await bot.send_animation(chat_id=chat_id, animation=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+                    return await bot.send_animation(chat_id=chat_id, animation=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode, message_thread_id=thread_id)
                 else:
-                    return await bot.send_photo(chat_id=chat_id, photo=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+                    return await bot.send_photo(chat_id=chat_id, photo=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode, message_thread_id=thread_id)
         except TelegramBadRequest as e:
             err_msg = str(e).lower()
             last_error = e
@@ -307,24 +312,35 @@ async def send_safe_media(
     try:
         if message_to_reply:
             return await message_to_reply.answer(text=caption or "", reply_markup=reply_markup, parse_mode=parse_mode)
-        return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=reply_markup, parse_mode=parse_mode)
+        return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=reply_markup, parse_mode=parse_mode, message_thread_id=thread_id)
     except Exception as e:
         print(f"⚠️ send_safe_media formatted text failed: {e}. Retrying without formatting...")
         try:
             if message_to_reply:
                 return await message_to_reply.answer(text=caption or "", reply_markup=reply_markup, parse_mode=None)
-            return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=reply_markup, parse_mode=None)
+            return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=reply_markup, parse_mode=None, message_thread_id=thread_id)
         except Exception as e2:
             print(f"❌ send_safe_media plain text fallback failed: {e2}")
             try:
-                return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=reply_markup, parse_mode=None)
+                return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=reply_markup, parse_mode=None, message_thread_id=thread_id)
             except Exception as e3:
                 if last_error:
                     raise last_error
                 raise e3
 
 
-async def send_cover_media(chat_id: int, key: str, caption: str, reply_markup, bot: Bot, default_url=None, default_file=None, parse_mode="HTML"):
+async def send_cover_media(
+    chat_id: int, 
+    key: str, 
+    caption: str, 
+    reply_markup, 
+    bot: Bot, 
+    default_url=None, 
+    default_file=None, 
+    parse_mode="HTML",
+    message_to_reply: Optional[Message] = None,
+    message_thread_id: Optional[int] = None
+):
     """Sends the configured custom media (photo, video, or animation) or falls back to defaults."""
     media_type, media_value = await get_custom_cover_async(key)
 
@@ -336,6 +352,10 @@ async def send_cover_media(chat_id: int, key: str, caption: str, reply_markup, b
             media_type = "photo"
             media_value = default_url
 
+    thread_id = message_thread_id
+    if not thread_id and message_to_reply:
+        thread_id = getattr(message_to_reply, "message_thread_id", None)
+
     try:
         return await send_safe_media(
             bot=bot,
@@ -344,7 +364,9 @@ async def send_cover_media(chat_id: int, key: str, caption: str, reply_markup, b
             media_value=media_value,
             caption=caption,
             reply_markup=reply_markup,
-            parse_mode=parse_mode
+            parse_mode=parse_mode,
+            message_to_reply=message_to_reply,
+            message_thread_id=thread_id
         )
     except Exception as e:
         print(f"⚠️ send_cover_media failed for {key} with custom media ({e}). Retrying with default fallback...")
@@ -358,11 +380,15 @@ async def send_cover_media(chat_id: int, key: str, caption: str, reply_markup, b
                     media_value=fb_val,
                     caption=caption,
                     reply_markup=reply_markup,
-                    parse_mode=parse_mode
+                    parse_mode=parse_mode,
+                    message_to_reply=message_to_reply,
+                    message_thread_id=thread_id
                 )
             except Exception:
                 pass
-        return await bot.send_message(chat_id=chat_id, text=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+        if message_to_reply:
+            return await message_to_reply.answer(text=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+        return await bot.send_message(chat_id=chat_id, text=caption, reply_markup=reply_markup, parse_mode=parse_mode, message_thread_id=thread_id)
 
 
 async def get_all_custom_rarities(db) -> dict:

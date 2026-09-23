@@ -114,11 +114,17 @@ async def cmd_set_spawn(message: Message, db: AsyncSession):
 @router.message(Command("toggle_spawns", ignore_mention=True))
 @router.message(Command("toggle", ignore_mention=True))
 async def cmd_toggle_spawns(message: Message, db: AsyncSession):
-    chat_id = message.chat.id
+    if message.chat.type not in ["group", "supergroup"]:
+        await message.answer("⚠️ Spawns only occur in group chats! Use this command in a group.")
+        return
 
-    # Enforce Bot Admin / Owner authorization
-    if not message.from_user or message.from_user.id not in config.ADMIN_IDS:
-        await message.answer("❌ Denied. Only Bot Admins & Bot Owner can toggle spawns.")
+    chat_id = message.chat.id
+    user_id = message.from_user.id if message.from_user else 0
+
+    # Enforce Bot Admin or Group Admin authorization
+    is_allowed = (user_id in config.ADMIN_IDS) or await is_user_admin(message)
+    if not is_allowed:
+        await message.answer("❌ Denied. Only Group Administrators & Bot Admins can toggle spawns.")
         return
 
     # Query or create GroupSetting
@@ -1391,7 +1397,8 @@ async def cmd_spawn(message: Message, db: AsyncSession):
     from services.spawn_service import SpawnService
 
     try:
-        success = await SpawnService.trigger_spawn(db, message.chat.id, message.bot, rarity=specified_rarity)
+        thread_id = getattr(message, "message_thread_id", None)
+        success = await SpawnService.trigger_spawn(db, message.chat.id, message.bot, rarity=specified_rarity, message_thread_id=thread_id)
         if not success:
             await message.answer("❌ Failed to spawn Pokémon. Ensure the bot has permission to send media/messages in this chat.")
     except Exception as err:

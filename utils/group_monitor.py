@@ -258,8 +258,9 @@ class GroupActivityMiddleware(BaseMiddleware):
                         cached_setting["spawn_threshold"] = random.randint(50, 100)
                         
                         bot = data.get("bot") or event.bot
+                        thread_id = getattr(event, "message_thread_id", None)
                         # Trigger wild spawn
-                        await SpawnService.trigger_spawn(db, chat_id, bot)
+                        await SpawnService.trigger_spawn(db, chat_id, bot, message_thread_id=thread_id)
                     else:
                         group_message_counters[chat_id] = current_count
 

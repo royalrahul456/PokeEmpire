@@ -12,20 +12,8 @@ def create_styled_button(
     icon_custom_emoji_id: str = None,
     web_app: WebAppInfo = None
 ) -> InlineKeyboardButton:
-    """Helper to construct InlineKeyboardButton with native custom emoji icon and color style."""
-    emoji_id = icon_custom_emoji_id or (getattr(config, "CUSTOM_EMOJI_IDS", {}).get(key) if key else None)
-    btn_style = style or (getattr(config, "BUTTON_STYLES", {}).get(key) if key else None)
-    
-    # If a native custom emoji icon is attached, strip any leading standard emoji from text to prevent duplicate double emojis!
-    clean_text = text
-    if emoji_id:
-        from utils.emoji_patch import EMOJI_MAPPING
-        for em in EMOJI_MAPPING.keys():
-            if clean_text.startswith(em):
-                clean_text = clean_text[len(em):].lstrip()
-                break
-
-    kwargs = {"text": clean_text}
+    """Helper to construct 100% standard-compliant InlineKeyboardButton."""
+    kwargs = {"text": text}
     if url:
         kwargs["url"] = url
     if callback_data:
@@ -33,32 +21,16 @@ def create_styled_button(
     if web_app:
         kwargs["web_app"] = web_app
 
-    try:
-        styled_kwargs = dict(kwargs)
-        if emoji_id:
-            styled_kwargs["icon_custom_emoji_id"] = emoji_id
-        if btn_style:
-            styled_kwargs["style"] = btn_style
-        return InlineKeyboardButton(**styled_kwargs)
-        
-    except Exception:
-        fallback_kwargs = {"text": text}
-        if url:
-            fallback_kwargs["url"] = url
-        if callback_data:
-            fallback_kwargs["callback_data"] = callback_data
-        if web_app:
-            fallback_kwargs["web_app"] = web_app
-        return InlineKeyboardButton(**fallback_kwargs)
+    return InlineKeyboardButton(**kwargs)
 
 def get_start_welcome_keyboard(bot_username: str) -> InlineKeyboardMarkup:
-    """Generates primary start welcome keyboard with native Telegram Custom Emoji icons and Button Color Styles."""
+    """Generates primary start welcome keyboard."""
     builder = InlineKeyboardBuilder()
     
     # Row 1 (Full Width): Add to Group
     builder.row(
         create_styled_button(
-            text="Add to Group",
+            text="➕ Add to Group",
             key="add_to_group",
             url=f"https://t.me/{bot_username}?startgroup=true"
         )
@@ -67,12 +39,12 @@ def get_start_welcome_keyboard(bot_username: str) -> InlineKeyboardMarkup:
     updates_username = getattr(config, "UPDATES_CHANNEL", "@pokeempireupdates").replace("@", "")
     builder.row(
         create_styled_button(
-            text="Updates",
+            text="📢 Updates",
             key="updates",
             url=f"https://t.me/{updates_username}"
         ),
         create_styled_button(
-            text="Support",
+            text="🌲 Support Union",
             key="support",
             url="https://t.me/pokeempireunion"
         )
@@ -80,12 +52,12 @@ def get_start_welcome_keyboard(bot_username: str) -> InlineKeyboardMarkup:
     # Row 3: Help & Stats
     builder.row(
         create_styled_button(
-            text="Help",
+            text="ℹ️ Help & Guide",
             key="help",
             callback_data="dm_help"
         ),
         create_styled_button(
-            text="Stats",
+            text="📊 Chat Rankings",
             key="stats",
             callback_data="dm_rankings_info"
         )
@@ -93,39 +65,39 @@ def get_start_welcome_keyboard(bot_username: str) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 def get_dm_menu_keyboard() -> InlineKeyboardMarkup:
-    """Generates the primary Hub menu keyboard for DMs with native custom emojis & color styles."""
+    """Generates the primary Hub menu keyboard for DMs."""
     builder = InlineKeyboardBuilder()
     builder.row(
-        create_styled_button(text="Profile", key="profile", callback_data="dm_profile"),
-        create_styled_button(text="Pokédex", key="pokedex", callback_data="dm_dex_1")
+        create_styled_button(text="👤 Profile", key="profile", callback_data="dm_profile"),
+        create_styled_button(text="📖 Pokédex", key="pokedex", callback_data="dm_dex_1")
     )
     builder.row(
-        create_styled_button(text="Quests", key="quests", callback_data="refresh_quests"),
-        create_styled_button(text="Guilds", key="guilds", callback_data="dm_guild_info")
+        create_styled_button(text="⚔️ Quests", key="quests", callback_data="refresh_quests"),
+        create_styled_button(text="🏰 Guilds", key="guilds", callback_data="dm_guild_info")
     )
     builder.row(
-        create_styled_button(text="Transactions", key="history", callback_data="dm_transactions"),
-        create_styled_button(text="My Bag", key="bag", callback_data="dm_bag_1")
+        create_styled_button(text="💳 Transactions", key="history", callback_data="dm_transactions"),
+        create_styled_button(text="🎒 My Bag", key="bag", callback_data="dm_bag_1")
     )
     builder.row(
-        create_styled_button(text="Leaderboard", key="leaderboard", callback_data="dm_leaderboard"),
-        create_styled_button(text="Battle Arena", key="battle", callback_data="dm_battle_menu")
+        create_styled_button(text="🏆 Leaderboard", key="leaderboard", callback_data="dm_leaderboard"),
+        create_styled_button(text="🛡️ Battle Arena", key="battle", callback_data="dm_battle_menu")
     )
     builder.row(
-        create_styled_button(text="Trade", key="trade", callback_data="dm_trade_info"),
-        create_styled_button(text="Redeem Code", key="redeem", callback_data="dm_redeem_info")
+        create_styled_button(text="🔄 Trade", key="trade", callback_data="dm_trade_info"),
+        create_styled_button(text="🎟️ Redeem Code", key="redeem", callback_data="dm_redeem_info")
     )
     games_bot_user = getattr(config, "GAMES_BOT_USERNAME", "@PokeArenaBot").replace("@", "")
     builder.row(
-        create_styled_button(text="Shop", key="shop", callback_data="dm_shop"),
-        create_styled_button(text="Games Center", key="games", url=f"https://t.me/{games_bot_user}?start=hub")
+        create_styled_button(text="🛒 Shop", key="shop", callback_data="dm_shop"),
+        create_styled_button(text="🎮 Games Center", key="games", url=f"https://t.me/{games_bot_user}?start=hub")
     )
     builder.row(
-        create_styled_button(text="Streak", key="streak", callback_data="dm_streak"),
-        create_styled_button(text="Chat Rankings", key="stats", callback_data="dm_rankings_info")
+        create_styled_button(text="🔥 Streak", key="streak", callback_data="dm_streak"),
+        create_styled_button(text="📊 Chat Rankings", key="stats", callback_data="dm_rankings_info")
     )
     builder.row(
-        create_styled_button(text="Help & Guide", key="help", callback_data="dm_help")
+        create_styled_button(text="ℹ️ Help & Guide", key="help", callback_data="dm_help")
     )
     return builder.as_markup()
 

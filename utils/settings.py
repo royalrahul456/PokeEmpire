@@ -262,10 +262,17 @@ async def send_safe_media(
     if not thread_id and message_to_reply:
         thread_id = getattr(message_to_reply, "message_thread_id", None)
 
-    if not media_value:
+    if not media_value or (caption and len(caption) > 950):
+        # Long texts (>950 chars) exceed photo caption limits, send as rich text directly
         if message_to_reply:
-            return await message_to_reply.answer(text=caption or "", reply_markup=reply_markup, parse_mode=parse_mode)
-        return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=reply_markup, parse_mode=parse_mode, message_thread_id=thread_id)
+            try:
+                return await message_to_reply.answer(text=caption or "", reply_markup=reply_markup, parse_mode=parse_mode)
+            except Exception:
+                pass
+        try:
+            return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=reply_markup, parse_mode=parse_mode, message_thread_id=thread_id)
+        except Exception:
+            return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=reply_markup, parse_mode=None, message_thread_id=thread_id)
 
     if isinstance(media_value, str) and os.path.exists(media_value):
         media_value = FSInputFile(media_value)

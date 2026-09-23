@@ -210,35 +210,32 @@ def markdown_to_html(text: str) -> str:
     
     return text
 
+SORTED_EMOJI_KEYS = sorted(EMOJI_MAPPING.keys(), key=lambda x: len(x), reverse=True)
+_EMOJI_REGEX = re.compile("|".join(re.escape(k) for k in SORTED_EMOJI_KEYS) + r"|🟢|🔮")
+
 def replace_emojis(text: str) -> str:
-    """Replaces standard Unicode emojis in a text string with their custom <tg-emoji> equivalent tags."""
+    """Replaces standard Unicode emojis in a text string with their custom <tg-emoji> equivalent tags in a single non-nesting pass."""
     if not isinstance(text, str) or not text:
         return text
     
-    # 1. Contextual Replacements first
-    # 🟢 (Green Circle)
-    if "🟢" in text:
-        if "Uncommon" in text:
-            eid = "5416081784641168838"  # Rarities version
-        else:
-            eid = "5215522595922779944"  # Statuses/stats version
-        text = text.replace("🟢", f'<tg-emoji emoji-id="{eid}">🟢</tg-emoji>')
+    # Don't replace if text already contains tg-emoji tags to avoid nested corruptions
+    if "<tg-emoji" in text:
+        return text
 
-    # 🔮 (Crystal Ball)
-    if "🔮" in text:
-        if "Terastal" in text or "Form 6.5" in text:
-            eid = "5244955049024581265"  # Terastal Form version
+    def _replace_match(match):
+        em = match.group(0)
+        if em == "🟢":
+            eid = "5416081784641168838" if "Uncommon" in text else "5215522595922779944"
+        elif em == "🔮":
+            eid = "5244955049024581265" if ("Terastal" in text or "Form 6.5" in text) else "5271810272640643747"
         else:
-            eid = "5271810272640643747"  # Epic Rarity version
-        text = text.replace("🔮", f'<tg-emoji emoji-id="{eid}">🔮</tg-emoji>')
-
-    # 2. Iterate through mapping
-    for emoji, eid in EMOJI_MAPPING.items():
-        if emoji in text:
-            tag = f'<tg-emoji emoji-id="{eid}">{emoji}</tg-emoji>'
-            text = text.replace(emoji, tag)
+            eid = EMOJI_MAPPING.get(em)
             
-    return text
+        if eid:
+            return f'<tg-emoji emoji-id="{eid}">{em}</tg-emoji>'
+        return em
+
+    return _EMOJI_REGEX.sub(_replace_match, text)
 
 import logging
 import config
@@ -266,9 +263,12 @@ def strip_tg_emojis(text: str) -> str:
     """Strips <tg-emoji ...> tags and retains internal emoji/content."""
     if not isinstance(text, str) or not text:
         return text
-    return re.sub(r'<tg-emoji[^>]*>(.*?)</tg-emoji>', r'\1', text)
+    # Clean any nested or broken tags cleanly
+    cleaned = re.sub(r'<tg-emoji[^>]*>(.*?)</tg-emoji>', r'\1', text)
+    cleaned = re.sub(r'</?tg-emoji[^>]*>', '', cleaned)
+    return cleaned
 
-def process_text_or_caption(text: str, parse_mode, bot_instance) -> tuple[str, str]:
+def process_text_or_caption(text: str, parse_mode, bot_instance, max_len: int = 4096) -> tuple[str, str]:
     """Helper to process text/caption, convert markdown to HTML if needed, and insert custom emojis."""
     if not text or not is_premium_emojis_enabled():
         return text, parse_mode
@@ -277,14 +277,17 @@ def process_text_or_caption(text: str, parse_mode, bot_instance) -> tuple[str, s
     if not has_target:
         return text, parse_mode
 
-    # If text already contains valid HTML tags, process emojis and set HTML mode directly
-    if HTML_TAG_PATTERN.search(text):
-        text = replace_emojis(text)
-        return text, "HTML"
-        
     current_mode = parse_mode
     is_markdown = False
-    
+
+    # If text already contains valid HTML tags, process emojis and set HTML mode directly
+    if HTML_TAG_PATTERN.search(text):
+        processed = replace_emojis(text)
+        if len(processed) <= max_len:
+            return processed, "HTML"
+        # If replacing with tg-emoji tags exceeds max_len (e.g. 1024 for photo captions), keep original text
+        return text, "HTML"
+        
     if current_mode is None:
         bot_default_mode = getattr(bot_instance, "default", None) and bot_instance.default.parse_mode
         if bot_default_mode in (ParseMode.MARKDOWN, ParseMode.MARKDOWN_V2, "Markdown", "MarkdownV2"):
@@ -302,7 +305,9 @@ def process_text_or_caption(text: str, parse_mode, bot_instance) -> tuple[str, s
         text = markdown_to_html(text)
         current_mode = "HTML"
         
-    text = replace_emojis(text)
+    processed = replace_emojis(text)
+    if len(processed) <= max_len:
+        return processed, current_mode
     return text, current_mode
 
 def patch_bot_emojis(bot: Bot):
@@ -315,11 +320,11 @@ def patch_bot_emojis(bot: Bot):
         if is_premium_emojis_enabled():
             if isinstance(method, (SendMessage, EditMessageText)):
                 if method.text and isinstance(method.text, str):
-                    method.text, new_mode = process_text_or_caption(method.text, parse_mode, bot_instance)
+                    method.text, new_mode = process_text_or_caption(method.text, parse_mode, bot_instance, max_len=4096)
                     method.parse_mode = new_mode
             elif isinstance(method, (SendPhoto, SendVideo, SendAnimation, SendAudio, SendDocument, EditMessageCaption)):
                 if method.caption and isinstance(method.caption, str):
-                    method.caption, new_mode = process_text_or_caption(method.caption, parse_mode, bot_instance)
+                    method.caption, new_mode = process_text_or_caption(method.caption, parse_mode, bot_instance, max_len=1024)
                     method.parse_mode = new_mode
         
         try:
@@ -334,8 +339,10 @@ def patch_bot_emojis(bot: Bot):
                 or "can't parse entities" in err_str
                 or "failed to parse entities" in err_str
                 or "tag" in err_str
+                or "too long" in err_str
+                or "caption" in err_str
             ):
-                logger.warning(f"Telegram API parsing/emoji issue. Retrying with stripped fallback: {e}")
+                logger.warning(f"Telegram API parsing/emoji issue on {type(method).__name__}: {e}. Retrying with stripped fallback...")
                 # 1st fallback: strip tg-emoji tags
                 if isinstance(method, (SendMessage, EditMessageText)):
                     if method.text:

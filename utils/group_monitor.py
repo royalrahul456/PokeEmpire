@@ -47,6 +47,8 @@ class GroupActivityMiddleware(BaseMiddleware):
 
         # Commands bypass spam/ban word checks and spawn counting directly to handler
         if is_command:
+            uname = f"@{user.username}" if (user and user.username) else f"User {user.id if user else 'Unknown'}"
+            print(f"📥 [GROUP COMMAND] Chat={chat.id} ('{chat.title}') by {uname}: {raw_text[:60]}")
             return await handler(event, data)
 
         try:

@@ -381,6 +381,10 @@ async def main():
 
     dp = Dispatcher()
 
+    @dp.error()
+    async def global_main_error_handler(event):
+        logger.error(f"⚠️ Main Bot unhandled error: {event.exception}", exc_info=True)
+
     # Register Middlewares
     dp.update.outer_middleware(DbSessionMiddleware())
     dp.message.outer_middleware(GroupActivityMiddleware())
@@ -438,6 +442,11 @@ async def main():
         patch_bot_emojis(games_bot)
         
         dp_games = Dispatcher()
+
+        @dp_games.error()
+        async def global_games_error_handler(event):
+            logger.error(f"⚠️ Games Bot unhandled error: {event.exception}", exc_info=True)
+
         dp_games.update.outer_middleware(DbSessionMiddleware())
         dp_games.message.outer_middleware(AntiSpamMiddleware())
         dp_games.callback_query.outer_middleware(AntiSpamMiddleware())

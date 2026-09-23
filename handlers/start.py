@@ -902,7 +902,7 @@ async def cb_battle_action(callback: CallbackQuery, db: AsyncSession):
 def is_renaming(message: Message) -> bool:
     return message.from_user.id in active_renames
 
-@router.message(Command("ping", ignore_mention=True))
+@router.message(Command("ping", "botstatus", "testgroup", ignore_mention=True))
 async def cmd_ping(message: Message, db: AsyncSession):
     import time
     
@@ -921,9 +921,8 @@ async def cmd_ping(message: Message, db: AsyncSession):
         db_status = "🔴 Error"
 
     t1 = time.time()
-    sent_message = await message.reply("🏓 <b>Pinging...</b>", parse_mode="HTML")
-    api_ms = int((time.time() - t1) * 1000)
-    transit_ms = max(1, int((time.time() - t0) * 1000) - api_ms)
+    api_ms = max(1, int((time.time() - t1) * 1000))
+    transit_ms = max(1, int((time.time() - t0) * 1000))
 
     cpu_usage = "N/A"
     ram_usage = "N/A"
@@ -935,8 +934,36 @@ async def cmd_ping(message: Message, db: AsyncSession):
     except Exception:
         pass
 
+    chat = message.chat
+    group_info_text = ""
+    if chat.type in ["group", "supergroup"]:
+        # Group & Bot permission diagnostic check
+        from utils.group_monitor import group_settings_cache, group_message_counters
+        chat_id = chat.id
+        cached = group_settings_cache.get(chat_id, {})
+        threshold = cached.get("spawn_threshold", "N/A")
+        spawns_enabled = cached.get("enabled", True)
+        current_counter = group_message_counters.get(chat_id, 0)
+        
+        bot_member_status = "Unknown"
+        try:
+            bot_member = await message.bot.get_chat_member(chat_id=chat_id, user_id=message.bot.id)
+            bot_member_status = bot_member.status.title()
+        except Exception:
+            pass
+
+        group_info_text = (
+            f"\n\n╭──「 👥 Group Diagnostics 」\n"
+            f"├─➩ 🏷️ Title: <b>{html.escape(chat.title or 'Group')}</b>\n"
+            f"├─➩ 🆔 Chat ID: <code>{chat_id}</code>\n"
+            f"├─➩ 🤖 Bot Status: <b>{bot_member_status}</b>\n"
+            f"├─➩ ⚡ Spawns: <b>{'🟢 Enabled' if spawns_enabled else '🔴 Disabled'}</b>\n"
+            f"├─➩ 📊 Counter: <code>{current_counter}/{threshold}</code> msgs\n"
+            f"╰───────────────────"
+        )
+
     text = (
-        f"⚡ <b>POKÉEMPIRE SYSTEM PING</b> ⚡\n"
+        f"⚡ <b>POKÉEMPIRE SYSTEM STATUS</b> ⚡\n"
         f"◈ ────────────────── ◈\n"
         f"🚀 <b>Release:</b> <code>v3.0 Mega Update</code>\n"
         f"📡 <b>API Latency:</b> <code>{api_ms}ms</code>\n"
@@ -946,8 +973,16 @@ async def cmd_ping(message: Message, db: AsyncSession):
         f"🧠 <b>RAM Usage:</b> <code>{ram_usage}</code>\n"
         f"◈ ────────────────── ◈\n"
         f"🟢 <b>System Status:</b> <code>Fully Operational</code>"
+        f"{group_info_text}"
     )
-    await sent_message.edit_text(text, parse_mode="HTML")
+    
+    try:
+        await message.answer(text, parse_mode="HTML")
+    except Exception:
+        try:
+            await message.answer(text, parse_mode=None)
+        except Exception as e:
+            print(f"Failed to send ping reply: {e}")
 
 @router.message(F.chat.type == "private", F.text, ~F.text.startswith("/"), is_renaming)
 async def check_dm_text_messages(message: Message, db: AsyncSession):

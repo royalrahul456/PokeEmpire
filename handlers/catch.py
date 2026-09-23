@@ -198,7 +198,7 @@ async def cmd_catch(message: Message, db: AsyncSession):
 
         # 2. Send quick coins victory reply (Message 1)
         msg1_text = f"🎉 +{coins_won} coins | ⚡ +100 EXP! Balance: {user_coins}"
-        await message.reply(msg1_text)
+        await message.answer(msg1_text)
 
         # Hook EXP leveling, transaction history, and quest progress
         from utils.trainer_level import add_trainer_xp, log_transaction
@@ -241,7 +241,7 @@ async def cmd_catch(message: Message, db: AsyncSession):
         kb_builder = InlineKeyboardBuilder()
         kb_builder.add(create_styled_button(text="📖 View Pokedex", key="pokedex", callback_data=f"pd_page_{user_id}_1_All"))
         
-        await message.reply(msg2_text, reply_markup=kb_builder.as_markup(), parse_mode="HTML")
+        await message.answer(msg2_text, reply_markup=kb_builder.as_markup(), parse_mode="HTML")
 
         # 5. Send separate streak status message (Message 3)
         fires = "🔥" * min(max(1, streak_days), 5)

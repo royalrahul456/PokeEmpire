@@ -241,44 +241,104 @@ def apply_auto_reply_patch():
     original_answer_photo = Message.answer_photo
     original_answer_video = Message.answer_video
     original_answer_animation = Message.answer_animation
+    original_reply = Message.reply
+    original_reply_photo = Message.reply_photo
+    original_reply_video = Message.reply_video
+    original_reply_animation = Message.reply_animation
+
+    async def patched_reply(self: Message, *args, **kwargs):
+        try:
+            return await original_reply(self, *args, **kwargs)
+        except Exception:
+            try:
+                return await original_answer(self, *args, **kwargs)
+            except Exception:
+                kwargs_plain = dict(kwargs)
+                kwargs_plain["parse_mode"] = None
+                return await original_answer(self, *args, **kwargs_plain)
 
     async def patched_answer(self: Message, *args, **kwargs):
         if self.chat.type != "private":
             try:
-                return await self.reply(*args, **kwargs)
+                return await original_reply(self, *args, **kwargs)
             except Exception:
-                return await original_answer(self, *args, **kwargs)
-        return await original_answer(self, *args, **kwargs)
+                pass
+        try:
+            return await original_answer(self, *args, **kwargs)
+        except Exception as e:
+            try:
+                kwargs_plain = dict(kwargs)
+                kwargs_plain["parse_mode"] = None
+                return await original_answer(self, *args, **kwargs_plain)
+            except Exception:
+                raise e
 
     async def patched_answer_photo(self: Message, *args, **kwargs):
         if self.chat.type != "private":
             try:
-                return await self.reply_photo(*args, **kwargs)
+                return await original_reply_photo(self, *args, **kwargs)
             except Exception:
-                return await original_answer_photo(self, *args, **kwargs)
-        return await original_answer_photo(self, *args, **kwargs)
+                pass
+        try:
+            return await original_answer_photo(self, *args, **kwargs)
+        except Exception as err:
+            logger.warning(f"Failed to send photo in chat {self.chat.id}: {err}. Falling back to text message.")
+            caption = kwargs.get("caption") or (args[1] if len(args) > 1 and isinstance(args[1], str) else None)
+            reply_markup = kwargs.get("reply_markup")
+            parse_mode = kwargs.get("parse_mode", "HTML")
+            if caption:
+                try:
+                    return await self.answer(text=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+                except Exception:
+                    return await self.answer(text=caption, reply_markup=reply_markup, parse_mode=None)
+            raise err
 
     async def patched_answer_video(self: Message, *args, **kwargs):
         if self.chat.type != "private":
             try:
-                return await self.reply_video(*args, **kwargs)
+                return await original_reply_video(self, *args, **kwargs)
             except Exception:
-                return await original_answer_video(self, *args, **kwargs)
-        return await original_answer_video(self, *args, **kwargs)
+                pass
+        try:
+            return await original_answer_video(self, *args, **kwargs)
+        except Exception as err:
+            logger.warning(f"Failed to send video in chat {self.chat.id}: {err}. Falling back to text message.")
+            caption = kwargs.get("caption") or (args[1] if len(args) > 1 and isinstance(args[1], str) else None)
+            reply_markup = kwargs.get("reply_markup")
+            parse_mode = kwargs.get("parse_mode", "HTML")
+            if caption:
+                try:
+                    return await self.answer(text=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+                except Exception:
+                    return await self.answer(text=caption, reply_markup=reply_markup, parse_mode=None)
+            raise err
 
     async def patched_answer_animation(self: Message, *args, **kwargs):
         if self.chat.type != "private":
             try:
-                return await self.reply_animation(*args, **kwargs)
+                return await original_reply_animation(self, *args, **kwargs)
             except Exception:
-                return await original_answer_animation(self, *args, **kwargs)
-        return await original_answer_animation(self, *args, **kwargs)
+                pass
+        try:
+            return await original_answer_animation(self, *args, **kwargs)
+        except Exception as err:
+            logger.warning(f"Failed to send animation in chat {self.chat.id}: {err}. Falling back to text message.")
+            caption = kwargs.get("caption") or (args[1] if len(args) > 1 and isinstance(args[1], str) else None)
+            reply_markup = kwargs.get("reply_markup")
+            parse_mode = kwargs.get("parse_mode", "HTML")
+            if caption:
+                try:
+                    return await self.answer(text=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+                except Exception:
+                    return await self.answer(text=caption, reply_markup=reply_markup, parse_mode=None)
+            raise err
 
     Message.answer = patched_answer
+    Message.reply = patched_reply
     Message.answer_photo = patched_answer_photo
     Message.answer_video = patched_answer_video
     Message.answer_animation = patched_answer_animation
-    logger.info("Applied global auto-reply monkey patch to Message class for group chats.")
+    logger.info("Applied resilient global auto-reply monkey patch to Message class for all chats.")
 
 async def _bg_sync_retroactive_levels():
     try:

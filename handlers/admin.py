@@ -1763,7 +1763,7 @@ async def on_poke_media_received(message: Message, db: AsyncSession):
 async def get_media_list_text(db: AsyncSession) -> str:
     from utils.settings import get_custom_cover
 
-    covers = ["start", "xo", "pokedex"]
+    covers = ["start", "xo", "profile", "pokedex"]
     cover_lines = []
     for c in covers:
         media_type, media_value = get_custom_cover(c)

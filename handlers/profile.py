@@ -210,7 +210,9 @@ async def get_player_cover_media(user_id: int, db: AsyncSession) -> tuple[str, s
                     media_value = poke_obj.image_url
                 
     if not media_value:
-        media_type, media_value = get_custom_cover("pokedex")
+        media_type, media_value = get_custom_cover("profile")
+        if not media_value:
+            media_type, media_value = get_custom_cover("pokedex")
         
     if not media_value:
         media_type = "photo"

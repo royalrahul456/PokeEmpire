@@ -247,29 +247,71 @@ def apply_auto_reply_patch():
     original_reply_animation = Message.reply_animation
 
     async def patched_reply(self: Message, *args, **kwargs):
+        # 1. Try original reply
         try:
             return await original_reply(self, *args, **kwargs)
         except Exception:
+            pass
+
+        # 2. Fallback: original answer with same kwargs
+        try:
+            return await original_answer(self, *args, **kwargs)
+        except Exception:
+            pass
+
+        # 3. Fallback: answer without reply_markup
+        try:
+            kwargs_no_markup = dict(kwargs)
+            kwargs_no_markup["reply_markup"] = None
+            return await original_answer(self, *args, **kwargs_no_markup)
+        except Exception:
+            pass
+
+        # 4. Fallback: answer without formatting and without reply_markup
+        try:
+            kwargs_plain = dict(kwargs)
+            kwargs_plain["reply_markup"] = None
+            kwargs_plain["parse_mode"] = None
+            return await original_answer(self, *args, **kwargs_plain)
+        except Exception as e:
             try:
-                return await original_answer(self, *args, **kwargs)
+                text = kwargs.get("text") or (args[0] if args else "")
+                return await self.bot.send_message(chat_id=self.chat.id, text=str(text), reply_markup=None, parse_mode=None)
             except Exception:
-                kwargs_plain = dict(kwargs)
-                kwargs_plain["parse_mode"] = None
-                return await original_answer(self, *args, **kwargs_plain)
+                raise e
 
     async def patched_answer(self: Message, *args, **kwargs):
+        # In non-private chats, try reply first for contextual UX
         if self.chat.type != "private":
             try:
                 return await original_reply(self, *args, **kwargs)
             except Exception:
                 pass
+
+        # 1. Try original answer
         try:
             return await original_answer(self, *args, **kwargs)
+        except Exception:
+            pass
+
+        # 2. Fallback: answer without reply_markup
+        try:
+            kwargs_no_markup = dict(kwargs)
+            kwargs_no_markup["reply_markup"] = None
+            return await original_answer(self, *args, **kwargs_no_markup)
+        except Exception:
+            pass
+
+        # 3. Fallback: answer without formatting and without markup
+        try:
+            kwargs_plain = dict(kwargs)
+            kwargs_plain["reply_markup"] = None
+            kwargs_plain["parse_mode"] = None
+            return await original_answer(self, *args, **kwargs_plain)
         except Exception as e:
             try:
-                kwargs_plain = dict(kwargs)
-                kwargs_plain["parse_mode"] = None
-                return await original_answer(self, *args, **kwargs_plain)
+                text = kwargs.get("text") or (args[0] if args else "")
+                return await self.bot.send_message(chat_id=self.chat.id, text=str(text), reply_markup=None, parse_mode=None)
             except Exception:
                 raise e
 
@@ -281,17 +323,24 @@ def apply_auto_reply_patch():
                 pass
         try:
             return await original_answer_photo(self, *args, **kwargs)
-        except Exception as err:
-            logger.warning(f"Failed to send photo in chat {self.chat.id}: {err}. Falling back to text message.")
-            caption = kwargs.get("caption") or (args[1] if len(args) > 1 and isinstance(args[1], str) else None)
-            reply_markup = kwargs.get("reply_markup")
-            parse_mode = kwargs.get("parse_mode", "HTML")
-            if caption:
-                try:
-                    return await self.answer(text=caption, reply_markup=reply_markup, parse_mode=parse_mode)
-                except Exception:
-                    return await self.answer(text=caption, reply_markup=reply_markup, parse_mode=None)
-            raise err
+        except Exception:
+            pass
+
+        # If photo with markup failed, try photo without markup
+        try:
+            kwargs_no_markup = dict(kwargs)
+            kwargs_no_markup["reply_markup"] = None
+            return await original_answer_photo(self, *args, **kwargs_no_markup)
+        except Exception:
+            pass
+
+        # Fallback to text message
+        caption = kwargs.get("caption") or (args[1] if len(args) > 1 and isinstance(args[1], str) else None)
+        reply_markup = kwargs.get("reply_markup")
+        parse_mode = kwargs.get("parse_mode", "HTML")
+        if caption:
+            return await patched_answer(self, text=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+        raise RuntimeError("Failed to send photo and no caption provided for text fallback")
 
     async def patched_answer_video(self: Message, *args, **kwargs):
         if self.chat.type != "private":
@@ -301,17 +350,22 @@ def apply_auto_reply_patch():
                 pass
         try:
             return await original_answer_video(self, *args, **kwargs)
-        except Exception as err:
-            logger.warning(f"Failed to send video in chat {self.chat.id}: {err}. Falling back to text message.")
-            caption = kwargs.get("caption") or (args[1] if len(args) > 1 and isinstance(args[1], str) else None)
-            reply_markup = kwargs.get("reply_markup")
-            parse_mode = kwargs.get("parse_mode", "HTML")
-            if caption:
-                try:
-                    return await self.answer(text=caption, reply_markup=reply_markup, parse_mode=parse_mode)
-                except Exception:
-                    return await self.answer(text=caption, reply_markup=reply_markup, parse_mode=None)
-            raise err
+        except Exception:
+            pass
+
+        try:
+            kwargs_no_markup = dict(kwargs)
+            kwargs_no_markup["reply_markup"] = None
+            return await original_answer_video(self, *args, **kwargs_no_markup)
+        except Exception:
+            pass
+
+        caption = kwargs.get("caption") or (args[1] if len(args) > 1 and isinstance(args[1], str) else None)
+        reply_markup = kwargs.get("reply_markup")
+        parse_mode = kwargs.get("parse_mode", "HTML")
+        if caption:
+            return await patched_answer(self, text=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+        raise RuntimeError("Failed to send video and no caption provided for text fallback")
 
     async def patched_answer_animation(self: Message, *args, **kwargs):
         if self.chat.type != "private":
@@ -321,17 +375,22 @@ def apply_auto_reply_patch():
                 pass
         try:
             return await original_answer_animation(self, *args, **kwargs)
-        except Exception as err:
-            logger.warning(f"Failed to send animation in chat {self.chat.id}: {err}. Falling back to text message.")
-            caption = kwargs.get("caption") or (args[1] if len(args) > 1 and isinstance(args[1], str) else None)
-            reply_markup = kwargs.get("reply_markup")
-            parse_mode = kwargs.get("parse_mode", "HTML")
-            if caption:
-                try:
-                    return await self.answer(text=caption, reply_markup=reply_markup, parse_mode=parse_mode)
-                except Exception:
-                    return await self.answer(text=caption, reply_markup=reply_markup, parse_mode=None)
-            raise err
+        except Exception:
+            pass
+
+        try:
+            kwargs_no_markup = dict(kwargs)
+            kwargs_no_markup["reply_markup"] = None
+            return await original_answer_animation(self, *args, **kwargs_no_markup)
+        except Exception:
+            pass
+
+        caption = kwargs.get("caption") or (args[1] if len(args) > 1 and isinstance(args[1], str) else None)
+        reply_markup = kwargs.get("reply_markup")
+        parse_mode = kwargs.get("parse_mode", "HTML")
+        if caption:
+            return await patched_answer(self, text=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+        raise RuntimeError("Failed to send animation and no caption provided for text fallback")
 
     Message.answer = patched_answer
     Message.reply = patched_reply

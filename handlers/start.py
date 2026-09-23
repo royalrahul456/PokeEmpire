@@ -37,23 +37,31 @@ active_renames = {}
 @router.message(Command("start", ignore_mention=True))
 @router.message(CommandStart(ignore_mention=True))
 async def cmd_start(message: Message, db: AsyncSession):
-    user_id = message.from_user.id
-    username = message.from_user.username
-    nickname = message.from_user.first_name
-
-    # Check and register user
-    stmt = select(User).where(User.id == user_id)
-    res = await db.execute(stmt)
-    user = res.scalar_one_or_none()
-
+    user = message.from_user
     if not user:
-        user = User(
-            id=user_id,
-            username=username,
-            nickname=nickname
-        )
-        db.add(user)
-        await db.commit()
+        user_id = message.sender_chat.id if message.sender_chat else 0
+        username = None
+        nickname = "Trainer"
+    else:
+        user_id = user.id
+        username = user.username
+        nickname = user.first_name or "Trainer"
+
+    if user_id:
+        # Check and register user
+        stmt = select(User).where(User.id == user_id)
+        res = await db.execute(stmt)
+        user_db = res.scalar_one_or_none()
+
+        if not user_db:
+            user_db = User(
+                id=user_id,
+                username=username,
+                nickname=nickname,
+                coins=500
+            )
+            db.add(user_db)
+            await db.commit()
 
     bot_info = await message.bot.get_me()
     bot_username = bot_info.username or "PokeEmpireBot"
@@ -70,15 +78,25 @@ async def cmd_start(message: Message, db: AsyncSession):
 
     reply_markup = get_start_welcome_keyboard(bot_username)
 
-    await send_cover_media(
-        chat_id=message.chat.id,
-        key="start",
-        caption=text,
-        reply_markup=reply_markup,
-        bot=message.bot,
-        default_file="data/pokeempire_banner.png",
-        message_to_reply=message
-    )
+    try:
+        await send_cover_media(
+            chat_id=message.chat.id,
+            key="start",
+            caption=text,
+            reply_markup=reply_markup,
+            bot=message.bot,
+            default_file="data/pokeempire_banner.png",
+            message_to_reply=message
+        )
+    except Exception as e:
+        print(f"Error in cmd_start send_cover_media: {e}")
+        try:
+            await message.answer(text, reply_markup=reply_markup, parse_mode="HTML")
+        except Exception:
+            try:
+                await message.answer(text, reply_markup=None, parse_mode="HTML")
+            except Exception:
+                await message.answer(text, reply_markup=None, parse_mode=None)
 
 
 

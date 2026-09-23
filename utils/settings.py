@@ -252,18 +252,25 @@ async def send_safe_media(
     parse_mode: str = "HTML",
     message_to_reply: Optional[Message] = None,
     message_thread_id: Optional[int] = None
-) -> Message:
+) -> Optional[Message]:
     """
-    Safely sends media (photo, video, animation) with automatic type fallback.
+    Safely sends media (photo, video, animation) with automatic multi-layer fallback.
     Supports Telegram Forum/Topic supergroups via message_thread_id and message_to_reply.
-    If media fails or permissions are restricted, it gracefully falls back to text.
+    If media fails or permissions/buttons are restricted, gracefully falls back through:
+    1. Media + Markup + Formatting
+    2. Media + Formatting (No Markup)
+    3. Text + Markup + Formatting
+    4. Text + Formatting (No Markup)
+    5. Raw Plain Text (No Markup, No Formatting)
+    Never crashes out to silence.
     """
     thread_id = message_thread_id
     if not thread_id and message_to_reply:
         thread_id = getattr(message_to_reply, "message_thread_id", None)
 
+    # 1. If no media or caption exceeds photo caption limit (1024 chars), send as text
     if not media_value or (caption and len(caption) > 950):
-        # Long texts (>950 chars) exceed photo caption limits, send as rich text directly
+        # Attempt rich text with markup
         if message_to_reply:
             try:
                 return await message_to_reply.answer(text=caption or "", reply_markup=reply_markup, parse_mode=parse_mode)
@@ -272,7 +279,30 @@ async def send_safe_media(
         try:
             return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=reply_markup, parse_mode=parse_mode, message_thread_id=thread_id)
         except Exception:
-            return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=reply_markup, parse_mode=None, message_thread_id=thread_id)
+            pass
+
+        # Attempt text without markup
+        if message_to_reply:
+            try:
+                return await message_to_reply.answer(text=caption or "", reply_markup=None, parse_mode=parse_mode)
+            except Exception:
+                pass
+        try:
+            return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=None, parse_mode=parse_mode, message_thread_id=thread_id)
+        except Exception:
+            pass
+
+        # Attempt raw plain text without markup
+        if message_to_reply:
+            try:
+                return await message_to_reply.answer(text=caption or "", reply_markup=None, parse_mode=None)
+            except Exception:
+                pass
+        try:
+            return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=None, parse_mode=None, message_thread_id=thread_id)
+        except Exception as err:
+            print(f"❌ Failed to send text message in chat {chat_id}: {err}")
+            return None
 
     if isinstance(media_value, str) and os.path.exists(media_value):
         media_value = FSInputFile(media_value)
@@ -285,7 +315,7 @@ async def send_safe_media(
     else:
         attempts = ["photo", "video", "animation"]
 
-    last_error = None
+    # 2. Try sending media with markup
     for mtype in attempts:
         try:
             if message_to_reply:
@@ -304,36 +334,60 @@ async def send_safe_media(
                     return await bot.send_photo(chat_id=chat_id, photo=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode, message_thread_id=thread_id)
         except TelegramBadRequest as e:
             err_msg = str(e).lower()
-            last_error = e
             if any(p in err_msg for p in ["can't use file of type", "wrong file type", "failed to get http url", "wrong type", "invalid file", "failed to get url", "type"]):
-                print(f"⚠️ send_safe_media: {mtype} failed with '{e}'. Trying fallback media type...")
                 continue
-            print(f"⚠️ send_safe_media TelegramBadRequest on {mtype}: {e}. Falling back to text.")
             break
         except Exception as e:
-            last_error = e
-            print(f"⚠️ send_safe_media error on {mtype}: {e}")
             continue
 
-    # Final fallback: text message (first with parse_mode, then raw plain text)
+    # 3. Try sending media WITHOUT markup (in case reply_markup buttons were rejected)
+    if reply_markup is not None:
+        for mtype in attempts:
+            try:
+                if message_to_reply:
+                    if mtype == "video":
+                        return await message_to_reply.answer_video(video=media_value, caption=caption, reply_markup=None, parse_mode=parse_mode)
+                    elif mtype == "animation":
+                        return await message_to_reply.answer_animation(animation=media_value, caption=caption, reply_markup=None, parse_mode=parse_mode)
+                    else:
+                        return await message_to_reply.answer_photo(photo=media_value, caption=caption, reply_markup=None, parse_mode=parse_mode)
+                else:
+                    if mtype == "video":
+                        return await bot.send_video(chat_id=chat_id, video=media_value, caption=caption, reply_markup=None, parse_mode=parse_mode, message_thread_id=thread_id)
+                    elif mtype == "animation":
+                        return await bot.send_animation(chat_id=chat_id, animation=media_value, caption=caption, reply_markup=None, parse_mode=parse_mode, message_thread_id=thread_id)
+                    else:
+                        return await bot.send_photo(chat_id=chat_id, photo=media_value, caption=caption, reply_markup=None, parse_mode=parse_mode, message_thread_id=thread_id)
+            except Exception:
+                continue
+
+    # 4. Fallback: Text message with markup and parse_mode
     try:
         if message_to_reply:
             return await message_to_reply.answer(text=caption or "", reply_markup=reply_markup, parse_mode=parse_mode)
         return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=reply_markup, parse_mode=parse_mode, message_thread_id=thread_id)
-    except Exception as e:
-        print(f"⚠️ send_safe_media formatted text failed: {e}. Retrying without formatting...")
+    except Exception:
+        pass
+
+    # 5. Fallback: Text message without markup, with parse_mode
+    try:
+        if message_to_reply:
+            return await message_to_reply.answer(text=caption or "", reply_markup=None, parse_mode=parse_mode)
+        return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=None, parse_mode=parse_mode, message_thread_id=thread_id)
+    except Exception:
+        pass
+
+    # 6. Fallback: Raw plain text message without markup and without parse_mode
+    try:
+        if message_to_reply:
+            return await message_to_reply.answer(text=caption or "", reply_markup=None, parse_mode=None)
+        return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=None, parse_mode=None, message_thread_id=thread_id)
+    except Exception as final_err:
+        print(f"❌ send_safe_media completely failed in chat {chat_id}: {final_err}")
         try:
-            if message_to_reply:
-                return await message_to_reply.answer(text=caption or "", reply_markup=reply_markup, parse_mode=None)
-            return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=reply_markup, parse_mode=None, message_thread_id=thread_id)
-        except Exception as e2:
-            print(f"❌ send_safe_media plain text fallback failed: {e2}")
-            try:
-                return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=reply_markup, parse_mode=None, message_thread_id=thread_id)
-            except Exception as e3:
-                if last_error:
-                    raise last_error
-                raise e3
+            return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=None, parse_mode=None, message_thread_id=thread_id)
+        except Exception:
+            return None
 
 
 async def send_cover_media(
@@ -378,24 +432,18 @@ async def send_cover_media(
     except Exception as e:
         print(f"⚠️ send_cover_media failed for {key} with custom media ({e}). Retrying with default fallback...")
         fb_val = default_file if (default_file and os.path.exists(default_file)) else default_url
-        if fb_val:
-            try:
-                return await send_safe_media(
-                    bot=bot,
-                    chat_id=chat_id,
-                    media_type="photo",
-                    media_value=fb_val,
-                    caption=caption,
-                    reply_markup=reply_markup,
-                    parse_mode=parse_mode,
-                    message_to_reply=message_to_reply,
-                    message_thread_id=thread_id
-                )
-            except Exception:
-                pass
-        if message_to_reply:
-            return await message_to_reply.answer(text=caption, reply_markup=reply_markup, parse_mode=parse_mode)
-        return await bot.send_message(chat_id=chat_id, text=caption, reply_markup=reply_markup, parse_mode=parse_mode, message_thread_id=thread_id)
+        fb_type = "photo" if fb_val else None
+        return await send_safe_media(
+            bot=bot,
+            chat_id=chat_id,
+            media_type=fb_type,
+            media_value=fb_val,
+            caption=caption,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode,
+            message_to_reply=message_to_reply,
+            message_thread_id=thread_id
+        )
 
 
 async def get_all_custom_rarities(db) -> dict:

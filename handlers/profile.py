@@ -183,12 +183,12 @@ async def get_player_cover_media(user_id: int, db: AsyncSession) -> tuple[str, s
                                 media_value = media_val_db
                                 
     if not media_value:
-        rand_stmt = select(UserPokemon).options(joinedload(UserPokemon.pokemon)).where(
+        rand_stmt = select(UserPokemon).where(
             UserPokemon.user_id == user_id
         ).order_by(func.random()).limit(1)
         rand_res = await db.execute(rand_stmt)
         up = rand_res.scalar_one_or_none()
-        if up and up.pokemon:
+        if up:
             if up.form_index > 0:
                 from database.models import PokemonFormMedia
                 media_stmt = select(PokemonFormMedia.media_value).where(
@@ -202,8 +202,12 @@ async def get_player_cover_media(user_id: int, db: AsyncSession) -> tuple[str, s
                     media_type, media_value = parse_stored_media_value(media_val_db)
             
             if not media_value:
-                media_type = "photo"
-                media_value = up.pokemon.image_url
+                poke_stmt = select(Pokemon).where(Pokemon.id == up.pokemon_id)
+                poke_res = await db.execute(poke_stmt)
+                poke_obj = poke_res.scalar_one_or_none()
+                if poke_obj:
+                    media_type = "photo"
+                    media_value = poke_obj.image_url
                 
     if not media_value:
         media_type, media_value = get_custom_cover("pokedex")
@@ -470,19 +474,29 @@ async def cmd_pokedex(message: Message, db: AsyncSession):
     text = None
     kb = None
     try:
-        user_id = message.from_user.id
+        user = message.from_user
+        if not user:
+            user_id = message.sender_chat.id if message.sender_chat else 0
+            nickname = "Trainer"
+        else:
+            user_id = user.id
+            nickname = user.first_name or "Trainer"
 
-        parts = message.text.split()
+        if not user_id:
+            await message.answer("⚠️ Please send commands as a personal user account.")
+            return
+
+        parts = (message.text or "").split()
         page = 1
         if len(parts) > 1 and parts[1].isdigit():
             page = int(parts[1])
 
         u_stmt = select(User).where(User.id == user_id)
         u_res = await db.execute(u_stmt)
-        user = u_res.scalar_one_or_none()
-        nickname = (user.pokedex_name or user.nickname) if (user and (user.pokedex_name or user.nickname)) else (message.from_user.first_name or "Trainer")
+        user_db = u_res.scalar_one_or_none()
+        display_nickname = (user_db.pokedex_name or user_db.nickname) if (user_db and (user_db.pokedex_name or user_db.nickname)) else nickname
 
-        text, final_page, max_page = await get_pokedex_data(user_id, nickname, page, "All", db)
+        text, final_page, max_page = await get_pokedex_data(user_id, display_nickname, page, "All", db)
         
         if max_page == 0:
             await message.answer(text, parse_mode="HTML")
@@ -506,8 +520,12 @@ async def cmd_pokedex(message: Message, db: AsyncSession):
                 await message.answer(text, reply_markup=kb, parse_mode="HTML")
                 return
             except Exception:
-                await message.answer(text, reply_markup=kb, parse_mode=None)
-                return
+                try:
+                    await message.answer(text, reply_markup=None, parse_mode="HTML")
+                    return
+                except Exception:
+                    await message.answer(text, reply_markup=None, parse_mode=None)
+                    return
         await message.answer("⚠️ Unable to load Pokédex at this moment. Please try again.")
 
 @router.callback_query(F.data == "pd_page_info_noop")
@@ -627,16 +645,26 @@ async def cb_pokedex_set_filter(callback: CallbackQuery, db: AsyncSession):
 
 @router.message(Command("achievements", "achievement", ignore_mention=True))
 async def cmd_achievements(message: Message, db: AsyncSession):
-    user_id = message.from_user.id
-    nickname = message.from_user.first_name
+    user = message.from_user
+    if not user:
+        user_id = message.sender_chat.id if message.sender_chat else 0
+        nickname = "Trainer"
+    else:
+        user_id = user.id
+        nickname = user.first_name or "Trainer"
+
+    if not user_id:
+        await message.answer("⚠️ Please send commands as a personal user account.")
+        return
 
     u_stmt = select(User).where(User.id == user_id)
     u_res = await db.execute(u_stmt)
-    user = u_res.scalar_one_or_none()
+    user_db = u_res.scalar_one_or_none()
 
-    if not user:
-        await message.answer("⚠️ You haven't caught any Pokémon yet! Catch a wild Pokémon using `/catch <name>` to start.")
-        return
+    if not user_db:
+        user_db = User(id=user_id, username=user.username if user else None, nickname=nickname, coins=500)
+        db.add(user_db)
+        await db.commit()
 
     stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == user_id)
     res = await db.execute(stmt)
@@ -656,7 +684,7 @@ async def cmd_achievements(message: Message, db: AsyncSession):
     unlocked_count = sum(1 for _, target in ACHIEVEMENTS if total_catches >= target)
 
     lines = []
-    lines.append(f"🏆 <b>Achievements — {html.escape(user.profile_name or user.nickname or nickname)}</b>")
+    lines.append(f"🏆 <b>Achievements — {html.escape(user_db.profile_name or user_db.nickname or nickname)}</b>")
     lines.append(f"Unlocked: {unlocked_count}/8\n")
 
     for title, target in ACHIEVEMENTS:
@@ -677,27 +705,40 @@ async def cmd_achievements(message: Message, db: AsyncSession):
 @router.message(Command("balance", "bal", "coins", "wallet", ignore_mention=True))
 async def cmd_balance(message: Message, db: AsyncSession):
     try:
-        user_id = message.from_user.id
+        user = message.from_user
+        if not user:
+            user_id = message.sender_chat.id if message.sender_chat else 0
+            username = None
+            nickname = "Trainer"
+        else:
+            user_id = user.id
+            username = user.username
+            nickname = user.first_name or "Trainer"
+
+        if not user_id:
+            await message.answer("⚠️ Please send commands as a personal user account.")
+            return
+
         u_stmt = select(User).where(User.id == user_id)
         u_res = await db.execute(u_stmt)
-        user = u_res.scalar_one_or_none()
+        user_db = u_res.scalar_one_or_none()
 
-        if not user:
-            user = User(
+        if not user_db:
+            user_db = User(
                 id=user_id,
-                username=message.from_user.username,
-                nickname=message.from_user.first_name or "Trainer",
+                username=username,
+                nickname=nickname,
                 coins=500
             )
-            db.add(user)
+            db.add(user_db)
             await db.commit()
 
-        name = html.escape(user.profile_name or user.nickname or message.from_user.first_name or "Trainer")
+        name = html.escape(user_db.profile_name or user_db.nickname or nickname)
         text = (
             f"💰 <b>TRAINER BALANCE</b> 💰\n"
             f"───────────────\n"
             f"👤 <b>Trainer</b>: <b>{name}</b>\n"
-            f"💳 <b>Current Balance</b>: 💰 <b>{user.coins:,} coins</b>\n"
+            f"💳 <b>Current Balance</b>: 💰 <b>{user_db.coins:,} coins</b>\n"
             f"───────────────"
         )
         await message.answer(text, parse_mode="HTML")
@@ -707,14 +748,27 @@ async def cmd_balance(message: Message, db: AsyncSession):
 
 @router.message(Command("streak", "streaks", ignore_mention=True))
 async def cmd_streak(message: Message, db: AsyncSession):
-    user_id = message.from_user.id
+    user = message.from_user
+    if not user:
+        user_id = message.sender_chat.id if message.sender_chat else 0
+        username = None
+        nickname = "Trainer"
+    else:
+        user_id = user.id
+        username = user.username
+        nickname = user.first_name or "Trainer"
+
+    if not user_id:
+        await message.answer("⚠️ Please send commands as a personal user account.")
+        return
     
     stmt = select(User).where(User.id == user_id)
     res = await db.execute(stmt)
-    user = res.scalar_one_or_none()
-    if not user:
-        await message.answer("⚠️ You must register first with /start or catch a Pokémon!")
-        return
+    user_db = res.scalar_one_or_none()
+    if not user_db:
+        user_db = User(id=user_id, username=username, nickname=nickname, coins=500)
+        db.add(user_db)
+        await db.commit()
         
     from utils.streak import get_streak_data, get_streak_rank
     from datetime import datetime, timedelta
@@ -744,7 +798,7 @@ async def cmd_streak(message: Message, db: AsyncSession):
         bar_chars = "█" * 10
         
     text = (
-        f"🔥 <b>Daily Streak — {html.escape(user.profile_name or user.nickname or user.username or message.from_user.first_name or 'Trainer')}</b>\n\n"
+        f"🔥 <b>Daily Streak — {html.escape(user_db.profile_name or user_db.nickname or user_db.username or nickname)}</b>\n\n"
         f"<blockquote>💧 <b>Status</b>: <code>{status_str}</code>\n"
         f"🎁 <b>Current</b>: <code>{current_days} days</code>\n"
         f"🏆 <b>Best</b>: <code>{best_days} days</code>\n"
@@ -811,16 +865,36 @@ async def cmd_streak_leaderboard(message: Message, db: AsyncSession):
 
 @router.message(Command("profile", ignore_mention=True))
 async def cmd_profile(message: Message, db: AsyncSession):
+    profile_card = None
+    builder = None
     try:
-        user_id = message.from_user.id
+        user = message.from_user
+        if not user:
+            user_id = message.sender_chat.id if message.sender_chat else 0
+            username = None
+            first_name = "Trainer"
+        else:
+            user_id = user.id
+            username = user.username
+            first_name = user.first_name or "Trainer"
+
+        if not user_id:
+            await message.answer("⚠️ Please send commands as a personal user account.")
+            return
 
         u_stmt = select(User).where(User.id == user_id)
         u_res = await db.execute(u_stmt)
-        user = u_res.scalar_one_or_none()
+        user_db = u_res.scalar_one_or_none()
 
-        if not user:
-            await message.answer("⚠️ You haven't caught any Pokémon yet! Join a group chat and catch a wild Pokémon using `/catch <name>` to start.")
-            return
+        if not user_db:
+            user_db = User(
+                id=user_id,
+                username=username,
+                nickname=first_name,
+                coins=500
+            )
+            db.add(user_db)
+            await db.commit()
 
         count_stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == user_id)
         count_res = await db.execute(count_stmt)
@@ -841,7 +915,7 @@ async def cmd_profile(message: Message, db: AsyncSession):
         dex_pct = (unique_caught / total_species) * 100
         dex_bar = get_progress_bar(unique_caught, total_species, 10, fill_char="▰", empty_char="▱")
 
-        rarity_stmt = select(Pokemon.rarity, func.count(UserPokemon.id)).join(UserPokemon).where(UserPokemon.user_id == user_id).group_by(Pokemon.rarity)
+        rarity_stmt = select(Pokemon.rarity, func.count(UserPokemon.id)).join(UserPokemon, UserPokemon.pokemon_id == Pokemon.id).where(UserPokemon.user_id == user_id).group_by(Pokemon.rarity)
         rarity_res = await db.execute(rarity_stmt)
         rarity_counts = {r: count for r, count in rarity_res.all()}
 
@@ -893,8 +967,8 @@ async def cmd_profile(message: Message, db: AsyncSession):
             
         forms_breakdown_text = "\n".join(forms_lines)
 
-        formatted_coins = f"{user.coins:,}"
-        user_nickname = (user.profile_name or user.nickname) if (user and (user.profile_name or user.nickname)) else (message.from_user.first_name or "Trainer")
+        formatted_coins = f"{user_db.coins:,}"
+        user_nickname = (user_db.profile_name or user_db.nickname) if (user_db and (user_db.profile_name or user_db.nickname)) else first_name
 
         rank_stmt = (
             select(func.count())
@@ -935,8 +1009,8 @@ async def cmd_profile(message: Message, db: AsyncSession):
                     fav_name = f"{p_name.title()}{form_suffix}"
 
         from utils.trainer_level import get_trainer_title, get_xp_required_for_next_level
-        lvl = user.trainer_level or 1
-        xp = user.trainer_xp or 0
+        lvl = user_db.trainer_level or 1
+        xp = user_db.trainer_xp or 0
         req_xp = get_xp_required_for_next_level(lvl)
         xp_pct = min(100, int((xp / req_xp) * 100)) if req_xp > 0 else 0
         xp_filled = xp_pct // 10
@@ -946,7 +1020,7 @@ async def cmd_profile(message: Message, db: AsyncSession):
         profile_card = (
             f"╭──「 🏆 Trainer Profile 」\n"
             f"├─➩ 🏓 User: {html.escape(user_nickname)}\n"
-            f"├─➩ 🆔 ID: <code>{user.id}</code>\n"
+            f"├─➩ 🆔 ID: <code>{user_db.id}</code>\n"
             f"├─➩ 🎖️ Level: <code>Lv. {lvl} ({title})</code>\n"
             f"├─➩ ⚡ EXP: [{xp_bar}] {xp_pct}% (<code>{xp:,}/{req_xp:,}</code>)\n"
             f"├─➩ 💰 Balance: <code>{formatted_coins} coins</code>\n"
@@ -983,6 +1057,17 @@ async def cmd_profile(message: Message, db: AsyncSession):
     except Exception as e:
         import traceback
         traceback.print_exc()
+        if profile_card:
+            try:
+                await message.answer(profile_card, reply_markup=builder.as_markup() if builder else None, parse_mode="HTML")
+                return
+            except Exception:
+                try:
+                    await message.answer(profile_card, reply_markup=None, parse_mode="HTML")
+                    return
+                except Exception:
+                    await message.answer(profile_card, reply_markup=None, parse_mode=None)
+                    return
         await message.answer(f"❌ An error occurred while generating your profile: <code>{html.escape(str(e))}</code>", parse_mode="HTML")
 
 @router.message(Command("check", ignore_mention=True))

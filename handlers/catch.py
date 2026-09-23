@@ -15,12 +15,17 @@ router = Router()
 @router.message(Command("catch", ignore_mention=True))
 async def cmd_catch(message: Message, db: AsyncSession):
     chat_id = message.chat.id
-    user_id = message.from_user.id
-    username = message.from_user.username
-    nickname = message.from_user.first_name
+    user = message.from_user
+    if not user:
+        await message.answer("⚠️ Anonymous channel posts cannot catch Pokémon. Please catch as a personal user account.")
+        return
+
+    user_id = user.id
+    username = user.username
+    nickname = user.first_name
 
     # Check command parameter
-    parts = message.text.split(maxsplit=1)
+    parts = (message.text or "").split(maxsplit=1)
     if len(parts) < 2:
         await message.answer("⚠️ Format: `/catch <pokemon_name>`")
         return

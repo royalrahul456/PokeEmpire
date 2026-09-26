@@ -215,6 +215,7 @@ async def cmd_catch(message: Message, db: AsyncSession):
         await log_transaction(user_id, coins_won, "CATCH", f"Caught {pokemon.name.title()}", db)
         await update_quest_progress(user_id, "daily_catch", 1, db)
         await update_quest_progress(user_id, "weekly_catch", 1, db)
+        await db.commit()
 
         # 3. Calculate time taken
         import datetime

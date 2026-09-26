@@ -81,8 +81,10 @@ async def cmd_catch(message: Message, db: AsyncSession):
 
     if not user:
         # Check union group membership
+        target_chat = getattr(config, "MAIN_GROUP_ID", None) or getattr(config, "SUPPORT_GROUP", "@PokeEmpire")
+        group_url = getattr(config, "SUPPORT_GROUP_URL", "https://t.me/PokeEmpire")
         try:
-            member = await message.bot.get_chat_member(chat_id="@pokeempireunion", user_id=user_id)
+            member = await message.bot.get_chat_member(chat_id=target_chat, user_id=user_id)
             is_member = member.status in ["creator", "administrator", "member", "restricted"]
         except Exception:
             is_member = False
@@ -90,12 +92,12 @@ async def cmd_catch(message: Message, db: AsyncSession):
         if not is_member:
             from keyboards.inline import create_styled_button
             kb = InlineKeyboardMarkup(inline_keyboard=[
-                [create_styled_button(text="🌲 Join PokéEmpire Union", key="support", url="https://t.me/pokeempireunion")]
+                [create_styled_button(text="🌲 Join Official PokéEmpire Group", key="support", url=group_url)]
             ])
             await message.answer(
                 "❌ **Catch Denied! First-Time Player Registration Required** 🌲\n\n"
                 "To start your PokéEmpire journey and catch your very first Pokémon, "
-                "you must first join our official Union Group!\n\n"
+                "you must first join our official Group Chat!\n\n"
                 "👉 Join below, then try catching again!",
                 reply_markup=kb
             )

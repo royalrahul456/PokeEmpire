@@ -591,9 +591,11 @@ async def cmd_events_calendar(message: Message):
         kb = get_back_to_hub_keyboard()
     else:
         builder = InlineKeyboardBuilder()
+        group_url = getattr(config, "SUPPORT_GROUP_URL", "https://t.me/PokeEmpire")
+        updates_url = f"https://t.me/{getattr(config, 'UPDATES_CHANNEL', '@pokeempireupdates').lstrip('@')}"
         builder.row(
-            create_styled_button(text="👥 Official Union", key="support", url="https://t.me/pokeempireunion"),
-            create_styled_button(text="📢 Updates Channel", key="updates", url="https://t.me/pokeempireupdates")
+            create_styled_button(text="👥 Official Group", key="support", url=group_url),
+            create_styled_button(text="📢 Updates Channel", key="updates", url=updates_url)
         )
         kb = builder.as_markup()
     await message.answer(SEPTEMBER_EVENT_CALENDAR_TEXT, reply_markup=kb, parse_mode="HTML")

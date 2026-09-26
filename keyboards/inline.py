@@ -44,9 +44,9 @@ def get_start_welcome_keyboard(bot_username: str) -> InlineKeyboardMarkup:
             url=f"https://t.me/{updates_username}"
         ),
         create_styled_button(
-            text="🌲 Support Union",
+            text="🌲 Official Group",
             key="support",
-            url="https://t.me/pokeempireunion"
+            url=getattr(config, "SUPPORT_GROUP_URL", "https://t.me/PokeEmpire")
         )
     )
     # Row 3: Help & Stats
@@ -278,7 +278,7 @@ GROUP_ONLY_GAMES_NOTICE = (
 def get_official_group_keyboard() -> InlineKeyboardMarkup:
     """Returns an inline keyboard with a direct button to join the official group."""
     builder = InlineKeyboardBuilder()
-    group_url = getattr(config, "SUPPORT_GROUP_URL", "https://t.me/pokeempireunion")
+    group_url = getattr(config, "SUPPORT_GROUP_URL", "https://t.me/PokeEmpire")
     builder.row(
         create_styled_button(text="👥 Join Official GC", key="support", url=group_url, style="primary")
     )

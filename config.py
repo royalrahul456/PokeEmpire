@@ -156,8 +156,22 @@ else:
 UPDATES_CHANNEL = os.getenv("UPDATES_CHANNEL", "@pokeempireupdates")
 DATABASE_CHANNEL = os.getenv("DATABASE_CHANNEL", "@pokeempiredatabase")
 AUCTION_CHANNEL = os.getenv("AUCTION_CHANNEL", "@PokeEmpireAuctions")
-SUPPORT_GROUP = os.getenv("SUPPORT_GROUP", "@pokeempireunion")
-SUPPORT_GROUP_URL = os.getenv("SUPPORT_GROUP_URL", "https://t.me/pokeempireunion")
+MAIN_GROUP_ID = int(os.getenv("MAIN_GROUP_ID", "-1004226940726"))
+SUPPORT_GROUP = os.getenv("SUPPORT_GROUP", "@PokeEmpire")
+SUPPORT_GROUP_URL = os.getenv("SUPPORT_GROUP_URL", "https://t.me/PokeEmpire")
+
+def is_official_group(chat_id: int = None, username: str = None) -> bool:
+    """Helper to check if a chat is the official PokeEmpire main group."""
+    if chat_id is not None:
+        if chat_id == MAIN_GROUP_ID or chat_id in (-1004226940726, -1004441222762):
+            return True
+    if username:
+        clean = username.lstrip("@").lower()
+        if clean in ("pokeempire", "pokeempireunion"):
+            return True
+        if SUPPORT_GROUP and clean == SUPPORT_GROUP.lstrip("@").lower():
+            return True
+    return False
 
 # Telegram Custom Emoji IDs for Native Inline Buttons (configurable)
 CUSTOM_EMOJI_IDS = {

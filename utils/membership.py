@@ -10,7 +10,7 @@ membership_cache = {}
 
 async def check_membership(bot, user_id: int, force_refresh: bool = False) -> bool:
     """
-    Checks if a user is a member of the official group (@pokeempireunion)
+    Checks if a user is a member of the official group (@PokeEmpire)
     with a 5-minute in-memory cache.
     """
     if user_id in config.ADMIN_IDS:
@@ -28,7 +28,8 @@ async def check_membership(bot, user_id: int, force_refresh: bool = False) -> bo
     is_member = False
     # Check group chat membership
     try:
-        chat_member = await bot.get_chat_member(chat_id="@pokeempireunion", user_id=user_id)
+        target_chat = getattr(config, "MAIN_GROUP_ID", None) or getattr(config, "SUPPORT_GROUP", "@PokeEmpire")
+        chat_member = await bot.get_chat_member(chat_id=target_chat, user_id=user_id)
         if chat_member.status not in ["left", "kicked"]:
             is_member = True
     except Exception as e:
@@ -44,9 +45,10 @@ def get_join_keyboard() -> InlineKeyboardMarkup:
     Generates inline keyboard markup with link to the official group chat and a Verify button.
     """
     from keyboards.inline import create_styled_button
+    group_url = getattr(config, "SUPPORT_GROUP_URL", "https://t.me/PokeEmpire")
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
-            create_styled_button(text="👥 Join Group Chat", key="support", url="https://t.me/pokeempireunion")
+            create_styled_button(text="👥 Join Official Group", key="support", url=group_url)
         ],
         [
             create_styled_button(text="🔄 Verify Membership", key="refresh", callback_data="verify_membership")
@@ -129,9 +131,10 @@ class MembershipMiddleware(BaseMiddleware):
                         )
                     else:
                         # Group command
+                        group_tag = getattr(config, "SUPPORT_GROUP", "@PokeEmpire")
                         await event.reply(
                             "🚫 <b>ACCESS DENIED!</b> 🚫\n"
-                            "<blockquote>You must join our official Group Chat (@pokeempireunion) to use bot commands!</blockquote>",
+                            f"<blockquote>You must join our official Group Chat ({group_tag}) to use bot commands!</blockquote>",
                             parse_mode="HTML"
                         )
                     return

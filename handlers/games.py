@@ -1118,9 +1118,11 @@ async def scribble_timeout_task(chat_id: int, message_id: int, bot: Bot):
             async with SessionLocal() as db:
                 try:
                     chat = await bot.get_chat(chat_id)
-                    is_official = (chat.username and chat.username.lower() == "pokeempireunion")
+                    chat_uname = getattr(chat, "username", None)
                 except Exception:
-                    is_official = False
+                    chat_uname = None
+                
+                is_official = config.is_official_group(chat_id=chat_id, username=chat_uname)
                 
                 if is_official and not get_chat_game(chat_id, "scribble") and not get_chat_game(chat_id, "nameguess"):
                     scrib_ok = is_scribble_enabled(chat_id)
@@ -1157,9 +1159,11 @@ async def nameguess_timeout_task(chat_id: int, message_id: int, bot: Bot):
             async with SessionLocal() as db:
                 try:
                     chat = await bot.get_chat(chat_id)
-                    is_official = (chat.username and chat.username.lower() == "pokeempireunion")
+                    chat_uname = getattr(chat, "username", None)
                 except Exception:
-                    is_official = False
+                    chat_uname = None
+                
+                is_official = config.is_official_group(chat_id=chat_id, username=chat_uname)
                 
                 if is_official and not get_chat_game(chat_id, "scribble") and not get_chat_game(chat_id, "nameguess"):
                     scrib_ok = is_scribble_enabled(chat_id)
@@ -2018,7 +2022,7 @@ async def check_game_answers(message: Message, db: AsyncSession):
             asyncio.create_task(delete_message_after(victory_msg, 60))
 
             # Automatically start another game in group chats if enabled
-            if message.chat.type in ["group", "supergroup"] and message.chat.username and message.chat.username.lower() == "pokeempireunion":
+            if message.chat.type in ["group", "supergroup"] and config.is_official_group(chat_id=chat_id, username=message.chat.username):
                 await asyncio.sleep(2)
                 if not get_chat_game(chat_id, "scribble") and not get_chat_game(chat_id, "nameguess"):
                     scrib_ok = is_scribble_enabled(chat_id)
@@ -2038,9 +2042,9 @@ async def check_game_answers(message: Message, db: AsyncSession):
 def no_active_game_in_group(message: Message) -> bool:
     if message.chat.type not in ["group", "supergroup"]:
         return False
-    if not message.chat.username or message.chat.username.lower() != "pokeempireunion":
-        return False
     chat_id = message.chat.id
+    if not config.is_official_group(chat_id=chat_id, username=message.chat.username):
+        return False
     return (not get_chat_game(chat_id, "scribble") and not get_chat_game(chat_id, "nameguess") and 
             (is_scribble_enabled(chat_id) or is_nameguess_enabled(chat_id)))
 

@@ -7,7 +7,7 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 import config
 from database.models import User, Pokemon, UserPokemon, RedeemCode, RedeemClaim
 from utils.formatters import escape_md, get_progress_bar, get_rarity_emoji
@@ -16,15 +16,19 @@ from utils.settings import get_custom_rarity_forms, send_safe_media
 router = Router()
 redeem_process_lock = asyncio.Lock()
 
+def is_authorized_creator(user_id: int) -> bool:
+    allowed = set(config.ADMIN_IDS) | set(config.OWNER_IDS) | set(getattr(config, "CO_OWNER_IDS", [])) | set(getattr(config, "DEV_IDS", []))
+    return user_id in allowed
+
 @router.message(Command("createredeem", ignore_mention=True))
 async def cmd_create_redeem(message: Message, db: AsyncSession):
-    # Only bot owner can run this in DM
+    # Only bot owner/admin can run this in DM
     if message.chat.type != "private":
         await message.answer("⚠️ This command can only be used in private DMs.")
         return
         
-    if not message.from_user or (message.from_user.id not in config.OWNER_IDS and message.from_user.id not in getattr(config, "CO_OWNER_IDS", [])):
-        await message.answer("❌ Denied. Only Bot Owners and Co-Owners can create redeem codes.")
+    if not message.from_user or not is_authorized_creator(message.from_user.id):
+        await message.answer("❌ Denied. Only Bot Administrators and Owners can create redeem codes.")
         return
         
     parts = message.text.split()
@@ -328,8 +332,8 @@ async def cmd_redeem(message: Message, db: AsyncSession):
 @router.message(Command("gen", ignore_mention=True))
 async def cmd_gen(message: Message, db: AsyncSession):
     # Authorization check
-    if not message.from_user or (message.from_user.id not in config.OWNER_IDS and message.from_user.id not in getattr(config, "CO_OWNER_IDS", [])):
-        await message.answer("❌ Denied. Only Bot Owners and Co-Owners can generate redeem codes.")
+    if not message.from_user or not is_authorized_creator(message.from_user.id):
+        await message.answer("❌ Denied. Only Bot Administrators and Owners can generate redeem codes.")
         return
         
     parts = message.text.split()
@@ -338,7 +342,7 @@ async def cmd_gen(message: Message, db: AsyncSession):
             "⚠️ <b>Format</b>:\n"
             "• <code>/gen &lt;pokemon_id_or_name&gt;[.form_index] &lt;limit&gt; [shiny]</code>\n"
             "• <code>/gen coins &lt;amount&gt; &lt;limit&gt;</code>\n\n"
-            "*(e.g., <code>/gen 3845 1</code> or <code>/gen coins 5000 10</code>)*",
+            "*(e.g., <code>/gen 3845 1</code> or <code>/gen pikachu 5</code> or <code>/gen coins 5000 10</code>)*",
             parse_mode="HTML"
         )
         return
@@ -436,14 +440,25 @@ async def cmd_gen(message: Message, db: AsyncSession):
                 form_index = int(fq)
             reward_str = pq
             
+        pokemon = None
         if reward_str.isdigit():
             poke_stmt = select(Pokemon).where(Pokemon.id == int(reward_str))
+            poke_res = await db.execute(poke_stmt)
+            pokemon = poke_res.scalar_one_or_none()
         else:
-            poke_stmt = select(Pokemon).where(Pokemon.name.ilike(reward_str))
+            from utils.pokemon_cache import get_cached_pokemon_by_name
+            pokemon = get_cached_pokemon_by_name(reward_str)
+            if not pokemon:
+                poke_stmt = select(Pokemon).where(
+                    or_(
+                        Pokemon.name.ilike(reward_str),
+                        func.replace(Pokemon.name, '-', ' ').ilike(reward_str.replace('-', ' ')),
+                        func.replace(Pokemon.name, ' ', '').ilike(reward_str.replace(' ', ''))
+                    )
+                )
+                poke_res = await db.execute(poke_stmt)
+                pokemon = poke_res.scalar_one_or_none()
             
-        poke_res = await db.execute(poke_stmt)
-        pokemon = poke_res.scalar_one_or_none()
-        
         if not pokemon:
             await message.answer(f"❌ Pokémon '{reward_str}' not found in database.")
             return

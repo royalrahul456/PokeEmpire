@@ -55,7 +55,7 @@ async def cmd_catch(message: Message, db: AsyncSession):
     pokemon_id = pokemon.id
     pokemon_rarity = pokemon.rarity
 
-    # 3. Check guess correctness
+    # 3. Check guess correctness with flexible normalization
     actual_name = pokemon.name.lower()
     # Accept base name for form variants by stripping known suffixes from the END only
     # e.g. "basculegion-male" → "basculegion", "mr-mime-galarian" → "mr-mime"
@@ -70,7 +70,18 @@ async def cmd_catch(message: Message, db: AsyncSession):
         parts = actual_name.rsplit("-", 1)
         if parts[-1] in FORM_SUFFIXES:
             base_name = parts[0]
-    if guess != actual_name and guess != base_name:
+
+    def _norm(s: str) -> str:
+        return s.lower().replace("-", "").replace(".", "").replace("'", "").replace(":", "").replace(" ", "").strip()
+
+    is_correct = (
+        guess == actual_name or 
+        guess == base_name or 
+        _norm(guess) == _norm(actual_name) or 
+        _norm(guess) == _norm(base_name)
+    )
+
+    if not is_correct:
         await message.answer("❌ That name is incorrect! Take another look and try again.")
         return
 
@@ -83,11 +94,17 @@ async def cmd_catch(message: Message, db: AsyncSession):
         # Check union group membership
         target_chat = getattr(config, "MAIN_GROUP_ID", None) or getattr(config, "SUPPORT_GROUP", "@PokeEmpire")
         group_url = getattr(config, "SUPPORT_GROUP_URL", "https://t.me/PokeEmpire")
-        try:
-            member = await message.bot.get_chat_member(chat_id=target_chat, user_id=user_id)
-            is_member = member.status in ["creator", "administrator", "member", "restricted"]
-        except Exception:
-            is_member = False
+        
+        # If inside the official group, they are already a member!
+        if chat_id == target_chat or config.is_official_group(chat_id, getattr(message.chat, "username", None)):
+            is_member = True
+        else:
+            try:
+                member = await message.bot.get_chat_member(chat_id=target_chat, user_id=user_id)
+                is_member = member.status in ["creator", "administrator", "member", "restricted"]
+            except Exception:
+                # If Telegram API cannot verify member due to privacy/permissions, allow seamless registration
+                is_member = True
 
         if not is_member:
             from keyboards.inline import create_styled_button
@@ -95,11 +112,12 @@ async def cmd_catch(message: Message, db: AsyncSession):
                 [create_styled_button(text="🌲 Join Official PokéEmpire Group", key="support", url=group_url)]
             ])
             await message.answer(
-                "❌ **Catch Denied! First-Time Player Registration Required** 🌲\n\n"
+                "❌ <b>Catch Denied! First-Time Player Registration Required</b> 🌲\n\n"
                 "To start your PokéEmpire journey and catch your very first Pokémon, "
                 "you must first join our official Group Chat!\n\n"
                 "👉 Join below, then try catching again!",
-                reply_markup=kb
+                reply_markup=kb,
+                parse_mode="HTML"
             )
             return
 

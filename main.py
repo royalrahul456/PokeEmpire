@@ -477,13 +477,13 @@ async def main():
         bot = Bot(
             token=config.BOT_TOKEN,
             session=session,
-            default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
+            default=DefaultBotProperties(parse_mode=ParseMode.HTML)
         )
         logger.info(f"Bot client configured to route traffic via proxy: {config.TELEGRAM_PROXY}")
     else:
         bot = Bot(
             token=config.BOT_TOKEN,
-            default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
+            default=DefaultBotProperties(parse_mode=ParseMode.HTML)
         )
     
     # Apply custom premium emoji patch
@@ -550,12 +550,12 @@ async def main():
             games_bot = Bot(
                 token=config.GAMES_BOT_TOKEN,
                 session=games_session,
-                default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
+                default=DefaultBotProperties(parse_mode=ParseMode.HTML)
             )
         else:
             games_bot = Bot(
                 token=config.GAMES_BOT_TOKEN,
-                default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
+                default=DefaultBotProperties(parse_mode=ParseMode.HTML)
             )
             
         patch_bot_emojis(games_bot)

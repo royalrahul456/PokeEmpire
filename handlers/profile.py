@@ -496,6 +496,16 @@ async def cmd_pokedex(message: Message, db: AsyncSession):
         u_stmt = select(User).where(User.id == user_id)
         u_res = await db.execute(u_stmt)
         user_db = u_res.scalar_one_or_none()
+        if not user_db:
+            user_db = User(
+                id=user_id,
+                username=user.username if user else None,
+                nickname=nickname,
+                coins=500
+            )
+            db.add(user_db)
+            await db.commit()
+
         display_nickname = (user_db.pokedex_name or user_db.nickname) if (user_db and (user_db.pokedex_name or user_db.nickname)) else nickname
 
         text, final_page, max_page = await get_pokedex_data(user_id, display_nickname, page, "All", db)

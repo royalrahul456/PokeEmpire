@@ -180,7 +180,8 @@ async def spawn_timeout_task(chat_id: int, message_id: int, bot: Bot, message_th
             try:
                 await bot.send_message(
                     chat_id=chat_id,
-                    text="🏃‍♂️ **The wild Pokémon fled!** You were too slow.",
+                    text="🏃‍♂️ <b>The wild Pokémon fled!</b> You were too slow.",
+                    parse_mode="HTML",
                     message_thread_id=message_thread_id
                 )
             except Exception:

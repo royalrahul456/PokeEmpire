@@ -261,8 +261,9 @@ class GroupActivityMiddleware(BaseMiddleware):
                         
                         bot = data.get("bot") or event.bot
                         thread_id = getattr(event, "message_thread_id", None)
-                        # Trigger wild spawn
-                        await SpawnService.trigger_spawn(db, chat_id, bot, message_thread_id=thread_id)
+                        # Fire spawn as background task — don't block the current message handler
+                        import asyncio
+                        asyncio.create_task(SpawnService.trigger_spawn(db, chat_id, bot, message_thread_id=thread_id))
                     else:
                         group_message_counters[chat_id] = current_count
 
@@ -335,16 +336,23 @@ async def flush_chat_activity(target_chat_id: int = None):
                             nickname=nname or uname or "Trainer",
                             coins=500
                         ))
-                await db.flush()
+            await db.flush()
 
-            # 2. Update/insert ChatMessageStats
+            # 2. Batch-fetch ALL relevant ChatMessageStat rows in ONE query (avoids N+1)
+            all_chat_ids = list({cid for (cid, _) in items_to_flush.keys()})
+            all_user_ids_for_stats = list({uid for (_, uid) in items_to_flush.keys()})
+            stats_stmt = select(ChatMessageStat).where(
+                ChatMessageStat.chat_id.in_(all_chat_ids),
+                ChatMessageStat.user_id.in_(all_user_ids_for_stats)
+            )
+            stats_res = await db.execute(stats_stmt)
+            existing_stats = {
+                (s.chat_id, s.user_id): s for s in stats_res.scalars().all()
+            }
+
+            # 3. Update/insert stats in memory, then commit once
             for (c_id, u_id), delta in items_to_flush.items():
-                stmt = select(ChatMessageStat).where(
-                    ChatMessageStat.chat_id == c_id,
-                    ChatMessageStat.user_id == u_id
-                )
-                res = await db.execute(stmt)
-                stat = res.scalar_one_or_none()
+                stat = existing_stats.get((c_id, u_id))
 
                 if not stat:
                     stat = ChatMessageStat(

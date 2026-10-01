@@ -3653,13 +3653,11 @@ async def cmd_set_pokemon_name(message: Message, db: AsyncSession):
     )
     await message.answer(card, parse_mode="HTML")
 
-
-
-
-
 # ======================================================
 #  POKEDEX VAULT SYSTEM -- Owner-only commands
 # ======================================================
+
+import json
 
 def _make_pdx_serial(item_id: int) -> str:
     return f"PDX-{item_id:04d}"
@@ -3667,7 +3665,7 @@ def _make_pdx_serial(item_id: int) -> str:
 
 @router.message(Command("removepokedex", ignore_mention=True))
 async def cmd_remove_pokedex(message: Message, db: AsyncSession):
-    """Owner-only: /removepokedex <user_id> -- strips the Pokedex and stores in vault."""
+    """Owner-only: /removepokedex <user_id> -- strips the Pokedex (including all caught Pokemon) and stores it in the vault with a unique ID."""
     if not message.from_user or message.from_user.id not in config.OWNER_IDS:
         await message.answer("<b>Access Denied.</b> Only the Bot Owner can use this command.", parse_mode="HTML")
         return
@@ -3675,7 +3673,8 @@ async def cmd_remove_pokedex(message: Message, db: AsyncSession):
     parts = message.text.split()
     if len(parts) < 2 or not parts[1].lstrip("-").isdigit():
         await message.answer(
-            "<b>Usage:</b> <code>/removepokedex &lt;user_id&gt;</code>",
+            "<b>Usage:</b> <code>/removepokedex &lt;user_id&gt;</code>\n"
+            "<i>Example: /removepokedex 8617551695</i>",
             parse_mode="HTML"
         )
         return
@@ -3686,63 +3685,101 @@ async def cmd_remove_pokedex(message: Message, db: AsyncSession):
     target = res.scalar_one_or_none()
 
     if not target:
-        await message.answer(f"User <code>{target_id}</code> not found.", parse_mode="HTML")
+        await message.answer(f"User <code>{target_id}</code> not found in database.", parse_mode="HTML")
         return
 
-    if not target.pokedex_name:
+    # Fetch all Pokemon currently in this user's Pokedex/collection
+    poke_stmt = select(UserPokemon).where(UserPokemon.user_id == target_id)
+    poke_res = await db.execute(poke_stmt)
+    user_pokes = poke_res.scalars().all()
+
+    # Determine Pokedex name (custom name or default based on their nickname/username)
+    pokedex_title = target.pokedex_name or f"{target.nickname or target.username or 'Trainer'}'s Pokédex"
+
+    if len(user_pokes) == 0 and not target.pokedex_name:
         await message.answer(
-            f"User <code>{target_id}</code> (<b>{html.escape(target.nickname or 'Trainer')}</b>) does not have a Pokedex.",
+            f"ℹ️ User <code>{target_id}</code> (<b>{html.escape(target.nickname or 'Trainer')}</b>) "
+            f"has 0 Pokémon in their Pokédex.",
             parse_mode="HTML"
         )
         return
 
-    old_name = target.pokedex_name
-    vault_item = PokedexItem(serial_id="PDX-TEMP", pokedex_name=old_name, removed_from_user_id=target_id)
+    # Serialize all Pokemon records into JSON
+    serialized_pokes = []
+    for p in user_pokes:
+        serialized_pokes.append({
+            "pokemon_id": p.pokemon_id,
+            "nickname": p.nickname,
+            "is_shiny": bool(p.is_shiny),
+            "is_amv": bool(p.is_amv),
+            "form_index": p.form_index or 0,
+            "serial_number": p.serial_number,
+            "level": p.level or 1,
+            "xp": p.xp or 0,
+            "iv_hp": p.iv_hp or 0,
+            "iv_atk": p.iv_atk or 0,
+            "iv_def": p.iv_def or 0,
+            "iv_spd": p.iv_spd or 0,
+        })
+
+    # Delete the Pokemon collection from the user and clear pokedex_name
+    await db.execute(delete(UserPokemon).where(UserPokemon.user_id == target_id))
+    target.pokedex_name = None
+
+    # Store Pokédex in the vault
+    vault_item = PokedexItem(
+        serial_id="PDX-TEMP",
+        pokedex_name=pokedex_title,
+        pokemon_count=len(serialized_pokes),
+        pokemon_json=json.dumps(serialized_pokes),
+        removed_from_user_id=target_id,
+    )
     db.add(vault_item)
     await db.flush()
     vault_item.serial_id = _make_pdx_serial(vault_item.id)
-    target.pokedex_name = None
     await db.commit()
 
     await message.answer(
-        f"\U0001f5d1\ufe0f <b>POKEDEX REMOVED</b>\n"
-        f"\u25c8 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 \u25c8\n"
-        f"\U0001f464 <b>User:</b> <code>{target_id}</code> \u2014 <b>{html.escape(target.nickname or 'Trainer')}</b>\n"
-        f"\U0001f4d6 <b>Pokedex Name:</b> <b>{html.escape(old_name)}</b>\n"
-        f"\U0001f3f7 <b>Vault Serial:</b> <code>{vault_item.serial_id}</code>\n"
-        f"\u25c8 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 \u25c8\n"
-        f"<i>Use /givepokedex to assign this Pokedex to another user.</i>",
+        f"🗑️ <b>POKÉDEX REMOVED &amp; VAULTED</b>\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"👤 <b>Trainer:</b> <code>{target_id}</code> — <b>{html.escape(target.nickname or 'Trainer')}</b>\n"
+        f"📖 <b>Pokédex Name:</b> <b>{html.escape(pokedex_title)}</b>\n"
+        f"🐾 <b>Pokémon Stored:</b> <code>{len(serialized_pokes):,}</code> Pokémon\n"
+        f"🏷 <b>Vault Serial:</b> <code>{vault_item.serial_id}</code>\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"<i>All Pokémon have been securely transferred to the vault. Use <code>/givepokedex &lt;new_user_id&gt; {vault_item.serial_id}</code> to assign it.</i>",
         parse_mode="HTML"
     )
 
 
 @router.message(Command("givepokedex", ignore_mention=True))
 async def cmd_give_pokedex(message: Message, db: AsyncSession):
-    """Owner-only: /givepokedex <user_id> <PDX-XXXX or name> -- gives/merges a Pokedex."""
+    """Owner-only: /givepokedex <user_id> <PDX-XXXX or name> -- transfers a vaulted Pokedex (with all Pokemon) or grants a fresh one. Merges if user already has a Pokedex."""
     if not message.from_user or message.from_user.id not in config.OWNER_IDS:
-        await message.answer("<b>Access Denied.</b>", parse_mode="HTML")
+        await message.answer("<b>Access Denied.</b> Only the Bot Owner can use this command.", parse_mode="HTML")
         return
 
     parts = message.text.split(maxsplit=2)
     if len(parts) < 3:
         await message.answer(
-            "<b>Usage:</b> <code>/givepokedex &lt;user_id&gt; &lt;PDX-XXXX or name&gt;</code>\n\n"
+            "⚠️ <b>Usage:</b> <code>/givepokedex &lt;user_id&gt; &lt;PDX-XXXX or name&gt;</code>\n\n"
             "<b>Examples:</b>\n"
-            "<code>/givepokedex 123456789 PDX-0001</code> \u2014 transfer vault item\n"
-            "<code>/givepokedex 123456789 PokeKing Dex</code> \u2014 create fresh Pokedex\n"
-            "<i>If the user already has a Pokedex, names will be merged.</i>",
+            "• <code>/givepokedex 123456789 PDX-0001</code> — Transfer vaulted Pokédex &amp; all its Pokémon\n"
+            "• <code>/givepokedex 123456789 PokeKing Dex</code> — Assign a custom Pokédex name\n"
+            "<i>If the recipient already has a Pokédex, they will be merged together into one!</i>",
             parse_mode="HTML"
         )
         return
 
     raw_user_id = parts[1]
     if not raw_user_id.lstrip("-").isdigit():
-        await message.answer("Invalid user_id.", parse_mode="HTML")
+        await message.answer("❌ Invalid user_id — must be a numeric Telegram ID.", parse_mode="HTML")
         return
 
     target_id = int(raw_user_id)
     arg = parts[2].strip()
 
+    # Find or auto-create target user
     u_stmt = select(User).where(User.id == target_id)
     u_res = await db.execute(u_stmt)
     target = u_res.scalar_one_or_none()
@@ -3752,35 +3789,66 @@ async def cmd_give_pokedex(message: Message, db: AsyncSession):
         await db.flush()
 
     vault_item = None
+    transferred_count = 0
     new_dex_name = arg
 
+    # Check if this is a vault item serial
     if arg.upper().startswith("PDX-"):
         v_stmt = select(PokedexItem).where(PokedexItem.serial_id == arg.upper())
         v_res = await db.execute(v_stmt)
         vault_item = v_res.scalar_one_or_none()
         if not vault_item:
             await message.answer(
-                f"Vault item <code>{html.escape(arg)}</code> not found. Use /pokedexvault to see available items.",
+                f"❌ Vault item <code>{html.escape(arg)}</code> not found.\n"
+                f"Use <code>/pokedexvault</code> to see all available items.",
                 parse_mode="HTML"
             )
             return
         if vault_item.given_to_user_id:
             await message.answer(
-                f"Vault item <code>{vault_item.serial_id}</code> already assigned to <code>{vault_item.given_to_user_id}</code>.",
+                f"❌ Vault item <code>{vault_item.serial_id}</code> was already assigned to user <code>{vault_item.given_to_user_id}</code>.",
                 parse_mode="HTML"
             )
             return
+
         new_dex_name = vault_item.pokedex_name
 
-    action_text = "assigned"
+        # Restore and transfer all Pokemon from vault JSON to target user
+        if vault_item.pokemon_json:
+            try:
+                poke_list = json.loads(vault_item.pokemon_json)
+                for pdata in poke_list:
+                    new_up = UserPokemon(
+                        user_id=target_id,
+                        pokemon_id=pdata["pokemon_id"],
+                        nickname=pdata.get("nickname"),
+                        is_shiny=pdata.get("is_shiny", False),
+                        is_amv=pdata.get("is_amv", False),
+                        form_index=pdata.get("form_index", 0),
+                        serial_number=pdata.get("serial_number"),
+                        level=pdata.get("level", 1),
+                        xp=pdata.get("xp", 0),
+                        iv_hp=pdata.get("iv_hp", 0),
+                        iv_atk=pdata.get("iv_atk", 0),
+                        iv_def=pdata.get("iv_def", 0),
+                        iv_spd=pdata.get("iv_spd", 0),
+                    )
+                    db.add(new_up)
+                transferred_count = len(poke_list)
+            except Exception as json_err:
+                print(f"Error restoring Pokemon from vault item: {json_err}")
+
+    # Merge Pokedex Names
+    action_note = "assigned"
     if target.pokedex_name:
         merged = f"{target.pokedex_name} & {new_dex_name}"
-        old_dex = target.pokedex_name
+        old_name = target.pokedex_name
         target.pokedex_name = merged
-        action_text = f"merged with existing (<b>{html.escape(old_dex)}</b>)"
+        action_note = f"merged with existing (<b>{html.escape(old_name)}</b>)"
     else:
         target.pokedex_name = new_dex_name
 
+    # Mark vault item as given
     if vault_item:
         from datetime import datetime
         vault_item.given_to_user_id = target_id
@@ -3788,50 +3856,62 @@ async def cmd_give_pokedex(message: Message, db: AsyncSession):
 
     await db.commit()
 
-    serial_note = f"\n\U0001f3f7 <b>Vault Serial:</b> <code>{vault_item.serial_id}</code>" if vault_item else ""
+    # Count total Pokemon target now owns
+    count_stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == target_id)
+    count_res = await db.execute(count_stmt)
+    total_now = count_res.scalar() or 0
+
+    vault_info = f"\n🏷 <b>Vault Serial:</b> <code>{vault_item.serial_id}</code>" if vault_item else ""
     await message.answer(
-        f"\U0001f4d6 <b>POKEDEX GRANTED</b>\n"
-        f"\u25c8 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 \u25c8\n"
-        f"\U0001f464 <b>User:</b> <code>{target_id}</code> \u2014 <b>{html.escape(target.nickname or 'Trainer')}</b>\n"
-        f"\U0001f4d6 <b>New Pokedex:</b> <b>{html.escape(target.pokedex_name)}</b>\n"
-        f"\U0001f500 <b>Action:</b> {action_text}{serial_note}\n"
-        f"\u25c8 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 \u25c8",
+        f"📖 <b>POKÉDEX GRANTED &amp; MERGED</b>\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"👤 <b>Recipient:</b> <code>{target_id}</code> — <b>{html.escape(target.nickname or 'Trainer')}</b>\n"
+        f"📖 <b>Active Pokédex:</b> <b>{html.escape(target.pokedex_name)}</b>\n"
+        f"🐾 <b>Pokémon Added:</b> <code>+{transferred_count:,}</code> (Total Collection: <code>{total_now:,}</code>)\n"
+        f"🔀 <b>Status:</b> {action_note}{vault_info}\n"
+        f"◈ ────────────────────────── ◈",
         parse_mode="HTML"
     )
 
 
 @router.message(Command("pokedexvault", ignore_mention=True))
 async def cmd_pokedex_vault(message: Message, db: AsyncSession):
-    """Owner-only: /pokedexvault -- lists Pokedex items in the vault (not yet given away)."""
+    """Owner-only: /pokedexvault -- lists all Pokedex items in the vault (not yet assigned)."""
     if not message.from_user or message.from_user.id not in config.OWNER_IDS:
-        await message.answer("<b>Access Denied.</b>", parse_mode="HTML")
+        await message.answer("<b>Access Denied.</b> Only the Bot Owner can view the vault.", parse_mode="HTML")
         return
 
-    stmt = select(PokedexItem).where(PokedexItem.given_to_user_id == None).order_by(PokedexItem.id)
+    stmt = select(PokedexItem).where(PokedexItem.given_to_user_id == None).order_by(PokedexItem.id.desc())
     res = await db.execute(stmt)
     items = res.scalars().all()
 
     if not items:
         await message.answer(
-            "\U0001f4e6 <b>Pokedex Vault</b>\n"
-            "\u25c8 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 \u25c8\n"
-            "<i>No Pokedex items currently stored in the vault.</i>",
+            "📦 <b>POKÉDEX VAULT</b>\n"
+            "◈ ────────────────────────── ◈\n"
+            "<i>No Pokédex items currently in the vault.</i>",
             parse_mode="HTML"
         )
         return
 
     lines = []
     for item in items:
-        removed_from = f"<code>{item.removed_from_user_id}</code>" if item.removed_from_user_id else "custom"
-        lines.append(f"\U0001f3f7 <code>{item.serial_id}</code> \u2014 <b>{html.escape(item.pokedex_name)}</b> (from {removed_from})")
+        from_str = f"<code>{item.removed_from_user_id}</code>" if item.removed_from_user_id else "Owner"
+        count_str = f"{item.pokemon_count:,} Pokémon" if item.pokemon_count else "0 Pokémon"
+        lines.append(
+            f"🏷 <code>{item.serial_id}</code> — <b>{html.escape(item.pokedex_name)}</b>\n"
+            f"   └ 🐾 <b>{count_str}</b> | Source: {from_str}"
+        )
 
     vault_text = (
-        f"\U0001f4e6 <b>POKEDEX VAULT ({len(items)} item{'s' if len(items) != 1 else ''})</b>\n"
-        f"\u25c8 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 \u25c8\n"
-        + "\n".join(lines)
-        + "\n\u25c8 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 \u25c8\n"
-        + "<i>Use /givepokedex &lt;user_id&gt; &lt;PDX-XXXX&gt; to assign.</i>"
+        f"📦 <b>POKÉDEX VAULT ({len(items)} available)</b>\n"
+        f"◈ ────────────────────────── ◈\n"
+        + "\n\n".join(lines) +
+        f"\n◈ ────────────────────────── ◈\n"
+        f"<i>Use <code>/givepokedex &lt;user_id&gt; &lt;PDX-XXXX&gt;</code> to transfer an item.</i>"
     )
+    if len(vault_text) > 4000:
+        vault_text = vault_text[:4000] + "\n...<i>(truncated)</i>"
     await message.answer(vault_text, parse_mode="HTML")
 
 
@@ -3859,7 +3939,7 @@ async def cmd_ban_user(message: Message, db: AsyncSession):
     reason = parts[2].strip() if len(parts) == 3 else "No reason provided"
 
     if target_id in config.OWNER_IDS:
-        await message.answer("You cannot ban another Bot Owner.", parse_mode="HTML")
+        await message.answer("❌ You cannot ban a Bot Owner.", parse_mode="HTML")
         return
 
     existing_stmt = select(BannedUser).where(BannedUser.user_id == target_id)
@@ -3867,7 +3947,8 @@ async def cmd_ban_user(message: Message, db: AsyncSession):
     existing = existing_res.scalar_one_or_none()
     if existing:
         await message.answer(
-            f"User <code>{target_id}</code> is already banned.\nReason: <i>{html.escape(existing.reason or 'None')}</i>",
+            f"ℹ️ User <code>{target_id}</code> is already banned.\n"
+            f"Reason: <i>{html.escape(existing.reason or 'None')}</i>",
             parse_mode="HTML"
         )
         return
@@ -3891,12 +3972,12 @@ async def cmd_ban_user(message: Message, db: AsyncSession):
     add_ban(target_id)
 
     await message.answer(
-        f"\U0001f528 <b>USER BANNED</b>\n"
-        f"\u25c8 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 \u25c8\n"
-        f"\U0001f464 <b>User:</b> {html.escape(username_str)} \u2014 <b>{display_name}</b>\n"
-        f"\U0001f194 <b>ID:</b> <code>{target_id}</code>\n"
-        f"\U0001f4cb <b>Reason:</b> <i>{html.escape(reason)}</i>\n"
-        f"\u25c8 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 \u25c8\n"
+        f"🔨 <b>USER BANNED</b>\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"👤 <b>User:</b> {html.escape(username_str)} — <b>{display_name}</b>\n"
+        f"🆔 <b>ID:</b> <code>{target_id}</code>\n"
+        f"📋 <b>Reason:</b> <i>{html.escape(reason)}</i>\n"
+        f"◈ ────────────────────────── ◈\n"
         f"<i>This user can no longer use any bot commands.</i>",
         parse_mode="HTML"
     )
@@ -3906,7 +3987,7 @@ async def cmd_ban_user(message: Message, db: AsyncSession):
 async def cmd_unban_user(message: Message, db: AsyncSession):
     """Owner-only: /unbanuser <user_id> -- lifts a bot ban."""
     if not message.from_user or message.from_user.id not in config.OWNER_IDS:
-        await message.answer("<b>Access Denied.</b>", parse_mode="HTML")
+        await message.answer("<b>Access Denied.</b> Only the Bot Owner can unban users.", parse_mode="HTML")
         return
 
     parts = message.text.split()
@@ -3920,7 +4001,7 @@ async def cmd_unban_user(message: Message, db: AsyncSession):
     record = res.scalar_one_or_none()
 
     if not record:
-        await message.answer(f"User <code>{target_id}</code> is not currently banned.", parse_mode="HTML")
+        await message.answer(f"ℹ️ User <code>{target_id}</code> is not currently banned.", parse_mode="HTML")
         return
 
     await db.execute(delete(BannedUser).where(BannedUser.user_id == target_id))
@@ -3930,9 +4011,9 @@ async def cmd_unban_user(message: Message, db: AsyncSession):
     remove_ban(target_id)
 
     await message.answer(
-        f"\u2705 <b>USER UNBANNED</b>\n"
-        f"\u25c8 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 \u25c8\n"
-        f"\U0001f194 <b>User ID:</b> <code>{target_id}</code>\n"
+        f"✅ <b>USER UNBANNED</b>\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"🆔 <b>User ID:</b> <code>{target_id}</code>\n"
         f"<i>This user can now use the bot again.</i>",
         parse_mode="HTML"
     )
@@ -3942,7 +4023,7 @@ async def cmd_unban_user(message: Message, db: AsyncSession):
 async def cmd_banned_list(message: Message, db: AsyncSession):
     """Owner-only: /bannedlist -- shows all users banned from the bot."""
     if not message.from_user or message.from_user.id not in config.OWNER_IDS:
-        await message.answer("<b>Access Denied.</b>", parse_mode="HTML")
+        await message.answer("<b>Access Denied.</b> Only the Bot Owner can view the ban list.", parse_mode="HTML")
         return
 
     stmt = select(BannedUser).order_by(BannedUser.banned_at.desc())
@@ -3951,8 +4032,8 @@ async def cmd_banned_list(message: Message, db: AsyncSession):
 
     if not records:
         await message.answer(
-            "\u2705 <b>Banned Users List</b>\n"
-            "\u25c8 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 \u25c8\n"
+            "✅ <b>BANNED USERS LIST</b>\n"
+            "◈ ────────────────────────── ◈\n"
             "<i>No users are currently banned.</i>",
             parse_mode="HTML"
         )
@@ -3961,16 +4042,14 @@ async def cmd_banned_list(message: Message, db: AsyncSession):
     lines = []
     for r in records:
         uname = f"@{r.username}" if r.username else f"ID {r.user_id}"
-        lines.append(
-            f"\u2022 <code>{r.user_id}</code> ({html.escape(uname)}) \u2014 <i>{html.escape(r.reason or 'No reason')}</i>"
-        )
+        lines.append(f"• <code>{r.user_id}</code> ({html.escape(uname)}) — <i>{html.escape(r.reason or 'No reason')}</i>")
 
     text = (
-        f"\U0001f528 <b>BANNED USERS ({len(records)} total)</b>\n"
-        f"\u25c8 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 \u25c8\n"
-        + "\n".join(lines)
-        + "\n\u25c8 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 \u25c8\n"
-        + "<i>Use /unbanuser &lt;user_id&gt; to lift a ban.</i>"
+        f"🔨 <b>BANNED USERS ({len(records)} total)</b>\n"
+        f"◈ ────────────────────────── ◈\n"
+        + "\n".join(lines) +
+        f"\n◈ ────────────────────────── ◈\n"
+        f"<i>Use <code>/unbanuser &lt;user_id&gt;</code> to lift a ban.</i>"
     )
     if len(text) > 4000:
         text = text[:4000] + "\n...<i>(truncated)</i>"

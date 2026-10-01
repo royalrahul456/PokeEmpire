@@ -174,11 +174,15 @@ async def init_db():
                 id BIGSERIAL PRIMARY KEY,
                 serial_id VARCHAR(20) UNIQUE NOT NULL,
                 pokedex_name VARCHAR(100) NOT NULL,
+                pokemon_count INTEGER DEFAULT 0,
+                pokemon_json TEXT DEFAULT '[]',
                 removed_from_user_id BIGINT,
                 removed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 given_to_user_id BIGINT,
                 given_at TIMESTAMP
             );""",
+            "ALTER TABLE pokedex_items ADD COLUMN IF NOT EXISTS pokemon_count INTEGER DEFAULT 0;",
+            "ALTER TABLE pokedex_items ADD COLUMN IF NOT EXISTS pokemon_json TEXT DEFAULT '[]';",
             # Banned users table
             """CREATE TABLE IF NOT EXISTS banned_users (
                 user_id BIGINT PRIMARY KEY,

@@ -301,12 +301,15 @@ class ActiveMinesGame(Base):
 
 class PokedexItem(Base):
     """Stores Pokédex NFT-style items that have been detached from a user.
-    Each item has a unique serial_id. An owner can give a stored item to any user."""
+    Each item has a unique serial_id and stores all the Pokémon that were in the Pokédex.
+    An owner can give a stored item to any user, transferring and merging all Pokémon."""
     __tablename__ = "pokedex_items"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     serial_id = Column(String(20), unique=True, nullable=False)   # e.g. PDX-0001
     pokedex_name = Column(String(100), nullable=False)             # display name stored inside
+    pokemon_count = Column(Integer, default=0, nullable=False)     # count of pokemon contained
+    pokemon_json = Column(String(200000), default="[]", nullable=True) # serialized Pokemon data
     removed_from_user_id = Column(BigInteger, nullable=True)       # original owner when removed
     removed_at = Column(DateTime, default=func.now(), nullable=False)
     given_to_user_id = Column(BigInteger, nullable=True)           # set when transferred out

@@ -525,6 +525,10 @@ async def main():
     from utils.group_monitor import start_chat_activity_worker
     asyncio.create_task(start_chat_activity_worker())
 
+    # Load banned users into in-memory cache for fast lookup
+    from utils.ban_check import load_bans_from_db
+    await load_bans_from_db()
+
     if is_dual_bot:
         logger.info("🚀 Dual-Bot Mode active: Starting PokeEmpire (Main) + PokeArena (Games) concurrently.")
         

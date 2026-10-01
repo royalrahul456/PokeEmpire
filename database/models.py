@@ -299,6 +299,31 @@ class ActiveMinesGame(Base):
     created_at = Column(DateTime, default=func.now(), nullable=False)
 
 
+class PokedexItem(Base):
+    """Stores Pokédex NFT-style items that have been detached from a user.
+    Each item has a unique serial_id. An owner can give a stored item to any user."""
+    __tablename__ = "pokedex_items"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    serial_id = Column(String(20), unique=True, nullable=False)   # e.g. PDX-0001
+    pokedex_name = Column(String(100), nullable=False)             # display name stored inside
+    removed_from_user_id = Column(BigInteger, nullable=True)       # original owner when removed
+    removed_at = Column(DateTime, default=func.now(), nullable=False)
+    given_to_user_id = Column(BigInteger, nullable=True)           # set when transferred out
+    given_at = Column(DateTime, nullable=True)
+
+
+class BannedUser(Base):
+    """Tracks users permanently banned from using the bot by the owner."""
+    __tablename__ = "banned_users"
+
+    user_id = Column(BigInteger, primary_key=True)
+    username = Column(String(100), nullable=True)
+    reason = Column(String(255), nullable=True)
+    banned_by = Column(BigInteger, nullable=False)   # owner ID who banned
+    banned_at = Column(DateTime, default=func.now(), nullable=False)
+
+
 
 
 

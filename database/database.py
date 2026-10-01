@@ -168,7 +168,25 @@ async def init_db():
             "ALTER TABLE user_pokemon ADD COLUMN IF NOT EXISTS is_amv BOOLEAN DEFAULT false;",
             "ALTER TABLE user_pokemon ADD COLUMN IF NOT EXISTS form_index INTEGER DEFAULT 0;",
             "ALTER TABLE user_pokemon ADD COLUMN IF NOT EXISTS serial_number VARCHAR(20);",
-            "ALTER TABLE redeem_codes ADD COLUMN IF NOT EXISTS reward_form_index INTEGER DEFAULT 0;"
+            "ALTER TABLE redeem_codes ADD COLUMN IF NOT EXISTS reward_form_index INTEGER DEFAULT 0;",
+            # Pokédex vault items table
+            """CREATE TABLE IF NOT EXISTS pokedex_items (
+                id BIGSERIAL PRIMARY KEY,
+                serial_id VARCHAR(20) UNIQUE NOT NULL,
+                pokedex_name VARCHAR(100) NOT NULL,
+                removed_from_user_id BIGINT,
+                removed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                given_to_user_id BIGINT,
+                given_at TIMESTAMP
+            );""",
+            # Banned users table
+            """CREATE TABLE IF NOT EXISTS banned_users (
+                user_id BIGINT PRIMARY KEY,
+                username VARCHAR(100),
+                reason VARCHAR(255),
+                banned_by BIGINT NOT NULL,
+                banned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );""",
         ]
         for q in pg_migrations:
             try:

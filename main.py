@@ -177,6 +177,8 @@ async def register_bot_commands(bot: Bot):
         BotCommand(command="quests", description="⚔️ View Daily & Weekly Bounties"),
         BotCommand(command="guild", description="🏰 Manage Trainer Guild & Clan"),
         BotCommand(command="transactions", description="💳 View coin transaction history"),
+        BotCommand(command="events", description="📅 View Event Calendar & Schedule"),
+        BotCommand(command="setevents", description="📅 Update Event Calendar (Admin only)"),
         BotCommand(command="broadcast", description="📢 Broadcast announcement to all groups & channels"),
         BotCommand(command="report", description="🚩 Report an error or bug to Creator"),
         BotCommand(command="help", description="ℹ️ Show complete guide instructions")

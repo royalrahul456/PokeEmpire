@@ -4054,3 +4054,80 @@ async def cmd_banned_list(message: Message, db: AsyncSession):
     if len(text) > 4000:
         text = text[:4000] + "\n...<i>(truncated)</i>"
     await message.answer(text, parse_mode="HTML")
+
+
+# ======================================================
+#  EVENT CALENDAR MANAGEMENT -- Admin / Owner commands
+# ======================================================
+
+from utils.settings import set_events_calendar_text, reset_events_calendar_text, get_events_calendar_text
+
+@router.message(Command("setevents", "updateevents", "editevents", ignore_mention=True))
+async def cmd_set_events(message: Message, db: AsyncSession):
+    """Admin/Owner: /setevents <text> or reply to any message with /setevents to update the /events calendar."""
+    if not message.from_user or message.from_user.id not in config.ADMIN_IDS:
+        await message.answer("❌ <b>Access Denied.</b> Only Bot Admins & Owner can update the event calendar.", parse_mode="HTML")
+        return
+
+    new_text = None
+
+    # Option 1: Reply to another message to copy its exact formatting / HTML
+    if message.reply_to_message:
+        replied = message.reply_to_message
+        new_text = getattr(replied, "html_text", None) or replied.text or replied.caption
+    
+    # Option 2: Text provided directly after /setevents
+    if not new_text:
+        raw_html = getattr(message, "html_text", None) or message.text or ""
+        parts = raw_html.split(maxsplit=1)
+        if len(parts) > 1 and parts[1].strip():
+            new_text = parts[1].strip()
+
+    if not new_text or not new_text.strip():
+        current_preview = get_events_calendar_text()
+        if len(current_preview) > 300:
+            current_preview = current_preview[:300] + "...\n<i>(truncated)</i>"
+        
+        await message.answer(
+            "⚠️ <b>How to Update the /events Calendar</b>\n"
+            "◈ ────────────────────────── ◈\n"
+            "<b>Method 1 (Recommended):</b>\n"
+            "Format your announcement message in Telegram (with bold, emojis, links, quotes), then <b>reply to it</b> with <code>/setevents</code>.\n\n"
+            "<b>Method 2:</b>\n"
+            "Type: <code>/setevents &lt;your message text&gt;</code>\n\n"
+            "<b>Current Active Preview:</b>\n"
+            f"<blockquote>{current_preview}</blockquote>\n"
+            "<i>To reset to default, use <code>/resetevents</code>.</i>",
+            parse_mode="HTML"
+        )
+        return
+
+    # Save to database and in-memory cache
+    await set_events_calendar_text(new_text, db)
+
+    await message.answer(
+        "✅ <b>EVENT CALENDAR UPDATED!</b>\n"
+        "◈ ────────────────────────── ◈\n"
+        "<i>The /events calendar has been saved and is now live across the bot!</i>\n\n"
+        "<b>New Live Content:</b>\n\n"
+        + new_text,
+        parse_mode="HTML"
+    )
+
+
+@router.message(Command("resetevents", ignore_mention=True))
+async def cmd_reset_events(message: Message, db: AsyncSession):
+    """Admin/Owner: /resetevents -- resets the /events calendar back to default template."""
+    if not message.from_user or message.from_user.id not in config.ADMIN_IDS:
+        await message.answer("❌ <b>Access Denied.</b> Only Bot Admins & Owner can reset the event calendar.", parse_mode="HTML")
+        return
+
+    await reset_events_calendar_text(db)
+
+    await message.answer(
+        "🔄 <b>EVENT CALENDAR RESET</b>\n"
+        "◈ ────────────────────────── ◈\n"
+        "<i>The /events calendar has been reset to the default template.</i>\n\n"
+        + get_events_calendar_text(),
+        parse_mode="HTML"
+    )

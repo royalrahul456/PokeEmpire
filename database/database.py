@@ -191,6 +191,7 @@ async def init_db():
                 banned_by BIGINT NOT NULL,
                 banned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );""",
+            "ALTER TABLE global_settings ALTER COLUMN value TYPE TEXT;"
         ]
         for q in pg_migrations:
             try:

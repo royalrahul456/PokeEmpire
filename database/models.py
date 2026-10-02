@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, BigInteger, String, Boolean, DateTime, ForeignKey, func
+from sqlalchemy import Column, Integer, BigInteger, String, Boolean, DateTime, ForeignKey, func, Text
 from sqlalchemy.orm import relationship
 from database.database import Base
 
@@ -101,7 +101,7 @@ class GlobalSetting(Base):
     __tablename__ = "global_settings"
 
     key = Column(String(100), primary_key=True)
-    value = Column(String(1000), nullable=False)
+    value = Column(Text, nullable=False)
 
 
 class RedeemCode(Base):

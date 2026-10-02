@@ -22,7 +22,8 @@ from utils.settings import (
     set_custom_cover, 
     delete_custom_cover,
     is_scribble_enabled,
-    is_nameguess_enabled
+    is_nameguess_enabled,
+    get_events_calendar_text
 )
 import config
 import random
@@ -585,8 +586,9 @@ SEPTEMBER_EVENT_CALENDAR_TEXT = (
     "PokeEmpire Team 🦚"
 )
 
-@router.message(Command("events", "calendar", "event", "september", ignore_mention=True))
+@router.message(Command("events", "calendar", "event", "september", "october", "november", ignore_mention=True))
 async def cmd_events_calendar(message: Message):
+    event_text = get_events_calendar_text()
     if message.chat.type == "private":
         kb = get_back_to_hub_keyboard()
     else:
@@ -598,15 +600,16 @@ async def cmd_events_calendar(message: Message):
             create_styled_button(text="📢 Updates Channel", key="updates", url=updates_url)
         )
         kb = builder.as_markup()
-    await message.answer(SEPTEMBER_EVENT_CALENDAR_TEXT, reply_markup=kb, parse_mode="HTML")
+    await message.answer(event_text, reply_markup=kb, parse_mode="HTML")
 
 @router.callback_query(F.data == "dm_events")
 async def cb_dm_events(callback: CallbackQuery):
+    event_text = get_events_calendar_text()
     try:
-        await callback.message.edit_caption(caption=SEPTEMBER_EVENT_CALENDAR_TEXT, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
+        await callback.message.edit_caption(caption=event_text, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
     except Exception:
         try:
-            await callback.message.edit_text(SEPTEMBER_EVENT_CALENDAR_TEXT, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
+            await callback.message.edit_text(event_text, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
         except Exception:
             pass
     await callback.answer()

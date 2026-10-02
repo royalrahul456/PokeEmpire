@@ -158,6 +158,81 @@ async def save_spawn_settings(settings: dict):
             db.add(GlobalSetting(key=k, value=v))
         await db.commit()
 
+DEFAULT_EVENT_CALENDAR_TEXT = (
+    "╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮\n"
+    "🦚✨ <b>POKEEMPIRE</b> ✨🦚\n"
+    "📅 <b>OFFICIAL EVENT CALENDAR</b>\n"
+    "╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n"
+    "🔥 <b>OCTOBER EVENTS & REWARDS</b> 🔥\n"
+    "A month packed with <b>LEGENDARY SPAWNS</b>, <b>QUIZZES</b> &amp; <b>REDEEM RUSHES!</b> ⚡️\n\n"
+    "╭───────────────╮\n"
+    "⚡️ <b>LEGENDARY SPAWN BOOST</b>\n"
+    "╰───────────────╯\n"
+    "✨ <b>Boosted Legendary Spawn Chance</b> across all active groups!\n\n"
+    "╭───────────────╮\n"
+    "🧠 <b>EVERY SATURDAY — QUIZ</b>\n"
+    "╰───────────────╯\n"
+    "🎯 Test your Pokémon knowledge &amp; win exclusive rewards!\n\n"
+    "╭───────────────╮\n"
+    "🎁 <b>EVERY SUNDAY — REDEEM RUSH</b>\n"
+    "╰───────────────╯\n"
+    "⚡️ Fastest trainers grab the codes! Drops appear across official channels.\n\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    "🚨 <b>STAY ACTIVE. STAY READY.</b>\n"
+    "👑 <b>THE LEGENDS ARE WAITING.</b>\n\n"
+    "🦚 <b>POKEEMPIRE</b>\n"
+    "<i>Catch • Battle • Collect • Dominate</i>\n\n"
+    "Regards,\n"
+    "<a href='https://t.me/ThaDarkKratosX'>@ThaDarkKratosX</a>\n"
+    "PokeEmpire Team 🦚"
+)
+
+def get_events_calendar_text() -> str:
+    """Synchronous read from cache with default fallback."""
+    val = global_settings_cache.get("events_calendar_text")
+    if val and val.strip():
+        return val.strip()
+    return DEFAULT_EVENT_CALENDAR_TEXT
+
+async def set_events_calendar_text(text_val: str, db: Optional[Any] = None):
+    """Updates event calendar text in memory cache and database."""
+    clean_val = text_val.strip()
+    global_settings_cache["events_calendar_text"] = clean_val
+    k = "events_calendar_text"
+    
+    if db:
+        stmt = select(GlobalSetting).where(GlobalSetting.key == k)
+        res = await db.execute(stmt)
+        gs = res.scalar_one_or_none()
+        if gs:
+            gs.value = clean_val
+        else:
+            db.add(GlobalSetting(key=k, value=clean_val))
+        await db.commit()
+    else:
+        async with SessionLocal() as session:
+            stmt = select(GlobalSetting).where(GlobalSetting.key == k)
+            res = await session.execute(stmt)
+            gs = res.scalar_one_or_none()
+            if gs:
+                gs.value = clean_val
+            else:
+                session.add(GlobalSetting(key=k, value=clean_val))
+            await session.commit()
+
+async def reset_events_calendar_text(db: Optional[Any] = None):
+    """Resets event calendar text back to the default template."""
+    global_settings_cache.pop("events_calendar_text", None)
+    k = "events_calendar_text"
+    
+    if db:
+        await db.execute(delete(GlobalSetting).where(GlobalSetting.key == k))
+        await db.commit()
+    else:
+        async with SessionLocal() as session:
+            await session.execute(delete(GlobalSetting).where(GlobalSetting.key == k))
+            await session.commit()
+
 # Custom covers helper functions
 def get_custom_cover(key: str) -> tuple:
     """Returns (media_type, media_value) or (None, None). Checks local disk first, then cache."""

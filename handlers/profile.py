@@ -265,12 +265,22 @@ async def cmd_pokemon_list(message: Message):
 
 async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter: str, db: AsyncSession):
     from database.models import PokemonFormMedia
+    from sqlalchemy import or_
 
     form_idx = FORM_INDEX_MAP.get(rarity_filter)
     filter_label = get_filter_display_label(rarity_filter)
 
+    custom_forms = await get_custom_rarity_forms(db)
+    matched_custom_form_idx = None
+    for c_fidx, (c_name, _) in custom_forms.items():
+        if c_name.lower() == rarity_filter.lower() or f"form_{c_fidx}" == rarity_filter.lower():
+            matched_custom_form_idx = c_fidx
+            break
+
     if form_idx is not None:
         view_mode = "form"
+    elif matched_custom_form_idx is not None:
+        view_mode = "custom_form_or_rarity"
     elif rarity_filter and rarity_filter != "All":
         view_mode = "rarity"
     else:
@@ -316,6 +326,27 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
         )
         res = await db.execute(stmt)
         all_raw_entries = res.all()
+    elif view_mode == "custom_form_or_rarity":
+        stmt = (
+            select(
+                UserPokemon.pokemon_id,
+                UserPokemon.form_index,
+                func.count(UserPokemon.id).label("total_caught"),
+                func.max(case((UserPokemon.is_shiny == True, 1), else_=0)).label("has_shiny")
+            )
+            .join(Pokemon, UserPokemon.pokemon_id == Pokemon.id)
+            .where(
+                UserPokemon.user_id == user_id,
+                or_(
+                    func.lower(Pokemon.rarity) == rarity_filter.lower(),
+                    UserPokemon.form_index == matched_custom_form_idx
+                )
+            )
+            .group_by(UserPokemon.pokemon_id, UserPokemon.form_index)
+            .order_by(UserPokemon.pokemon_id.asc(), UserPokemon.form_index.asc())
+        )
+        res = await db.execute(stmt)
+        all_raw_entries = res.all()
     else:
         stmt = (
             select(
@@ -325,7 +356,7 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
                 func.max(case((UserPokemon.is_shiny == True, 1), else_=0)).label("has_shiny")
             )
             .join(Pokemon, UserPokemon.pokemon_id == Pokemon.id)
-            .where(UserPokemon.user_id == user_id, Pokemon.rarity == rarity_filter)
+            .where(UserPokemon.user_id == user_id, func.lower(Pokemon.rarity) == rarity_filter.lower())
             .group_by(UserPokemon.pokemon_id, UserPokemon.form_index)
             .order_by(UserPokemon.pokemon_id.asc(), UserPokemon.form_index.asc())
         )
@@ -437,33 +468,75 @@ def get_pokedex_keyboard(user_id: int, page: int, max_page: int, rarity_filter: 
     
     return builder.as_markup()
 
-def get_rarity_filter_keyboard(user_id: int, current_page: int, current_filter: str) -> InlineKeyboardMarkup:
+async def get_rarity_filter_keyboard(user_id: int, current_page: int, current_filter: str, db: AsyncSession) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     
-    builder.row(
-        InlineKeyboardButton(text="⚪ Common", callback_data=f"pd_setfilter_{user_id}_Common"),
-        InlineKeyboardButton(text="🟢 Uncommon", callback_data=f"pd_setfilter_{user_id}_Uncommon")
-    )
-    builder.row(
-        InlineKeyboardButton(text="🔵 Medium", callback_data=f"pd_setfilter_{user_id}_Medium"),
-        InlineKeyboardButton(text="🟣 Rare", callback_data=f"pd_setfilter_{user_id}_Rare")
-    )
-    builder.row(
-        InlineKeyboardButton(text="🔮 Epic", callback_data=f"pd_setfilter_{user_id}_Epic"),
-        InlineKeyboardButton(text="🌟 Legendary", callback_data=f"pd_setfilter_{user_id}_Legendary")
-    )
-    builder.row(
-        InlineKeyboardButton(text="🌌 Mythical", callback_data=f"pd_setfilter_{user_id}_Mythical"),
-        InlineKeyboardButton(text="🎬 AMV / Art", callback_data=f"pd_setfilter_{user_id}_AMV")
-    )
-    builder.row(
-        InlineKeyboardButton(text="⚡ Dmax", callback_data=f"pd_setfilter_{user_id}_Dmax"),
-        InlineKeyboardButton(text="💥 Gmax", callback_data=f"pd_setfilter_{user_id}_Gmax")
-    )
-    builder.row(
-        InlineKeyboardButton(text="🌀 Z-Move", callback_data=f"pd_setfilter_{user_id}_Z-Move"),
-        InlineKeyboardButton(text="🔮 Terastal", callback_data=f"pd_setfilter_{user_id}_Terastal")
-    )
+    # 1. Standard Base Rarities
+    standard_rarities = [
+        ("Common", "⚪ Common"),
+        ("Uncommon", "🟢 Uncommon"),
+        ("Medium", "🔵 Medium"),
+        ("Rare", "🟣 Rare"),
+        ("Epic", "🔮 Epic"),
+        ("Legendary", "🌟 Legendary"),
+        ("Mythical", "🌌 Mythical"),
+    ]
+    
+    # 2. Standard Forms
+    standard_forms = [
+        ("AMV", "🎬 AMV / Art"),
+        ("Dmax", "⚡ Dmax"),
+        ("Gmax", "💥 Gmax"),
+        ("Z-Move", "🌀 Z-Move"),
+        ("Terastal", "🔮 Terastal"),
+    ]
+    
+    # Add standard base rarities (2 per row)
+    for i in range(0, len(standard_rarities), 2):
+        chunk = standard_rarities[i:i+2]
+        row = [InlineKeyboardButton(text=lbl, callback_data=f"pd_setfilter_{user_id}_{code}") for code, lbl in chunk]
+        builder.row(*row)
+        
+    # Add standard forms (2 per row)
+    for i in range(0, len(standard_forms), 2):
+        chunk = standard_forms[i:i+2]
+        row = [InlineKeyboardButton(text=lbl, callback_data=f"pd_setfilter_{user_id}_{code}") for code, lbl in chunk]
+        builder.row(*row)
+
+    # 3. Dynamic Custom Rarities from DB and GlobalSetting
+    known_codes = {c.lower() for c, _ in standard_rarities} | {c.lower() for c, _ in standard_forms}
+    custom_buttons = []
+    
+    # From custom_rarities setting in DB
+    try:
+        custom_rarities = await get_all_custom_rarities(db)
+        for r_name, r_emoji in custom_rarities.items():
+            if r_name and r_name.lower() not in known_codes:
+                known_codes.add(r_name.lower())
+                custom_buttons.append((r_name, f"{r_emoji} {r_name}"))
+    except Exception as e:
+        print(f"Error fetching custom rarities for pokedex filter: {e}")
+
+    # Also discover any distinct Pokemon.rarity in DB not already covered
+    try:
+        stmt = select(distinct(Pokemon.rarity)).where(Pokemon.rarity.isnot(None))
+        res = await db.execute(stmt)
+        db_rarities = res.scalars().all()
+        for r_name in db_rarities:
+            if r_name and r_name.lower() not in known_codes:
+                known_codes.add(r_name.lower())
+                emoji = get_rarity_emoji(r_name)
+                custom_buttons.append((r_name, f"{emoji} {r_name}"))
+    except Exception as e:
+        print(f"Error fetching distinct rarities for pokedex filter: {e}")
+
+    # Add custom rarity buttons (2 per row)
+    for i in range(0, len(custom_buttons), 2):
+        chunk = custom_buttons[i:i+2]
+        row = [InlineKeyboardButton(text=lbl, callback_data=f"pd_setfilter_{user_id}_{code}") for code, lbl in chunk]
+        builder.row(*row)
+
+    # Control row: All + Back
     builder.row(
         InlineKeyboardButton(text="🌍 All", callback_data=f"pd_setfilter_{user_id}_All"),
         InlineKeyboardButton(text="🔙 Back", callback_data=f"pd_page_{user_id}_{current_page}_{current_filter}")
@@ -587,7 +660,7 @@ async def cb_pokedex_tab(callback: CallbackQuery, db: AsyncSession):
 
 @router.callback_query(F.data.startswith("pd_page_"))
 async def cb_pokedex_page(callback: CallbackQuery, db: AsyncSession):
-    parts = callback.data.split("_")
+    parts = callback.data.split("_", 4)
     user_id = int(parts[2])
     page = int(parts[3])
     rarity_filter = parts[4] if len(parts) > 4 else "All"
@@ -608,8 +681,8 @@ async def cb_pokedex_page(callback: CallbackQuery, db: AsyncSession):
     await callback.answer()
 
 @router.callback_query(F.data.startswith("pd_rarity_"))
-async def cb_pokedex_rarity_menu(callback: CallbackQuery):
-    parts = callback.data.split("_")
+async def cb_pokedex_rarity_menu(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_", 4)
     user_id = int(parts[2])
     page = int(parts[3])
     rarity_filter = parts[4] if len(parts) > 4 else "All"
@@ -623,7 +696,7 @@ async def cb_pokedex_rarity_menu(callback: CallbackQuery):
         f"───────────────\n\n"
         f"Choose a rarity tier below to filter your species list:"
     )
-    kb = get_rarity_filter_keyboard(user_id, page, rarity_filter)
+    kb = await get_rarity_filter_keyboard(user_id, page, rarity_filter, db)
     
     try:
         await callback.message.edit_caption(caption=text, reply_markup=kb, parse_mode="HTML")
@@ -636,7 +709,7 @@ async def cb_pokedex_rarity_menu(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("pd_setfilter_"))
 async def cb_pokedex_set_filter(callback: CallbackQuery, db: AsyncSession):
-    parts = callback.data.split("_")
+    parts = callback.data.split("_", 3)
     user_id = int(parts[2])
     rarity_filter = parts[3]
     

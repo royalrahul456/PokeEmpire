@@ -23,8 +23,17 @@ _chat_spawn_locks: Dict[int, asyncio.Lock] = {}
 
 class SpawnService:
     @staticmethod
-    async def trigger_spawn(db: AsyncSession, chat_id: int, bot: Bot, rarity: str = None, message_thread_id: int = None) -> bool:
+    async def trigger_spawn(db: AsyncSession = None, chat_id: int = 0, bot: Bot = None, rarity: str = None, message_thread_id: int = None) -> bool:
         """Rolls rarity, selects a random Pokémon, rolls shiny status, and spawns it in the group."""
+        if db is None:
+            from database.database import SessionLocal
+            async with SessionLocal() as local_db:
+                return await SpawnService._execute_spawn(local_db, chat_id, bot, rarity, message_thread_id)
+        else:
+            return await SpawnService._execute_spawn(db, chat_id, bot, rarity, message_thread_id)
+
+    @staticmethod
+    async def _execute_spawn(db: AsyncSession, chat_id: int, bot: Bot, rarity: str = None, message_thread_id: int = None) -> bool:
         if chat_id not in _chat_spawn_locks:
             _chat_spawn_locks[chat_id] = asyncio.Lock()
             

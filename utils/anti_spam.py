@@ -54,7 +54,8 @@ class AntiSpamMiddleware(BaseMiddleware):
         # ── 2. Anti-Spam throttle (commands & callbacks only) ────────────────
         # Do not throttle normal chat messages (only throttle commands and callbacks)
         if isinstance(event, Message):
-            is_command = (event.text and event.text.startswith("/")) or (event.caption and event.caption.startswith("/"))
+            raw_t = (event.text or event.caption or "").strip()
+            is_command = raw_t.startswith("/")
             if not is_command:
                 return await handler(event, data)
 
@@ -73,8 +74,8 @@ class AntiSpamMiddleware(BaseMiddleware):
             # Stop the handler from running
             return
 
-        # Set a quick 0.5-second throttle
-        cooldowns.set_cooldown(user_id, action, 0.5)
+        # Set a quick 0.15-second throttle to block machine-rate flooding without dropping fast human commands
+        cooldowns.set_cooldown(user_id, action, 0.15)
         
         return await handler(event, data)
 

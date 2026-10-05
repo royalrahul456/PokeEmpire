@@ -106,7 +106,14 @@ class DbSessionMiddleware:
     ) -> Any:
         async with SessionLocal() as session:
             data["db"] = session
-            return await handler(event, data)
+            try:
+                return await handler(event, data)
+            except Exception as e:
+                try:
+                    await session.rollback()
+                except Exception:
+                    pass
+                raise e
 
 _dummy_server_running = False
 
@@ -278,7 +285,8 @@ def apply_auto_reply_patch():
         except Exception as e:
             try:
                 text = kwargs.get("text") or (args[0] if args else "")
-                return await self.bot.send_message(chat_id=self.chat.id, text=str(text), reply_markup=None, parse_mode=None)
+                thread_id = getattr(self, "message_thread_id", None)
+                return await self.bot.send_message(chat_id=self.chat.id, text=str(text), reply_markup=None, parse_mode=None, message_thread_id=thread_id)
             except Exception:
                 raise e
 
@@ -313,7 +321,8 @@ def apply_auto_reply_patch():
         except Exception as e:
             try:
                 text = kwargs.get("text") or (args[0] if args else "")
-                return await self.bot.send_message(chat_id=self.chat.id, text=str(text), reply_markup=None, parse_mode=None)
+                thread_id = getattr(self, "message_thread_id", None)
+                return await self.bot.send_message(chat_id=self.chat.id, text=str(text), reply_markup=None, parse_mode=None, message_thread_id=thread_id)
             except Exception:
                 raise e
 

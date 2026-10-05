@@ -261,9 +261,9 @@ class GroupActivityMiddleware(BaseMiddleware):
                         
                         bot = data.get("bot") or event.bot
                         thread_id = getattr(event, "message_thread_id", None)
-                        # Fire spawn as background task — don't block the current message handler
+                        # Fire spawn as background task with dedicated session — don't block the current message handler
                         import asyncio
-                        asyncio.create_task(SpawnService.trigger_spawn(db, chat_id, bot, message_thread_id=thread_id))
+                        asyncio.create_task(SpawnService.trigger_spawn(None, chat_id, bot, message_thread_id=thread_id))
                     else:
                         group_message_counters[chat_id] = current_count
 

@@ -167,6 +167,7 @@ async def register_bot_commands(bot: Bot):
         BotCommand(command="redeem", description="🎟️ Claim a promo/gift code"),
         BotCommand(command="gen", description="🔑 Generate a redeem code (Owner only)"),
         BotCommand(command="panel", description="⚙️ Executive Owner Console (Owner only)"),
+        BotCommand(command="maintenance", description="🚧 Maintenance Mode (Owner/Dev only)"),
         BotCommand(command="ping", description="⚡ Check System & DB Latency"),
         BotCommand(command="addrarity", description="✨ Create custom Pokémon rarity tier"),
         BotCommand(command="addpokemon", description="➕ Register a new Pokémon in database"),
@@ -475,6 +476,11 @@ async def main():
     from utils.settings import load_all_settings_into_cache
     await load_all_settings_into_cache()
     logger.info("Settings cache loaded successfully.")
+
+    # Load persistent maintenance state
+    from utils.maintenance import load_maintenance_from_db
+    await load_maintenance_from_db()
+    logger.info("Maintenance mode state loaded successfully.")
 
     # Validate token presence
     if not config.BOT_TOKEN or config.BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":

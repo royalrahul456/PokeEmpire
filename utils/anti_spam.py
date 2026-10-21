@@ -3,6 +3,12 @@ from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject, Message, CallbackQuery
 from utils.cooldowns import cooldowns
 from utils.ban_check import is_banned
+from utils.maintenance import (
+    is_maintenance_mode,
+    is_maintenance_exempt,
+    should_warn_maintenance,
+    get_maintenance_message,
+)
 import config
 
 # ── Message shown to banned users ────────────────────────────────────────────
@@ -15,7 +21,8 @@ _BAN_MSG = (
 class AntiSpamMiddleware(BaseMiddleware):
     """aiogram Middleware that:
     1. Blocks globally banned users from all commands / callbacks.
-    2. Restricts users from firing handlers too rapidly (0.5 s global throttle).
+    2. Enforces bot maintenance mode for non-exempt users.
+    3. Restricts users from firing handlers too rapidly (0.15 s global throttle).
     """
     async def __call__(
         self,
@@ -51,7 +58,30 @@ class AntiSpamMiddleware(BaseMiddleware):
                     pass
                 return
 
-        # ── 2. Anti-Spam throttle (commands & callbacks only) ────────────────
+        # ── 2. Maintenance Mode Check ─────────────────────────────────────────
+        if is_maintenance_mode() and not is_maintenance_exempt(user.id):
+            if isinstance(event, Message):
+                raw_t = (event.text or event.caption or "").strip()
+                is_command = raw_t.startswith("/")
+                is_private = bool(event.chat and event.chat.type == "private")
+                if is_command or is_private:
+                    if should_warn_maintenance(user.id, event.chat.id):
+                        try:
+                            await event.answer(get_maintenance_message(), parse_mode="HTML")
+                        except Exception:
+                            pass
+                return
+            elif isinstance(event, CallbackQuery):
+                try:
+                    await event.answer(
+                        "🚧 PokéEmpire is currently under maintenance.\nOnly Owner, Co-Owner & Developers can use it.",
+                        show_alert=True
+                    )
+                except Exception:
+                    pass
+                return
+
+        # ── 3. Anti-Spam throttle (commands & callbacks only) ────────────────
         # Do not throttle normal chat messages (only throttle commands and callbacks)
         if isinstance(event, Message):
             raw_t = (event.text or event.caption or "").strip()
@@ -78,4 +108,3 @@ class AntiSpamMiddleware(BaseMiddleware):
         cooldowns.set_cooldown(user_id, action, 0.15)
         
         return await handler(event, data)
-

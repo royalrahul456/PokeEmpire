@@ -4131,3 +4131,158 @@ async def cmd_reset_events(message: Message, db: AsyncSession):
         + get_events_calendar_text(),
         parse_mode="HTML"
     )
+
+
+# ── MAINTENANCE MODE MANAGEMENT ──────────────────────────────────────────────
+from aiogram.types import InlineKeyboardMarkup
+from utils.maintenance import (
+    is_maintenance_mode,
+    is_maintenance_exempt,
+    get_maintenance_info,
+    set_maintenance_mode,
+)
+
+def build_maintenance_card() -> tuple[str, InlineKeyboardMarkup]:
+    info = get_maintenance_info()
+    is_on = info.get("enabled", False)
+    reason = info.get("reason")
+    started_at = info.get("started_at")
+    enabled_by = info.get("enabled_by")
+
+    status_badge = "🔴 <b>MAINTENANCE MODE (ACTIVE)</b>" if is_on else "🟢 <b>NORMAL OPERATION (LIVE)</b>"
+    
+    details = []
+    if is_on:
+        if reason:
+            details.append(f"📋 <b>Reason:</b> <code>{html.escape(reason)}</code>")
+        if started_at:
+            from datetime import datetime
+            dt = datetime.fromtimestamp(started_at).strftime("%Y-%m-%d %H:%M:%S")
+            details.append(f"⏱️ <b>Active Since:</b> <code>{dt}</code>")
+        if enabled_by:
+            details.append(f"👤 <b>Activated By:</b> <code>{enabled_by}</code>")
+    else:
+        details.append("✨ All trainers can freely access PokéEmpire commands and games.")
+
+    details_str = "\n".join(details)
+    
+    owner_str = ", ".join(str(x) for x in config.OWNER_IDS)
+    co_owner_str = ", ".join(str(x) for x in config.CO_OWNER_IDS)
+    dev_str = ", ".join(str(x) for x in config.DEV_IDS)
+
+    text = (
+        "🚧 <b>POKÉEMPIRE MAINTENANCE CONTROLLER</b> 🚧\n"
+        "◈ ───────────────────────────────── ◈\n"
+        f"<b>Current Status:</b> {status_badge}\n\n"
+        f"<blockquote>{details_str}\n\n"
+        f"👑 <b>Exempt Roles (Can still use bot):</b>\n"
+        f"• <b>Owner:</b> <code>{owner_str}</code>\n"
+        f"• <b>Co-Owners:</b> <code>{co_owner_str}</code>\n"
+        f"• <b>Developers:</b> <code>{dev_str}</code></blockquote>\n"
+        "◈ ───────────────────────────────── ◈\n"
+        "<i>Use the controls below or use <code>/maintenance on [reason]</code> / <code>/maintenance off</code>.</i>"
+    )
+
+    builder = InlineKeyboardBuilder()
+    if is_on:
+        builder.row(InlineKeyboardButton(text="🟢 Turn Maintenance OFF", callback_data="maint_toggle_off"))
+    else:
+        builder.row(InlineKeyboardButton(text="🔴 Turn Maintenance ON", callback_data="maint_toggle_on"))
+    
+    builder.row(
+        InlineKeyboardButton(text="🔄 Refresh Status", callback_data="maint_refresh"),
+        InlineKeyboardButton(text="❌ Close", callback_data="maint_close")
+    )
+    return text, builder.as_markup()
+
+
+@router.message(Command("maintenance", "maint", ignore_mention=True))
+async def cmd_maintenance(message: Message, db: AsyncSession):
+    user_id = message.from_user.id if message.from_user else None
+    if not is_maintenance_exempt(user_id):
+        await message.answer(
+            "⛔ <b>Access Denied</b>\n"
+            "◈ ────────────────── ◈\n"
+            "<i>Only the Bot Owner, Co-Owner, and Developers can access maintenance controls.</i>",
+            parse_mode="HTML"
+        )
+        return
+
+    args = (message.text or "").strip().split(maxsplit=2)
+    subcmd = args[1].lower() if len(args) > 1 else None
+
+    if subcmd in ["on", "enable", "start", "1", "true"]:
+        reason = args[2] if len(args) > 2 else "Routine system update & optimization"
+        await set_maintenance_mode(enabled=True, reason=reason, enabled_by=user_id, db=db)
+        text, markup = build_maintenance_card()
+        await message.answer(
+            f"✅ <b>Maintenance mode enabled successfully!</b>\n\n{text}",
+            reply_markup=markup,
+            parse_mode="HTML"
+        )
+        return
+    elif subcmd in ["off", "disable", "stop", "0", "false"]:
+        await set_maintenance_mode(enabled=False, db=db)
+        text, markup = build_maintenance_card()
+        await message.answer(
+            f"✅ <b>Maintenance mode disabled successfully!</b>\n\n{text}",
+            reply_markup=markup,
+            parse_mode="HTML"
+        )
+        return
+
+    text, markup = build_maintenance_card()
+    await message.answer(text, reply_markup=markup, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "maint_toggle_on")
+async def cb_maintenance_on(callback: CallbackQuery, db: AsyncSession):
+    user_id = callback.from_user.id if callback.from_user else None
+    if not is_maintenance_exempt(user_id):
+        await callback.answer("⛔ Access denied. Only Owner, Co-Owner & Developers can use this.", show_alert=True)
+        return
+    await set_maintenance_mode(enabled=True, reason="System maintenance & database upgrade", enabled_by=user_id, db=db)
+    text, markup = build_maintenance_card()
+    try:
+        await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+    except Exception:
+        pass
+    await callback.answer("🔴 Maintenance mode is now ON! Non-exempt users will be blocked.", show_alert=True)
+
+
+@router.callback_query(F.data == "maint_toggle_off")
+async def cb_maintenance_off(callback: CallbackQuery, db: AsyncSession):
+    user_id = callback.from_user.id if callback.from_user else None
+    if not is_maintenance_exempt(user_id):
+        await callback.answer("⛔ Access denied. Only Owner, Co-Owner & Developers can use this.", show_alert=True)
+        return
+    await set_maintenance_mode(enabled=False, db=db)
+    text, markup = build_maintenance_card()
+    try:
+        await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+    except Exception:
+        pass
+    await callback.answer("🟢 Maintenance mode is now OFF! Bot is live for all users.", show_alert=True)
+
+
+@router.callback_query(F.data == "maint_refresh")
+async def cb_maintenance_refresh(callback: CallbackQuery):
+    user_id = callback.from_user.id if callback.from_user else None
+    if not is_maintenance_exempt(user_id):
+        await callback.answer("⛔ Access denied.", show_alert=True)
+        return
+    text, markup = build_maintenance_card()
+    try:
+        await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+    except Exception:
+        pass
+    await callback.answer("🔄 Status refreshed!")
+
+
+@router.callback_query(F.data == "maint_close")
+async def cb_maintenance_close(callback: CallbackQuery):
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    await callback.answer()

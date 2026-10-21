@@ -2040,6 +2040,9 @@ async def check_game_answers(message: Message, db: AsyncSession):
 
 # Automatically start a scribble/nameguess game when conversation happens in group chat with no active game
 def no_active_game_in_group(message: Message) -> bool:
+    from utils.maintenance import is_maintenance_mode
+    if is_maintenance_mode():
+        return False
     if message.chat.type not in ["group", "supergroup"]:
         return False
     chat_id = message.chat.id

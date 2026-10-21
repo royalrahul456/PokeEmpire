@@ -435,15 +435,16 @@ async def cmd_claim(message: Message, db: AsyncSession):
         if s_media:
             media_type, media_value = parse_stored_media_value(s_media)
 
+    # For .0 (base form), check form 0 media or base image_url (do not show other form arts)
     if not media_value:
-        form1_stmt = select(PokemonFormMedia.media_value).where(
+        form0_stmt = select(PokemonFormMedia.media_value).where(
             PokemonFormMedia.pokemon_id == selected_pokemon.id,
-            PokemonFormMedia.form_index == 1
+            PokemonFormMedia.form_index == 0
         )
-        form1_res = await db.execute(form1_stmt)
-        form1_media = form1_res.scalar_one_or_none()
-        if form1_media:
-            media_type, media_value = parse_stored_media_value(form1_media)
+        form0_res = await db.execute(form0_stmt)
+        form0_media = form0_res.scalar_one_or_none()
+        if form0_media:
+            media_type, media_value = parse_stored_media_value(form0_media)
 
     if not media_value and selected_pokemon.image_url:
         media_type, media_value = parse_stored_media_value(selected_pokemon.image_url)

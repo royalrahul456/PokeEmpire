@@ -313,8 +313,8 @@ def process_text_or_caption(text: str, parse_mode, bot_instance, max_len: int = 
 
 def enhance_reply_markup(reply_markup):
     """
-    Enhances an InlineKeyboardMarkup by attaching native custom emoji icons
-    and button color styles (primary, success, danger) based on text or actions.
+    Enhances an InlineKeyboardMarkup by ensuring rich Unicode emojis in text
+    and assigning native Telegram button color styles (primary, success, danger).
     """
     if not reply_markup or not hasattr(reply_markup, "inline_keyboard"):
         return reply_markup
@@ -332,27 +332,42 @@ def enhance_reply_markup(reply_markup):
             emoji_id = btn_dict.get("icon_custom_emoji_id")
             cb_data = btn_dict.get("callback_data", "")
 
-            # 1. Determine emoji_id if not present
-            if not emoji_id and text:
+            # 1. Attach custom emoji id if enabled, BUT NEVER strip the rich Unicode emoji from text
+            if is_premium_emojis_enabled() and not emoji_id and text:
                 for em, eid in EMOJI_MAPPING.items():
                     if text.startswith(em):
-                        emoji_id = eid
-                        text = text[len(em):].lstrip()
-                        btn_dict["text"] = text
                         btn_dict["icon_custom_emoji_id"] = str(eid)
                         modified = True
                         break
 
-            # 2. Determine style if not present
+            # 2. Assign Telegram button color style if not explicitly set
             if not btn_style:
                 assigned_style = None
                 low_text = text.lower()
                 low_cb = str(cb_data).lower()
-                if any(k in low_text or k in low_cb for k in ("confirm", "accept", "success", "yes", "pokedex", "dex", "claim", "buy", "bag")):
+
+                # Success (Green) actions
+                if any(k in low_text or k in low_cb for k in (
+                    "confirm", "accept", "success", "yes", "pokedex", "dex", "claim", "buy", "purchase", "bag", "redeem", "catch", "maint_toggle_off"
+                )):
                     assigned_style = "success"
-                elif any(k in low_text or k in low_cb for k in ("cancel", "reject", "stop", "abort", "danger", "delete", "remove", "vip", "streak", "battle", "help")):
+                # Danger (Red) actions
+                elif any(k in low_text or k in low_cb for k in (
+                    "cancel", "decline", "reject", "stop", "abort", "danger", "delete", "remove", "close", "battle", "arena", "pvp", "maint_toggle_on"
+                )):
                     assigned_style = "danger"
-                elif any(k in low_text or k in low_cb for k in ("profile", "trade", "shop", "game", "back", "next", "prev", "refresh", "info", "stat", "leaderboard", "quest", "update", "support")):
+                # VIP Plan / Pricing (Danger / Red / Premium accent, unless it's a claim action)
+                elif "vip" in low_text or "vip" in low_cb:
+                    if any(k in low_text or k in low_cb for k in ("claim", "daily", "act")):
+                        assigned_style = "success"
+                    else:
+                        assigned_style = "danger"
+                # Primary (Blue) actions
+                elif any(k in low_text or k in low_cb for k in (
+                    "profile", "trade", "shop", "game", "back", "next", "prev", "refresh", "info", "stat", "leaderboard", "quest", "update", "support", "group", "panel", "tools", "help", "rank"
+                )):
+                    assigned_style = "primary"
+                else:
                     assigned_style = "primary"
 
                 if assigned_style:
@@ -368,7 +383,7 @@ def enhance_reply_markup(reply_markup):
 
 
 def strip_keyboard_styling(reply_markup):
-    """Fallback helper to strip icon_custom_emoji_id and style if rejected by Telegram."""
+    """Fallback helper to strip icon_custom_emoji_id if rejected by Telegram, preserving button color styles."""
     if not reply_markup or not hasattr(reply_markup, "inline_keyboard"):
         return reply_markup
 
@@ -378,8 +393,9 @@ def strip_keyboard_styling(reply_markup):
         new_row = []
         for btn in row:
             btn_dict = btn.model_dump(exclude_none=True)
+            # Remove custom emoji icon if rejected by Telegram server
             btn_dict.pop("icon_custom_emoji_id", None)
-            btn_dict.pop("style", None)
+            # DO NOT pop "style"! Button colors ("primary", "success", "danger") are standard Telegram styles.
             new_row.append(InlineKeyboardButton(**btn_dict))
         new_rows.append(new_row)
     return InlineKeyboardMarkup(inline_keyboard=new_rows)

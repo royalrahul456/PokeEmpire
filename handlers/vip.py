@@ -95,12 +95,12 @@ def build_vip_plan_card(user_db: Optional[User], user_id: int, user_name: str) -
         )
 
         builder.row(
-            InlineKeyboardButton(text="🎁 Claim VIP Daily", callback_data="vip_act_daily"),
-            InlineKeyboardButton(text="🎨 VIP Claim", callback_data="vip_act_claim")
+            InlineKeyboardButton(text="🎁 Claim VIP Daily", callback_data="vip_act_daily", style="success"),
+            InlineKeyboardButton(text="🎨 VIP Claim", callback_data="vip_act_claim", style="success")
         )
         builder.row(
-            InlineKeyboardButton(text="🔄 Refresh Status", callback_data="vip_refresh_status"),
-            InlineKeyboardButton(text="💎 View Pricing / Extend", callback_data="vip_show_pricing")
+            InlineKeyboardButton(text="🔄 Refresh Status", callback_data="vip_refresh_status", style="primary"),
+            InlineKeyboardButton(text="💎 View Pricing / Extend", callback_data="vip_show_pricing", style="danger")
         )
         return text, builder.as_markup()
 
@@ -127,14 +127,14 @@ def build_vip_plan_card(user_db: Optional[User], user_id: int, user_name: str) -
 
         owner_id = config.OWNER_IDS[0] if config.OWNER_IDS else 6593485710
         builder.row(
-            InlineKeyboardButton(text="💳 Purchase VIP / Contact Owner", url=f"tg://user?id={owner_id}")
+            InlineKeyboardButton(text="💳 Purchase VIP / Contact Owner", url=f"tg://user?id={owner_id}", style="success")
         )
         builder.row(
-            InlineKeyboardButton(text="🎁 Preview /vipdaily", callback_data="vip_preview_daily"),
-            InlineKeyboardButton(text="🎨 Preview /vipclaim", callback_data="vip_preview_claim")
+            InlineKeyboardButton(text="🎁 Preview /vipdaily", callback_data="vip_preview_daily", style="primary"),
+            InlineKeyboardButton(text="🎨 Preview /vipclaim", callback_data="vip_preview_claim", style="primary")
         )
         builder.row(
-            InlineKeyboardButton(text="🔄 Check Activation Status", callback_data="vip_refresh_status")
+            InlineKeyboardButton(text="🔄 Check Activation Status", callback_data="vip_refresh_status", style="primary")
         )
         return text, builder.as_markup()
 
@@ -284,12 +284,19 @@ async def cmd_vip_claim(message: Message, db: AsyncSession):
         parsed_media = selected_pokemon.image_url
         media_type = "photo"
 
+    claim_kb = InlineKeyboardBuilder()
+    claim_kb.row(
+        InlineKeyboardButton(text="💎 VIP Menu", callback_data="vip_refresh_status", style="danger"),
+        InlineKeyboardButton(text="🎁 Claim VIP Daily", callback_data="vip_act_daily", style="success")
+    )
+
     await send_safe_media(
         bot=message.bot,
         chat_id=message.chat.id,
         media_type=media_type,
         media_value=parsed_media,
         caption=card_text,
+        reply_markup=claim_kb.as_markup(),
         parse_mode="HTML",
         message_to_reply=message
     )
@@ -463,6 +470,12 @@ async def cmd_vip_daily(message: Message, db: AsyncSession):
         "⏳ <b>Come back in 24h for the next reward!</b>"
     )
 
+    daily_kb = InlineKeyboardBuilder()
+    daily_kb.row(
+        InlineKeyboardButton(text="💎 VIP Menu", callback_data="vip_refresh_status", style="danger"),
+        InlineKeyboardButton(text="🎨 VIP Claim", callback_data="vip_act_claim", style="success")
+    )
+
     if parsed_media:
         await send_safe_media(
             bot=message.bot,
@@ -470,11 +483,12 @@ async def cmd_vip_daily(message: Message, db: AsyncSession):
             media_type=media_type,
             media_value=parsed_media,
             caption=card_text,
+            reply_markup=daily_kb.as_markup(),
             parse_mode="HTML",
             message_to_reply=message
         )
     else:
-        await message.answer(card_text, parse_mode="HTML")
+        await message.answer(card_text, reply_markup=daily_kb.as_markup(), parse_mode="HTML")
 
 
 # ── ADMIN VIP MANAGEMENT COMMANDS ───────────────────────────────────────────
@@ -656,8 +670,8 @@ async def cb_vip_show_pricing(callback: CallbackQuery, db: AsyncSession):
     )
     owner_id = config.OWNER_IDS[0] if config.OWNER_IDS else 6593485710
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="💳 Contact Owner to Buy", url=f"tg://user?id={owner_id}"))
-    builder.row(InlineKeyboardButton(text="🔙 Back to VIP Dashboard", callback_data="vip_refresh_status"))
+    builder.row(InlineKeyboardButton(text="💳 Contact Owner to Buy", url=f"tg://user?id={owner_id}", style="success"))
+    builder.row(InlineKeyboardButton(text="🔙 Back to VIP Dashboard", callback_data="vip_refresh_status", style="primary"))
     try:
         await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
     except Exception:

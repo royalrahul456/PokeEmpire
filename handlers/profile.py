@@ -1498,7 +1498,7 @@ async def cb_leaderboard_type(callback: CallbackQuery, db: AsyncSession):
         create_styled_button(text="🔥 Streak", key="streak", style="danger", callback_data="lb_type_streak_dm" if is_dm else "lb_type_streak")
     )
     if is_dm:
-        builder.row(create_styled_button(text="Back to Hub Menu", key="back", style="primary", callback_data="dm_home"))
+        builder.row(create_styled_button(text="🔙 Back to Hub Menu", key="back", style="primary", callback_data="dm_home"))
         
     try:
         await callback.message.edit_caption(

@@ -442,12 +442,20 @@ async def cmd_claim(message: Message, db: AsyncSession):
     if not media_value and selected_pokemon.image_url:
         media_type, media_value = parse_stored_media_value(selected_pokemon.image_url)
 
+    from keyboards.inline import create_styled_button
+    claim_kb = InlineKeyboardBuilder()
+    claim_kb.row(
+        create_styled_button(text="📖 View Pokédex", key="pokedex", callback_data=f"pd_page_{user_id}_1_All", style="success"),
+        create_styled_button(text="👤 My Profile", key="profile", callback_data=f"profile_view_{user_id}", style="primary")
+    )
+
     await send_safe_media(
         bot=message.bot,
         chat_id=message.chat.id,
         media_type=media_type,
         media_value=media_value,
         caption=text,
+        reply_markup=claim_kb.as_markup(),
         parse_mode="HTML",
         message_to_reply=message
     )

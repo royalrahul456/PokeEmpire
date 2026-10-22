@@ -3442,7 +3442,7 @@ async def cb_dm_leaderboard(callback: CallbackQuery, db: AsyncSession):
         create_styled_button(text="💰 Coins", key="claim", style="primary", callback_data="lb_type_coins_dm"),
         create_styled_button(text="🔥 Streak", key="streak", style="danger", callback_data="lb_type_streak_dm")
     )
-    builder.row(create_styled_button(text="Back to Hub Menu", key="back", style="primary", callback_data="dm_home"))
+    builder.row(create_styled_button(text="🔙 Back to Hub Menu", key="back", style="primary", callback_data="dm_home"))
     
     try:
         await callback.message.edit_caption(

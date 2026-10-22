@@ -833,11 +833,15 @@ async def cmd_balance(message: Message, db: AsyncSession):
             await db.commit()
 
         name = html.escape(user_db.profile_name or user_db.nickname or nickname)
+        gems = getattr(user_db, "poke_gems", 0) or 0
+        from utils.vip import is_user_vip
+        vip_str = " [👑 VIP]" if is_user_vip(user_db) else ""
         text = (
             f"💰 <b>TRAINER BALANCE</b> 💰\n"
             f"───────────────\n"
-            f"👤 <b>Trainer</b>: <b>{name}</b>\n"
-            f"💳 <b>Current Balance</b>: 💰 <b>{user_db.coins:,} coins</b>\n"
+            f"👤 <b>Trainer</b>: <b>{name}</b>{vip_str}\n"
+            f"💳 <b>Coins</b>: 💰 <b>{user_db.coins:,} coins</b>\n"
+            f"💎 <b>PokeGems</b>: ⭐ <b>{gems:,} gems</b>\n"
             f"───────────────"
         )
         await message.answer(text, parse_mode="HTML")
@@ -1116,13 +1120,17 @@ async def cmd_profile(message: Message, db: AsyncSession):
         xp_bar = "█" * xp_filled + "░" * (10 - xp_filled)
         title = get_trainer_title(lvl)
 
+        gems = getattr(user_db, "poke_gems", 0) or 0
+        from utils.vip import is_user_vip
+        vip_tag = " [👑 VIP]" if is_user_vip(user_db) else ""
+
         profile_card = (
             f"╭──「 🏆 Trainer Profile 」\n"
-            f"├─➩ 🏓 User: {html.escape(user_nickname)}\n"
+            f"├─➩ 🏓 User: {html.escape(user_nickname)}{vip_tag}\n"
             f"├─➩ 🆔 ID: <code>{user_db.id}</code>\n"
             f"├─➩ 🎖️ Level: <code>Lv. {lvl} ({title})</code>\n"
             f"├─➩ ⚡ EXP: [{xp_bar}] {xp_pct}% (<code>{xp:,}/{req_xp:,}</code>)\n"
-            f"├─➩ 💰 Balance: <code>{formatted_coins} coins</code>\n"
+            f"├─➩ 💰 Balance: <code>{formatted_coins} coins</code> | 💎 <code>{gems:,} gems</code>\n"
             f"├─➩ ⚡ Pokémon: {unique_caught} (Total Catches: {total_caught})\n"
             f"├─➩ 🌍 Pokédex: {unique_caught}/{total_species} ({dex_pct:.3f}%)\n"
             f"├─➩ 🎁 Progress:\n"

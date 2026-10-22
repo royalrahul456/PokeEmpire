@@ -29,6 +29,13 @@ class User(Base):
     profile_name = Column(String(100), nullable=True)
     trainer_level = Column(Integer, default=1, nullable=False)
     trainer_xp = Column(Integer, default=0, nullable=False)
+    poke_gems = Column(Integer, default=0, nullable=False)
+    is_vip = Column(Boolean, default=False, nullable=False)
+    vip_expiry = Column(DateTime, nullable=True)
+    vip_tier = Column(String(50), nullable=True)
+    last_vip_daily = Column(DateTime, nullable=True)
+    vip_daily_streak = Column(Integer, default=0, nullable=False)
+    last_vip_claim = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=func.now(), nullable=False)
 
     # Relationships

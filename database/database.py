@@ -127,6 +127,13 @@ async def init_db():
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_name VARCHAR(100);",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS trainer_level INTEGER DEFAULT 1;",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS trainer_xp INTEGER DEFAULT 0;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS poke_gems INTEGER DEFAULT 0;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_vip BOOLEAN DEFAULT false;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS vip_expiry TIMESTAMP;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS vip_tier VARCHAR(50);",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_vip_daily TIMESTAMP;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS vip_daily_streak INTEGER DEFAULT 0;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_vip_claim TIMESTAMP;",
             # Fix active_mines_games schema if old columns exist
             """DO $$
             BEGIN
@@ -222,7 +229,14 @@ async def init_db():
                     ("pokedex_name", "VARCHAR(100)"),
                     ("profile_name", "VARCHAR(100)"),
                     ("trainer_level", "INTEGER DEFAULT 1"),
-                    ("trainer_xp", "INTEGER DEFAULT 0")
+                    ("trainer_xp", "INTEGER DEFAULT 0"),
+                    ("poke_gems", "INTEGER DEFAULT 0"),
+                    ("is_vip", "BOOLEAN DEFAULT 0"),
+                    ("vip_expiry", "TIMESTAMP"),
+                    ("vip_tier", "VARCHAR(50)"),
+                    ("last_vip_daily", "TIMESTAMP"),
+                    ("vip_daily_streak", "INTEGER DEFAULT 0"),
+                    ("last_vip_claim", "TIMESTAMP")
                 ]
                 for col, col_type in streak_cols:
                     try: await conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {col_type}"))

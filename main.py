@@ -46,7 +46,8 @@ from handlers import (
     auction,
     quests,
     guilds,
-    mystery_events
+    mystery_events,
+    vip
 )
 
 # Set up logging configuration
@@ -168,6 +169,9 @@ async def register_bot_commands(bot: Bot):
         BotCommand(command="gen", description="🔑 Generate a redeem code (Owner only)"),
         BotCommand(command="panel", description="⚙️ Executive Owner Console (Owner only)"),
         BotCommand(command="maintenance", description="🚧 Maintenance Mode (Owner/Dev only)"),
+        BotCommand(command="vipplan", description="💎 View VIP Membership Perks & Pricing"),
+        BotCommand(command="vipdaily", description="👑 Claim Daily VIP PokeGems, Coins & Pokémon"),
+        BotCommand(command="vipclaim", description="🎨 Claim Daily Non-.0 Alternate Art Pokémon"),
         BotCommand(command="ping", description="⚡ Check System & DB Latency"),
         BotCommand(command="addrarity", description="✨ Create custom Pokémon rarity tier"),
         BotCommand(command="addpokemon", description="➕ Register a new Pokémon in database"),
@@ -567,6 +571,7 @@ async def main():
         dp.include_router(quests.router)
         dp.include_router(guilds.router)
         dp.include_router(mystery_events.router)
+        dp.include_router(vip.router)
         
         # Setup Games bot
         if config.TELEGRAM_PROXY:
@@ -684,6 +689,7 @@ async def main():
         dp.include_router(quests.router)
         dp.include_router(guilds.router)
         dp.include_router(mystery_events.router)
+        dp.include_router(vip.router)
 
         logger.info("Bot handlers and routers registered.")
         await register_bot_commands(bot)

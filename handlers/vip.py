@@ -45,9 +45,11 @@ def get_form_label(form_index: int) -> str:
         3: "💥 Gigantamax (Gmax)",
         4: "🌀 Z-Move",
         5: "🔮 Terastal",
-        6: "✨ Shiny Special Form",
+        6: "✨ Shiny Alternate",
+        7: "🌟 Special Form .7",
+        8: "🌟 Special Form .8",
     }
-    return labels.get(form_index, f"🌟 Custom Alternate Form #{form_index}")
+    return labels.get(form_index, f"🌟 Custom Alternate Form .{form_index}")
 
 
 def build_vip_plan_card(user_db: Optional[User], user_id: int, user_name: str) -> Tuple[str, InlineKeyboardMarkup]:
@@ -204,8 +206,11 @@ async def cmd_vip_claim(message: Message, db: AsyncSession):
         )
         return
 
-    # Query all alternate form media where form_index > 0 (excluding .0 base form)
-    fm_stmt = select(PokemonFormMedia).where(PokemonFormMedia.form_index > 0)
+    # Query only alternate form media strictly between .1 and .8 (excluding .0 base form and > .8)
+    fm_stmt = select(PokemonFormMedia).where(
+        PokemonFormMedia.form_index >= 1,
+        PokemonFormMedia.form_index <= 8
+    )
     fm_res = await db.execute(fm_stmt)
     available_forms = fm_res.scalars().all()
 
@@ -227,7 +232,7 @@ async def cmd_vip_claim(message: Message, db: AsyncSession):
             await message.answer("❌ <b>Error:</b> No Pokémon found in database to claim.", parse_mode="HTML")
             return
         selected_pokemon = random.choice(all_pokemon)
-        form_index = random.choice([1, 2, 3, 4, 5])
+        form_index = random.choice([1, 2, 3, 4, 5, 6, 7, 8])
 
     # VIP boosted shiny rate: 1 in 40 (normal is 1 in 100)
     is_shiny = random.randint(1, 40) == 1
@@ -374,8 +379,11 @@ async def cmd_vip_daily(message: Message, db: AsyncSession):
         days_to_milestone = 7 - (new_streak % 7)
         streak_msg = f"\n🔥 <i>VIP Streak: <b>{new_streak} Days</b> ({days_to_milestone} days until +50 gems bonus!)</i>\n"
 
-    # 5. Today's Pokemon reward (guaranteed non-.0 alternate art form for VIP Daily!)
-    fm_stmt = select(PokemonFormMedia).where(PokemonFormMedia.form_index > 0)
+    # 5. Today's Pokemon reward (strictly between .1 and .8 only!)
+    fm_stmt = select(PokemonFormMedia).where(
+        PokemonFormMedia.form_index >= 1,
+        PokemonFormMedia.form_index <= 8
+    )
     fm_res = await db.execute(fm_stmt)
     available_forms = fm_res.scalars().all()
 
@@ -395,7 +403,7 @@ async def cmd_vip_daily(message: Message, db: AsyncSession):
         all_pokemon = p_all_res.scalars().all()
         if all_pokemon:
             selected_pokemon = random.choice(all_pokemon)
-            form_index = random.choice([1, 2, 3, 4, 5])
+            form_index = random.choice([1, 2, 3, 4, 5, 6, 7, 8])
 
     shiny_prefix = ""
     poke_name = "None"

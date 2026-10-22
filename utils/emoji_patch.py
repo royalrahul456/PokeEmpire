@@ -281,13 +281,15 @@ def process_text_or_caption(text: str, parse_mode, bot_instance, max_len: int = 
     current_mode = parse_mode
     is_markdown = False
 
+    # Check rendered plain text length (Telegram's 1024/4096 character limits apply to rendered plain text, not HTML markup tags)
+    plain_text_len = len(re.sub(r'<[^>]*>', '', text))
+    if plain_text_len > max_len:
+        return text, parse_mode
+
     # If text already contains valid HTML tags, process emojis and set HTML mode directly
     if HTML_TAG_PATTERN.search(text):
         processed = replace_emojis(text)
-        if len(processed) <= max_len:
-            return processed, "HTML"
-        # If replacing with tg-emoji tags exceeds max_len (e.g. 1024 for photo captions), keep original text
-        return text, "HTML"
+        return processed, "HTML"
         
     if current_mode is None:
         bot_default_mode = getattr(bot_instance, "default", None) and bot_instance.default.parse_mode
@@ -307,9 +309,7 @@ def process_text_or_caption(text: str, parse_mode, bot_instance, max_len: int = 
         current_mode = "HTML"
         
     processed = replace_emojis(text)
-    if len(processed) <= max_len:
-        return processed, current_mode
-    return text, current_mode
+    return processed, current_mode
 
 def enhance_reply_markup(reply_markup):
     """

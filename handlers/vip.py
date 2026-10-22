@@ -268,8 +268,7 @@ async def cmd_vip_claim(message: Message, db: AsyncSession):
         f"👤 <b>Trainer:</b> {html.escape(user_name)} [👑 VIP]\n"
         f"👾 <b>Pokémon:</b> {shiny_prefix}<b>{selected_pokemon.name.title()}</b>\n"
         f"🎨 <b>Artwork Form:</b> <b>{form_label}</b> (Form .{form_index})\n"
-        f"{r_emoji} <b>Rarity:</b> <b>{selected_pokemon.rarity}</b>\n"
-        f"📊 <b>IV Stats:</b> <b>{iv_total_pct}%</b> (HP:{iv_hp} ATK:{iv_atk} DEF:{iv_def} SPD:{iv_spd})\n\n"
+        f"{r_emoji} <b>Rarity:</b> <b>{selected_pokemon.rarity}</b>\n\n"
         f"💎 <i>Exclusively awarded with custom non-.0 alternate art!</i></blockquote>\n"
         "◈ ────────────────────────── ◈\n"
         "⏳ <i>Come back in 24h for your next VIP Claim!</i>"
@@ -375,44 +374,65 @@ async def cmd_vip_daily(message: Message, db: AsyncSession):
         days_to_milestone = 7 - (new_streak % 7)
         streak_msg = f"\n🔥 <i>VIP Streak: <b>{new_streak} Days</b> ({days_to_milestone} days until +50 gems bonus!)</i>\n"
 
-    # 5. Today's Pokemon reward
-    p_stmt = select(Pokemon)
-    p_res = await db.execute(p_stmt)
-    all_pokemon = p_res.scalars().all()
-    selected_pokemon = random.choice(all_pokemon) if all_pokemon else None
+    # 5. Today's Pokemon reward (guaranteed non-.0 alternate art form for VIP Daily!)
+    fm_stmt = select(PokemonFormMedia).where(PokemonFormMedia.form_index > 0)
+    fm_res = await db.execute(fm_stmt)
+    available_forms = fm_res.scalars().all()
+
+    selected_pokemon = None
+    form_index = 1
+    media_value = None
+
+    if available_forms:
+        chosen_fm = random.choice(available_forms)
+        form_index = chosen_fm.form_index
+        media_value = chosen_fm.media_value
+        p_res = await db.execute(select(Pokemon).where(Pokemon.id == chosen_fm.pokemon_id))
+        selected_pokemon = p_res.scalar_one_or_none()
+
+    if not selected_pokemon:
+        p_all_res = await db.execute(select(Pokemon))
+        all_pokemon = p_all_res.scalars().all()
+        if all_pokemon:
+            selected_pokemon = random.choice(all_pokemon)
+            form_index = random.choice([1, 2, 3, 4, 5])
 
     shiny_prefix = ""
     poke_name = "None"
     rarity_text = "Common"
     r_emoji = "⚪️"
-    media_url = None
+    media_type = "photo"
+    parsed_media = None
 
     if selected_pokemon:
         is_shiny = random.randint(1, 40) == 1
         shiny_prefix = "✨ Shiny " if is_shiny else ""
-        poke_name = selected_pokemon.name.title()
+        form_label = get_form_label(form_index)
+        poke_name = f"{selected_pokemon.name.title()} ({form_label})"
         rarity_text = selected_pokemon.rarity
         r_emoji = get_rarity_emoji(rarity_text)
-        media_url = selected_pokemon.image_url
 
-        iv_hp = random.randint(5, 31)
-        iv_atk = random.randint(5, 31)
-        iv_def = random.randint(5, 31)
-        iv_spd = random.randint(5, 31)
+        is_amv = (form_index == 1) or (media_value is not None and "video" in str(media_value).lower())
 
         capture = UserPokemon(
             user_id=user_id,
             pokemon_id=selected_pokemon.id,
             is_shiny=is_shiny,
-            form_index=0,
+            is_amv=is_amv,
+            form_index=form_index,
             level=1,
             xp=0,
-            iv_hp=iv_hp,
-            iv_atk=iv_atk,
-            iv_def=iv_def,
-            iv_spd=iv_spd
+            iv_hp=random.randint(10, 31),
+            iv_atk=random.randint(10, 31),
+            iv_def=random.randint(10, 31),
+            iv_spd=random.randint(10, 31)
         )
         db.add(capture)
+
+        media_type, parsed_media = parse_stored_media_value(media_value)
+        if not parsed_media:
+            parsed_media = selected_pokemon.image_url
+            media_type = "photo"
 
     # Update user wallet
     total_gems_added = gems_added + bonus_gems
@@ -435,12 +455,12 @@ async def cmd_vip_daily(message: Message, db: AsyncSession):
         "⏳ <b>Come back in 24h for the next reward!</b>"
     )
 
-    if media_url:
+    if parsed_media:
         await send_safe_media(
             bot=message.bot,
             chat_id=message.chat.id,
-            media_type="photo",
-            media_value=media_url,
+            media_type=media_type,
+            media_value=parsed_media,
             caption=card_text,
             parse_mode="HTML",
             message_to_reply=message

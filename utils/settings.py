@@ -343,8 +343,10 @@ async def send_safe_media(
     if not thread_id and message_to_reply:
         thread_id = getattr(message_to_reply, "message_thread_id", None)
 
-    # 1. If no media or caption exceeds photo caption limit (1024 chars), send as text
-    if not media_value or (caption and len(caption) > 950):
+    # 1. If no media or caption plain text exceeds Telegram's photo caption limit (1024 rendered chars), send as text
+    import re
+    plain_caption_len = len(re.sub(r'<[^>]*>', '', caption)) if caption else 0
+    if not media_value or plain_caption_len > 1024:
         # Attempt rich text with markup
         if message_to_reply:
             try:

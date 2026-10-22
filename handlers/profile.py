@@ -286,10 +286,15 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
     else:
         view_mode = "all"
 
-    # 1. Total Species in Database
-    total_species_stmt = select(func.count(Pokemon.id))
-    total_species_res = await db.execute(total_species_stmt)
-    total_species = total_species_res.scalar() or 0
+    # 1. Total Species in Database (read from in-memory cache if available)
+    from utils.pokemon_cache import get_all_cached_pokemon, get_cached_pokemon_by_id
+    cached_all = get_all_cached_pokemon()
+    if cached_all:
+        total_species = len(cached_all)
+    else:
+        total_species_stmt = select(func.count(Pokemon.id))
+        total_species_res = await db.execute(total_species_stmt)
+        total_species = total_species_res.scalar() or 0
 
     # Resolve display name: custom admin pokedex_name takes priority, then user nickname/passed nickname
     u_stmt = select(User).where(User.id == user_id)
@@ -381,14 +386,23 @@ async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter
     offset = (page - 1) * per_page
     page_raw_entries = all_raw_entries[offset:offset + per_page]
 
-    # Fetch Pokemon metadata for the current page
+    # Fetch Pokemon metadata for current page from cache first
     page_pokemon_ids = list({row[0] for row in page_raw_entries})
-    p_stmt = select(Pokemon).where(Pokemon.id.in_(page_pokemon_ids))
-    p_res = await db.execute(p_stmt)
-    pokemon_dict = {p.id: p for p in p_res.scalars().all()}
+    pokemon_dict = {}
+    missing_pids = []
+    for pid in page_pokemon_ids:
+        cached_p = get_cached_pokemon_by_id(pid)
+        if cached_p:
+            pokemon_dict[pid] = cached_p
+        else:
+            missing_pids.append(pid)
+    if missing_pids:
+        p_stmt = select(Pokemon).where(Pokemon.id.in_(missing_pids))
+        p_res = await db.execute(p_stmt)
+        for p in p_res.scalars().all():
+            pokemon_dict[p.id] = p
 
     form_media_lookup = await get_form_media_lookup(db, page_pokemon_ids)
-    custom_forms = await get_custom_rarity_forms(db)
 
     # Unique species caught for overall completion percentage
     unique_species_caught = len({row[0] for row in all_raw_entries})
@@ -1417,13 +1431,12 @@ async def get_leaderboard_text(lb_type: str, db: AsyncSession) -> str:
             
             for idx, (user_id, uinfo) in enumerate(filtered_users):
                 rank = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx + 1}."
-                
-                stmt = select(User.username, User.nickname).where(User.id == user_id)
-                res = await db.execute(stmt)
-                user_row = res.first()
-                if user_row:
-                    username, nickname = user_row
-                    display_name = f"@{html.escape(username)}" if username else f"{html.escape(nickname or 'Trainer')}"
+                username = uinfo.get("username")
+                nickname = uinfo.get("nickname")
+                if username:
+                    display_name = f"@{html.escape(username)}"
+                elif nickname:
+                    display_name = f"{html.escape(nickname)}"
                 else:
                     display_name = f"Trainer_{user_id}"
                 

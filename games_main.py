@@ -190,10 +190,11 @@ async def main():
     dp = Dispatcher()
 
     # Register Middlewares
-    dp.update.outer_middleware(DbSessionMiddleware())
     dp.message.outer_middleware(GroupActivityMiddleware())
     dp.message.outer_middleware(AntiSpamMiddleware())
     dp.callback_query.outer_middleware(AntiSpamMiddleware())
+    dp.message.middleware(DbSessionMiddleware())
+    dp.callback_query.middleware(DbSessionMiddleware())
 
     # Register Game Handlers
     dp.include_router(games_start.router)

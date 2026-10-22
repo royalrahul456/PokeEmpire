@@ -522,10 +522,14 @@ async def main():
         logger.error(f"⚠️ Main Bot unhandled error: {event.exception}", exc_info=True)
 
     # Register Middlewares
-    dp.update.outer_middleware(DbSessionMiddleware())
+    # Outer middlewares: light in-memory checks for every message/callback
     dp.message.outer_middleware(GroupActivityMiddleware())
     dp.message.outer_middleware(AntiSpamMiddleware())
     dp.callback_query.outer_middleware(AntiSpamMiddleware())
+
+    # Inner middlewares: ONLY acquire DB session when a command/callback actually matches a handler!
+    dp.message.middleware(DbSessionMiddleware())
+    dp.callback_query.middleware(DbSessionMiddleware())
 
     # Check if dual bot configuration is active
     is_dual_bot = bool(
@@ -587,9 +591,10 @@ async def main():
         async def global_games_error_handler(event):
             logger.error(f"⚠️ Games Bot unhandled error: {event.exception}", exc_info=True)
 
-        dp_games.update.outer_middleware(DbSessionMiddleware())
         dp_games.message.outer_middleware(AntiSpamMiddleware())
         dp_games.callback_query.outer_middleware(AntiSpamMiddleware())
+        dp_games.message.middleware(DbSessionMiddleware())
+        dp_games.callback_query.middleware(DbSessionMiddleware())
         
         dp_games.include_router(games_start.router)
         dp_games.include_router(games.router)

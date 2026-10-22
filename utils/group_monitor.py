@@ -64,10 +64,12 @@ class GroupActivityMiddleware(BaseMiddleware):
                     except Exception as e:
                         print(f"Failed to delete bad word message: {e}")
                         
-                    if db:
-                        try:
+                    # Apply bad word fine via isolated session
+                    from database.database import SessionLocal
+                    try:
+                        async with SessionLocal() as fine_db:
                             spammer_stmt = select(User).where(User.id == user_id)
-                            spammer_res = await db.execute(spammer_stmt)
+                            spammer_res = await fine_db.execute(spammer_stmt)
                             spammer = spammer_res.scalar_one_or_none()
                             
                             if not spammer:
@@ -77,8 +79,8 @@ class GroupActivityMiddleware(BaseMiddleware):
                                     nickname=user.first_name or user.username or "Trainer",
                                     coins=500
                                 )
-                                db.add(spammer)
-                                await db.flush()
+                                fine_db.add(spammer)
+                                await fine_db.flush()
                             
                             # Fine 50,000 coins
                             spammer.coins = max(0, spammer.coins - 50000)
@@ -86,16 +88,16 @@ class GroupActivityMiddleware(BaseMiddleware):
                             if config.ADMIN_IDS:
                                 creator_id = config.ADMIN_IDS[0]
                                 creator_stmt = select(User).where(User.id == creator_id)
-                                creator_res = await db.execute(creator_stmt)
+                                creator_res = await fine_db.execute(creator_stmt)
                                 creator = creator_res.scalar_one_or_none()
                                 
                                 if not creator:
                                     creator = User(id=creator_id, username="creator", nickname="Creator")
-                                    db.add(creator)
-                                    await db.flush()
+                                    fine_db.add(creator)
+                                    await fine_db.flush()
                                     
                                 creator.coins += 50000
-                                await db.commit()
+                                await fine_db.commit()
                                 
                                 spammer_mention = user.mention_html()
                                 # Tag person and tell they are fined
@@ -120,9 +122,8 @@ class GroupActivityMiddleware(BaseMiddleware):
                                         )
                                     except Exception as dm_err:
                                         print(f"Failed to DM creator about bad word fine: {dm_err}")
-                        except Exception as err:
-                            await db.rollback()
-                            print(f"Error executing bad word fine: {err}")
+                    except Exception as err:
+                        print(f"Error executing bad word fine: {err}")
                     return None  # Stop handler execution for bad word message
 
             # 2. Anti-Flood / Anti-Spam Detection
@@ -148,10 +149,11 @@ class GroupActivityMiddleware(BaseMiddleware):
                     if now - last_fine_time.get(user_id, 0) > 10.0:
                         last_fine_time[user_id] = now
                         
-                        if db:
-                            try:
+                        from database.database import SessionLocal
+                        try:
+                            async with SessionLocal() as fine_db:
                                 spammer_stmt = select(User).where(User.id == user_id)
-                                spammer_res = await db.execute(spammer_stmt)
+                                spammer_res = await fine_db.execute(spammer_stmt)
                                 spammer = spammer_res.scalar_one_or_none()
                                 
                                 if not spammer:
@@ -161,8 +163,8 @@ class GroupActivityMiddleware(BaseMiddleware):
                                         nickname=user.first_name or user.username or "Trainer",
                                         coins=500
                                     )
-                                    db.add(spammer)
-                                    await db.flush()
+                                    fine_db.add(spammer)
+                                    await fine_db.flush()
                                 
                                 # Deduct 20,000 coins
                                 spammer.coins = max(0, spammer.coins - 20000)
@@ -171,16 +173,16 @@ class GroupActivityMiddleware(BaseMiddleware):
                                 if config.ADMIN_IDS:
                                     creator_id = config.ADMIN_IDS[0]
                                     creator_stmt = select(User).where(User.id == creator_id)
-                                    creator_res = await db.execute(creator_stmt)
+                                    creator_res = await fine_db.execute(creator_stmt)
                                     creator = creator_res.scalar_one_or_none()
                                     
                                     if not creator:
                                         creator = User(id=creator_id, username="creator", nickname="Creator")
-                                        db.add(creator)
-                                        await db.flush()
+                                        fine_db.add(creator)
+                                        await fine_db.flush()
                                     
                                     creator.coins += 20000
-                                    await db.commit()
+                                    await fine_db.commit()
                                     
                                     spammer_mention = user.mention_html()
                                     await event.answer(
@@ -202,9 +204,8 @@ class GroupActivityMiddleware(BaseMiddleware):
                                             )
                                         except Exception as dm_err:
                                             print(f"Failed to DM creator about anti-flood fine: {dm_err}")
-                            except Exception as err:
-                                await db.rollback()
-                                print(f"Error executing anti-flood fine: {err}")
+                        except Exception as err:
+                            print(f"Error executing anti-flood fine: {err}")
                     return None  # Stop handler execution for flood message
 
             # 3. In-memory activity tracking for leaderboard stats
@@ -219,55 +220,63 @@ class GroupActivityMiddleware(BaseMiddleware):
                 return await handler(event, data)
 
             # 5. Wild Spawn Progress Counter
-            if db:
-                chat_id = chat.id
+            chat_id = chat.id
 
-                # Retrieve or initialize Group Settings from cache
-                if chat_id not in group_settings_cache:
-                    stmt = select(GroupSetting).where(GroupSetting.chat_id == chat_id)
-                    res = await db.execute(stmt)
-                    setting = res.scalar_one_or_none()
+            # Retrieve or initialize Group Settings from cache
+            if chat_id not in group_settings_cache:
+                from database.database import SessionLocal
+                try:
+                    async with SessionLocal() as set_db:
+                        stmt = select(GroupSetting).where(GroupSetting.chat_id == chat_id)
+                        res = await set_db.execute(stmt)
+                        setting = res.scalar_one_or_none()
 
-                    if not setting:
-                        setting = GroupSetting(
-                            chat_id=chat_id,
-                            message_counter=0,
-                            spawn_threshold=random.randint(50, 100),
-                            enabled=True
-                        )
-                        db.add(setting)
-                        await db.commit()
+                        if not setting:
+                            setting = GroupSetting(
+                                chat_id=chat_id,
+                                message_counter=0,
+                                spawn_threshold=random.randint(50, 100),
+                                enabled=True
+                            )
+                            set_db.add(setting)
+                            await set_db.commit()
 
+                        group_settings_cache[chat_id] = {
+                            "spawn_threshold": setting.spawn_threshold,
+                            "enabled": setting.enabled
+                        }
+                except Exception as gs_err:
+                    print(f"Error fetching group setting for chat {chat_id}: {gs_err}")
                     group_settings_cache[chat_id] = {
-                        "spawn_threshold": setting.spawn_threshold,
-                        "enabled": setting.enabled
+                        "spawn_threshold": random.randint(50, 100),
+                        "enabled": True
                     }
 
-                cached_setting = group_settings_cache[chat_id]
+            cached_setting = group_settings_cache[chat_id]
 
-                if cached_setting["enabled"]:
-                    # Auto-migrate/update old small thresholds on the fly in cache
-                    if cached_setting["spawn_threshold"] < 30:
-                        cached_setting["spawn_threshold"] = random.randint(50, 100)
-                        
-                    threshold = cached_setting["spawn_threshold"]
-                    current_count = group_message_counters.get(chat_id, 0) + 1
+            if cached_setting["enabled"]:
+                # Auto-migrate/update old small thresholds on the fly in cache
+                if cached_setting["spawn_threshold"] < 30:
+                    cached_setting["spawn_threshold"] = random.randint(50, 100)
                     
-                    if current_count >= threshold:
-                        # Immediately reset counter so subsequent messages count towards next spawn
-                        group_message_counters[chat_id] = 0
-                        # Set new random spawn threshold for variety
-                        cached_setting["spawn_threshold"] = random.randint(50, 100)
-                        
-                        bot = data.get("bot") or event.bot
-                        thread_id = getattr(event, "message_thread_id", None)
-                        # Fire spawn as background task with dedicated session — don't block the current message handler
-                        from utils.maintenance import is_maintenance_mode
-                        if not is_maintenance_mode():
-                            import asyncio
-                            asyncio.create_task(SpawnService.trigger_spawn(None, chat_id, bot, message_thread_id=thread_id))
-                    else:
-                        group_message_counters[chat_id] = current_count
+                threshold = cached_setting["spawn_threshold"]
+                current_count = group_message_counters.get(chat_id, 0) + 1
+                
+                if current_count >= threshold:
+                    # Immediately reset counter so subsequent messages count towards next spawn
+                    group_message_counters[chat_id] = 0
+                    # Set new random spawn threshold for variety
+                    cached_setting["spawn_threshold"] = random.randint(50, 100)
+                    
+                    bot = data.get("bot") or event.bot
+                    thread_id = getattr(event, "message_thread_id", None)
+                    # Fire spawn as background task with dedicated session — don't block the current message handler
+                    from utils.maintenance import is_maintenance_mode
+                    if not is_maintenance_mode():
+                        import asyncio
+                        asyncio.create_task(SpawnService.trigger_spawn(None, chat_id, bot, message_thread_id=thread_id))
+                else:
+                    group_message_counters[chat_id] = current_count
 
         except Exception as e:
             print(f"Unhandled error in GroupActivityMiddleware: {e}")

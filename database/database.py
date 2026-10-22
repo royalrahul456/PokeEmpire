@@ -22,9 +22,9 @@ if "postgresql" in DATABASE_URL or "cockroachdb" in DATABASE_URL:
             "command_timeout": 15
         },
         pool_size=20,
-        max_overflow=40,
-        pool_recycle=300,
-        pool_timeout=15,
+        max_overflow=20,
+        pool_recycle=1800,
+        pool_timeout=20,
         pool_pre_ping=True
     )
 else:

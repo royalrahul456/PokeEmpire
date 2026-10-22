@@ -9,12 +9,13 @@ from database.models import User
 from database.database import SessionLocal
 
 import config
+from collections import defaultdict
 
-_lock = asyncio.Lock()
+_user_locks: Dict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
 
 async def get_streak_data(user_id: int, db: Optional[AsyncSession] = None) -> Dict[str, Any]:
     """Retrieve streak data for a user directly from DB with daily break checks."""
-    async with _lock:
+    async with _user_locks[user_id]:
         today = datetime.utcnow().date().isoformat()
         yesterday = (datetime.utcnow() - timedelta(days=1)).date().isoformat()
 
@@ -55,9 +56,9 @@ async def get_streak_data(user_id: int, db: Optional[AsyncSession] = None) -> Di
             async with SessionLocal() as session:
                 return await _process(session)
 
-async def increment_streak_catch(user_id: int, db: Optional[AsyncSession] = None) -> Tuple[bool, int]:
-    """Increments daily catch count in DB and returns (secured_today, current_count)."""
-    async with _lock:
+async def increment_streak_catch(user_id: int, db: Optional[AsyncSession] = None) -> Tuple[bool, int, int]:
+    """Increments daily catch count in DB and returns (secured_today, current_count, current_streak)."""
+    async with _user_locks[user_id]:
         today = datetime.utcnow().date().isoformat()
         yesterday = (datetime.utcnow() - timedelta(days=1)).date().isoformat()
 
@@ -96,7 +97,7 @@ async def increment_streak_catch(user_id: int, db: Optional[AsyncSession] = None
                     secured_today = True
 
             await session.commit()
-            return secured_today, user.catches_today
+            return secured_today, user.catches_today, user.current_streak
 
         if db:
             return await _process(db)
@@ -125,6 +126,8 @@ async def get_top_streaks(limit: int = 10, db: Optional[AsyncSession] = None) ->
         users = res.scalars().all()
         return [
             (u.id, {
+                "username": u.username,
+                "nickname": u.nickname,
                 "current_streak": u.current_streak,
                 "best_streak": u.best_streak,
                 "last_secured_date": u.last_secured_date or "",

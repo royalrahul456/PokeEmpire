@@ -101,8 +101,17 @@ async def sync_retroactive_levels(db: AsyncSession):
     try:
         catches_stmt = select(UserPokemon.user_id, func.count(UserPokemon.id)).group_by(UserPokemon.user_id)
         catch_counts = dict((await db.execute(catches_stmt)).all())
+        if not catch_counts:
+            return
         
-        users = (await db.execute(select(User))).scalars().all()
+        # Only query users who need level calculation (level 1 with 0 XP)
+        uids_to_check = list(catch_counts.keys())
+        users_stmt = select(User).where(User.id.in_(uids_to_check), User.trainer_level == 1, User.trainer_xp == 0)
+        users = (await db.execute(users_stmt)).scalars().all()
+        if not users:
+            print("[Retroactive Level Sync] All trainers already initialized.", flush=True)
+            return
+
         updated_count = 0
         for u in users:
             total_catches = catch_counts.get(u.id, 0)

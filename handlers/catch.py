@@ -121,19 +121,12 @@ async def cmd_catch(message: Message, db: AsyncSession):
             )
             return
 
-    # 5. Re-check active spawn still exists (prevents double-catch)
-    rechk_stmt = select(ActiveSpawn).where(ActiveSpawn.chat_id == chat_id)
-    rechk_res = await db.execute(rechk_stmt)
-    active_lock = rechk_res.scalar_one_or_none()
-
-    if not active_lock:
-        await message.answer("⚠️ Too slow! Someone else caught this Pokémon already.")
-        return
-
     try:
-        # Delete active spawn using direct SQL (avoids ORM identity-map conflicts with asyncpg)
-        await db.execute(delete(ActiveSpawn).where(ActiveSpawn.chat_id == chat_id))
-        await db.flush()
+        # Atomically delete active spawn (prevents double-catch without redundant select)
+        del_res = await db.execute(delete(ActiveSpawn).where(ActiveSpawn.chat_id == chat_id))
+        if getattr(del_res, "rowcount", 1) == 0:
+            await message.answer("⚠️ Too slow! Someone else caught this Pokémon already.")
+            return
 
         # Check and register user in DB if they don't exist yet
         if not user:
@@ -180,12 +173,11 @@ async def cmd_catch(message: Message, db: AsyncSession):
             iv_spd=iv_spd
         )
         db.add(capture)
-        await db.commit()
 
         # Count total captures to check achievement milestone
         catches_stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == user_id)
         catches_res = await db.execute(catches_stmt)
-        total_catches = catches_res.scalar() or 0
+        total_catches = (catches_res.scalar() or 0) + 1
         
         ACHIEVEMENT_MILESTONES = {
             100: "🥉 First Blood",
@@ -208,24 +200,11 @@ async def cmd_catch(message: Message, db: AsyncSession):
                 f"🎉 Congratulations to <b>{html.escape(user_nickname)}</b> for unlocking <b>{milestone_title}</b> by completing <b>{total_catches}</b> catches!"
             )
 
-        # Increment daily catch streak
-        from utils.streak import increment_streak_catch, get_streak_data
-        secured, current_count = await increment_streak_catch(user_id, db)
-        streak_info = await get_streak_data(user_id, db)
-        streak_days = streak_info.get("current_streak", 0)
+        # Increment daily catch streak (atomic per user)
+        from utils.streak import increment_streak_catch
+        secured, current_count, streak_days = await increment_streak_catch(user_id, db)
 
-        # 1. Set emoji reaction on correct guess message
-        from aiogram.types import ReactionTypeEmoji
-        try:
-            await message.react(reaction=[ReactionTypeEmoji(emoji="🎉")])
-        except Exception as e:
-            print(f"Failed to react to message: {e}")
-
-        # 2. Send quick coins victory reply (Message 1)
-        msg1_text = f"🎉 +{coins_won} coins | ⚡ +100 EXP! Balance: {user_coins}"
-        await message.answer(msg1_text)
-
-        # Hook EXP leveling, transaction history, and quest progress
+        # Hook EXP leveling, transaction history, and quest progress in a single batched commit
         from utils.trainer_level import add_trainer_xp, log_transaction
         from handlers.quests import update_quest_progress
 
@@ -234,6 +213,20 @@ async def cmd_catch(message: Message, db: AsyncSession):
         await update_quest_progress(user_id, "daily_catch", 1, db)
         await update_quest_progress(user_id, "weekly_catch", 1, db)
         await db.commit()
+
+        # 1. Non-blocking emoji reaction
+        async def _safe_react():
+            try:
+                from aiogram.types import ReactionTypeEmoji
+                await message.react(reaction=[ReactionTypeEmoji(emoji="🎉")])
+            except Exception:
+                pass
+        import asyncio
+        asyncio.create_task(_safe_react())
+
+        # 2. Send quick coins victory reply (Message 1)
+        msg1_text = f"🎉 +{coins_won} coins | ⚡ +100 EXP! Balance: {user_coins}"
+        await message.answer(msg1_text)
 
         # 3. Calculate time taken
         import datetime

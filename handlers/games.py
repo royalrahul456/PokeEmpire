@@ -3351,18 +3351,12 @@ async def cmd_streak_leaderboard(message: Message, db: AsyncSession):
         await message.answer("🏆 **STREAK LEADERBOARD** 🏆\n───────────────\n\n• *No active streaks recorded yet.*")
         return
 
-    uids = [uid for uid, _ in filtered_users]
-    u_stmt = select(User).where(User.id.in_(uids))
-    u_res = await db.execute(u_stmt)
-    users_dict = {u.id: u for u in u_res.scalars().all()}
-    
     rows = []
     import html
     for idx, (uid, uinfo) in enumerate(filtered_users):
         rank_prefix = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx + 1}."
-        user = users_dict.get(uid)
-        username = user.username if user else None
-        nickname = user.nickname if user else f"Trainer_{uid}"
+        username = uinfo.get("username")
+        nickname = uinfo.get("nickname") or f"Trainer_{uid}"
         
         display_name = f"@{html.escape(username)}" if username else f"{html.escape(nickname)}"
         best = uinfo.get("best_streak", 0)

@@ -1179,14 +1179,14 @@ async def cmd_toggle_auctions(message: Message, db: AsyncSession):
 
 
 async def auction_settlement_worker(bot: Bot):
-    """Background settlement loop running every 5 seconds to settle expired auctions promptly."""
+    """Background settlement loop running periodically to settle expired auctions promptly."""
     from database.database import SessionLocal
     from database.models import Auction, AuctionBid, User, UserPokemon, Pokemon
     
-    print("⏳ Auction Settlement Worker Loop Started (5s polling)...")
+    print("⏳ Auction Settlement Worker Loop Started (20s polling)...")
     while True:
         try:
-            await asyncio.sleep(5)
+            await asyncio.sleep(20)
             async with SessionLocal() as db:
                 now = datetime.utcnow()
                 stmt = select(Auction).where(Auction.status == "ACTIVE", Auction.expires_at <= now)
@@ -1205,9 +1205,12 @@ async def auction_settlement_worker(bot: Bot):
                         bids_res = await db.execute(stmt_bids)
                         highest_bid_data = bids_res.all()
                         
-                        stmt_poke = select(Pokemon).where(Pokemon.id == auction.pokemon_id)
-                        res_poke = await db.execute(stmt_poke)
-                        pokemon = res_poke.scalar_one()
+                        from utils.pokemon_cache import get_cached_pokemon_by_id
+                        pokemon = get_cached_pokemon_by_id(auction.pokemon_id)
+                        if not pokemon:
+                            stmt_poke = select(Pokemon).where(Pokemon.id == auction.pokemon_id)
+                            res_poke = await db.execute(stmt_poke)
+                            pokemon = res_poke.scalar_one()
 
                         stmt_seller = select(User).where(User.id == auction.seller_id)
                         res_seller = await db.execute(stmt_seller)

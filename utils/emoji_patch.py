@@ -76,6 +76,7 @@ EMOJI_MAPPING = {
     "💣": "5454225015534805938",
     "💎": "5197350061012436657",
     "🎰": "5255765065096774716",
+    "🎮": "5255765065096774716",
     "🎡": "5841461384361023405",
     "⚔️": "5453991094435997597",
     "⚔": "5453991094435997597",
@@ -310,8 +311,82 @@ def process_text_or_caption(text: str, parse_mode, bot_instance, max_len: int = 
         return processed, current_mode
     return text, current_mode
 
+def enhance_reply_markup(reply_markup):
+    """
+    Enhances an InlineKeyboardMarkup by attaching native custom emoji icons
+    and button color styles (primary, success, danger) based on text or actions.
+    """
+    if not reply_markup or not hasattr(reply_markup, "inline_keyboard"):
+        return reply_markup
+
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    new_rows = []
+    modified = False
+
+    for row in reply_markup.inline_keyboard:
+        new_row = []
+        for btn in row:
+            btn_dict = btn.model_dump(exclude_none=True)
+            text = btn_dict.get("text", "")
+            btn_style = btn_dict.get("style")
+            emoji_id = btn_dict.get("icon_custom_emoji_id")
+            cb_data = btn_dict.get("callback_data", "")
+
+            # 1. Determine emoji_id if not present
+            if not emoji_id and text:
+                for em, eid in EMOJI_MAPPING.items():
+                    if text.startswith(em):
+                        emoji_id = eid
+                        text = text[len(em):].lstrip()
+                        btn_dict["text"] = text
+                        btn_dict["icon_custom_emoji_id"] = str(eid)
+                        modified = True
+                        break
+
+            # 2. Determine style if not present
+            if not btn_style:
+                assigned_style = None
+                low_text = text.lower()
+                low_cb = str(cb_data).lower()
+                if any(k in low_text or k in low_cb for k in ("confirm", "accept", "success", "yes", "pokedex", "dex", "claim", "buy", "bag")):
+                    assigned_style = "success"
+                elif any(k in low_text or k in low_cb for k in ("cancel", "reject", "stop", "abort", "danger", "delete", "remove", "vip", "streak", "battle", "help")):
+                    assigned_style = "danger"
+                elif any(k in low_text or k in low_cb for k in ("profile", "trade", "shop", "game", "back", "next", "prev", "refresh", "info", "stat", "leaderboard", "quest", "update", "support")):
+                    assigned_style = "primary"
+
+                if assigned_style:
+                    btn_dict["style"] = assigned_style
+                    modified = True
+
+            new_row.append(InlineKeyboardButton(**btn_dict))
+        new_rows.append(new_row)
+
+    if modified:
+        return InlineKeyboardMarkup(inline_keyboard=new_rows)
+    return reply_markup
+
+
+def strip_keyboard_styling(reply_markup):
+    """Fallback helper to strip icon_custom_emoji_id and style if rejected by Telegram."""
+    if not reply_markup or not hasattr(reply_markup, "inline_keyboard"):
+        return reply_markup
+
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    new_rows = []
+    for row in reply_markup.inline_keyboard:
+        new_row = []
+        for btn in row:
+            btn_dict = btn.model_dump(exclude_none=True)
+            btn_dict.pop("icon_custom_emoji_id", None)
+            btn_dict.pop("style", None)
+            new_row.append(InlineKeyboardButton(**btn_dict))
+        new_rows.append(new_row)
+    return InlineKeyboardMarkup(inline_keyboard=new_rows)
+
+
 def patch_bot_emojis(bot: Bot):
-    """Intercepts bot execution requests to dynamically replace standard emojis with custom premium ones."""
+    """Intercepts bot execution requests to dynamically replace standard emojis with custom premium ones and color buttons."""
     original_make_request = bot.session.make_request
     
     async def new_make_request(bot_instance, method, timeout=None):
@@ -326,6 +401,13 @@ def patch_bot_emojis(bot: Bot):
                 if method.caption and isinstance(method.caption, str):
                     method.caption, new_mode = process_text_or_caption(method.caption, parse_mode, bot_instance, max_len=1024)
                     method.parse_mode = new_mode
+
+            # Enhance button styling & custom emojis on reply_markup if present
+            if getattr(method, "reply_markup", None):
+                try:
+                    method.reply_markup = enhance_reply_markup(method.reply_markup)
+                except Exception as enh_err:
+                    logger.debug(f"Could not enhance reply_markup: {enh_err}")
         
         try:
             return await original_make_request(bot_instance, method, timeout=timeout)
@@ -341,6 +423,9 @@ def patch_bot_emojis(bot: Bot):
                 or "tag" in err_str
                 or "too long" in err_str
                 or "caption" in err_str
+                or "button" in err_str
+                or "style" in err_str
+                or "icon" in err_str
             ):
                 logger.warning(f"Telegram API parsing/emoji issue on {type(method).__name__}: {e}. Retrying with stripped fallback...")
                 # 1st fallback: strip tg-emoji tags
@@ -350,6 +435,14 @@ def patch_bot_emojis(bot: Bot):
                 elif isinstance(method, (SendPhoto, SendVideo, SendAnimation, SendAudio, SendDocument, EditMessageCaption)):
                     if method.caption:
                         method.caption = strip_tg_emojis(method.caption)
+
+                # Also strip custom emoji and style from keyboard if present
+                if getattr(method, "reply_markup", None):
+                    try:
+                        method.reply_markup = strip_keyboard_styling(method.reply_markup)
+                    except Exception as strip_err:
+                        logger.warning(f"Could not strip keyboard styling: {strip_err}")
+
                 try:
                     return await original_make_request(bot_instance, method, timeout=timeout)
                 except TelegramBadRequest as e2:

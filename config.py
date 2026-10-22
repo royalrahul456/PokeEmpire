@@ -206,6 +206,11 @@ CUSTOM_EMOJI_IDS = {
     "hint": os.getenv("EMOJI_HINT", "5436113877181941026"),                # 🔍
     "buy": os.getenv("EMOJI_BUY", "5226656353744862682"),                  # 🛒
     "info": os.getenv("EMOJI_INFO", "5436113877181941026"),                # ℹ️
+    "daily": os.getenv("EMOJI_DAILY", "5449660075184508972"),             # 📅 / 🎁
+    "vip": os.getenv("EMOJI_VIP", "5307608734858484532"),                 # 👑
+    "gems": os.getenv("EMOJI_GEMS", "5197350061012436657"),              # 💎
+    "history": os.getenv("EMOJI_HISTORY", "5445353829304387411"),         # 💳
+    "transactions": os.getenv("EMOJI_TRANSACTIONS", "5445353829304387411"), # 💳
 }
 
 # Native Telegram Button Color Styles ("primary" = blue, "success" = green, "danger" = red)
@@ -241,5 +246,10 @@ BUTTON_STYLES = {
     "hint": "primary",
     "buy": "success",
     "info": "primary",
+    "daily": "success",
+    "vip": "danger",
+    "gems": "primary",
+    "history": "primary",
+    "transactions": "primary",
 }
 

@@ -12,14 +12,35 @@ def create_styled_button(
     icon_custom_emoji_id: str = None,
     web_app: WebAppInfo = None
 ) -> InlineKeyboardButton:
-    """Helper to construct 100% standard-compliant InlineKeyboardButton."""
-    kwargs = {"text": text}
+    """Helper to construct InlineKeyboardButton with native custom emoji icon and color style."""
+    from utils.emoji_patch import is_premium_emojis_enabled, EMOJI_MAPPING
+
+    emoji_id = icon_custom_emoji_id or (getattr(config, "CUSTOM_EMOJI_IDS", {}).get(key) if key else None)
+    btn_style = style or (getattr(config, "BUTTON_STYLES", {}).get(key) if key else None)
+
+    # If premium emojis are disabled via /toggleemojis, disable icon_custom_emoji_id
+    if not is_premium_emojis_enabled():
+        emoji_id = None
+
+    clean_text = text
+    # If a native custom emoji icon is attached, strip any leading standard emoji from text to prevent duplicate double icons
+    if emoji_id:
+        for em in sorted(EMOJI_MAPPING.keys(), key=len, reverse=True):
+            if clean_text.startswith(em):
+                clean_text = clean_text[len(em):].lstrip("\ufe0f \t")
+                break
+
+    kwargs = {"text": clean_text}
     if url:
         kwargs["url"] = url
     if callback_data:
         kwargs["callback_data"] = callback_data
     if web_app:
         kwargs["web_app"] = web_app
+    if emoji_id:
+        kwargs["icon_custom_emoji_id"] = str(emoji_id)
+    if btn_style:
+        kwargs["style"] = str(btn_style)
 
     return InlineKeyboardButton(**kwargs)
 

@@ -13,7 +13,7 @@ def create_styled_button(
     web_app: WebAppInfo = None
 ) -> InlineKeyboardButton:
     """Helper to construct InlineKeyboardButton with native custom emoji icon and color style."""
-    from utils.emoji_patch import is_premium_emojis_enabled
+    from utils.emoji_patch import is_premium_emojis_enabled, clean_button_text
 
     emoji_id = icon_custom_emoji_id or (getattr(config, "CUSTOM_EMOJI_IDS", {}).get(key) if key else None)
     btn_style = style or (getattr(config, "BUTTON_STYLES", {}).get(key) if key else None)
@@ -22,8 +22,10 @@ def create_styled_button(
     if not is_premium_emojis_enabled():
         emoji_id = None
 
-    # Always preserve the rich Unicode emoji inside text so buttons are vibrant on all clients
-    kwargs = {"text": text}
+    # When animated custom emoji is attached, remove the normal emoji from text to avoid double emojis
+    btn_text = clean_button_text(text) if emoji_id else text
+
+    kwargs = {"text": btn_text}
     if url:
         kwargs["url"] = url
     if callback_data:

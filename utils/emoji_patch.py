@@ -136,8 +136,15 @@ EMOJI_MAPPING = {
 
     # Navigation & Others
     "➡️": "5416117059207572332",
+    "➡": "5416117059207572332",
+    "▶️": "5416117059207572332",
+    "▶": "5416117059207572332",
     "⬅️": "5386806351248768717",
+    "⬅": "5386806351248768717",
+    "◀️": "5386806351248768717",
+    "◀": "5386806351248768717",
     "🔙": "5253997076169115797",
+    "💟": "5431456208487716895",
     "🔄": "6122764622509380932",
     "🔗": "5215288447190711367",
     "🔍": "5231012545799666522",
@@ -311,10 +318,39 @@ def process_text_or_caption(text: str, parse_mode, bot_instance, max_len: int = 
     processed = replace_emojis(text)
     return processed, current_mode
 
+def clean_button_text(text: str) -> str:
+    """
+    Removes normal/standard Unicode emojis from button text so only the animated custom emoji appears,
+    preventing duplicate/double emojis (one animated and one normal) on keyboard buttons.
+    """
+    if not text:
+        return text
+    import emoji
+    cleaned = emoji.replace_emoji(text, replace="")
+    cleaned = re.sub(r'[\ufe0e\ufe0f\u200b\u200d]', '', cleaned)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    if not cleaned:
+        raw = text.strip()
+        if any(c in raw for c in ('\u2b05', '\u25c0')):
+            return 'Prev'
+        elif any(c in raw for c in ('\u27a1', '\u25b6')):
+            return 'Next'
+        elif '\U0001f519' in raw:
+            return 'Back'
+        elif any(c in raw for c in ('\u2714', '\u2705')):
+            return 'Accept'
+        elif any(c in raw for c in ('\u274c', '\u2716')):
+            return 'Decline'
+        elif '\u23f9' in raw:
+            return '-'
+        return text
+    return cleaned
+
+
 def enhance_reply_markup(reply_markup):
     """
-    Enhances an InlineKeyboardMarkup by ensuring rich Unicode emojis in text
-    and assigning native Telegram button color styles (primary, success, danger).
+    Enhances an InlineKeyboardMarkup by attaching native custom animated emoji icons,
+    removing duplicate normal Unicode emojis from button text, and assigning color styles.
     """
     if not reply_markup or not hasattr(reply_markup, "inline_keyboard"):
         return reply_markup
@@ -332,15 +368,23 @@ def enhance_reply_markup(reply_markup):
             emoji_id = btn_dict.get("icon_custom_emoji_id")
             cb_data = btn_dict.get("callback_data", "")
 
-            # 1. Attach custom emoji id if enabled, BUT NEVER strip the rich Unicode emoji from text
+            # 1. Attach custom animated emoji id if enabled
             if is_premium_emojis_enabled() and not emoji_id and text:
                 for em, eid in EMOJI_MAPPING.items():
-                    if text.startswith(em):
-                        btn_dict["icon_custom_emoji_id"] = str(eid)
+                    if em in text:
+                        emoji_id = str(eid)
+                        btn_dict["icon_custom_emoji_id"] = emoji_id
                         modified = True
                         break
 
-            # 2. Assign Telegram button color style if not explicitly set
+            # 2. When an animated emoji is attached (or enabled), remove normal Unicode emoji from text
+            if emoji_id:
+                clean_text = clean_button_text(text)
+                if clean_text != text:
+                    btn_dict["text"] = clean_text
+                    modified = True
+
+            # 3. Assign Telegram button color style if not explicitly set
             if not btn_style:
                 assigned_style = None
                 low_text = text.lower()

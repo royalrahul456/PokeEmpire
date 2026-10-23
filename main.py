@@ -24,6 +24,7 @@ else:
 import config
 from database.database import init_db, SessionLocal
 from utils.anti_spam import AntiSpamMiddleware
+from utils.command_prefix import CommandPrefixMiddleware
 from utils.group_monitor import GroupActivityMiddleware
 # from utils.membership import MembershipMiddleware
 
@@ -527,6 +528,7 @@ async def main():
 
     # Register Middlewares
     # Outer middlewares: light in-memory checks for every message/callback
+    dp.message.outer_middleware(CommandPrefixMiddleware())
     dp.message.outer_middleware(GroupActivityMiddleware())
     dp.message.outer_middleware(AntiSpamMiddleware())
     dp.callback_query.outer_middleware(AntiSpamMiddleware())
@@ -596,6 +598,7 @@ async def main():
         async def global_games_error_handler(event):
             logger.error(f"⚠️ Games Bot unhandled error: {event.exception}", exc_info=True)
 
+        dp_games.message.outer_middleware(CommandPrefixMiddleware())
         dp_games.message.outer_middleware(AntiSpamMiddleware())
         dp_games.callback_query.outer_middleware(AntiSpamMiddleware())
         dp_games.message.middleware(DbSessionMiddleware())

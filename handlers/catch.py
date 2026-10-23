@@ -340,7 +340,7 @@ from datetime import datetime, timedelta
 import html
 from utils.settings import send_safe_media
 
-@router.message(Command("claim", ignore_mention=True))
+@router.message(Command("claim", "cl", ignore_mention=True))
 async def cmd_claim(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     nickname = message.from_user.first_name

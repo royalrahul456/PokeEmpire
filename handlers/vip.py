@@ -140,7 +140,7 @@ def build_vip_plan_card(user_db: Optional[User], user_id: int, user_name: str) -
 
 
 # ── COMMAND: /vipplan, /vip ──────────────────────────────────────────────────
-@router.message(Command("vipplan", "vipplans", "vip", "vipstatus", ignore_mention=True))
+@router.message(Command("vipplan", "vipplans", "vip", "vipstatus", "vp", ignore_mention=True))
 async def cmd_vip_plan(message: Message, db: AsyncSession):
     user_id = message.from_user.id if message.from_user else 0
     user_name = message.from_user.first_name if message.from_user else "Trainer"
@@ -154,7 +154,7 @@ async def cmd_vip_plan(message: Message, db: AsyncSession):
 
 
 # ── COMMAND: /vipclaim ───────────────────────────────────────────────────────
-@router.message(Command("vipclaim", ignore_mention=True))
+@router.message(Command("vipclaim", "vc", ignore_mention=True))
 async def cmd_vip_claim(message: Message, db: AsyncSession):
     user_id = message.from_user.id if message.from_user else 0
     user_name = message.from_user.first_name if message.from_user else "Trainer"
@@ -303,7 +303,7 @@ async def cmd_vip_claim(message: Message, db: AsyncSession):
 
 
 # ── COMMAND: /vipdaily ───────────────────────────────────────────────────────
-@router.message(Command("vipdaily", ignore_mention=True))
+@router.message(Command("vipdaily", "vd", ignore_mention=True))
 async def cmd_vip_daily(message: Message, db: AsyncSession):
     user_id = message.from_user.id if message.from_user else 0
     user_name = message.from_user.first_name if message.from_user else "Trainer"

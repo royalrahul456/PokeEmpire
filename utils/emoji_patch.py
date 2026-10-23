@@ -189,7 +189,8 @@ EMOJI_MAPPING = {
     "🎟️": "5377599075237502153",
     "🚨": "5341806819247401359",
     "👀": "5411199759740325999",
-    "🦚": "5325547803936572038"
+    "🦚": "5325547803936572038",
+    "➕": "5372926953978341366",
 }
 
 ALL_EMOJIS_SET = set(EMOJI_MAPPING.keys()) | {"🟢", "🔮"}
@@ -357,10 +358,11 @@ def clean_button_text(text: str) -> str:
 
 def enhance_reply_markup(reply_markup):
     """
-    Enhances an InlineKeyboardMarkup by assigning native Telegram button color styles
-    (primary, success, danger) based on text or actions.
-    Ensures rich Unicode emojis in text and strips icon_custom_emoji_id to eliminate
-    Telegram API 400 Bad Request errors, retry delays, and connection throttling.
+    Enhances an InlineKeyboardMarkup by:
+    1. Attaching custom premium animated emoji icons (icon_custom_emoji_id) to buttons.
+    2. Stripping leading/trailing normal Unicode emojis from button text so only the
+       animated custom emoji icon appears (preventing two duplicate emojis side-by-side).
+    3. Assigning native Telegram button color styles (primary, success, danger).
     """
     if not reply_markup or not hasattr(reply_markup, "inline_keyboard"):
         return reply_markup
@@ -368,6 +370,7 @@ def enhance_reply_markup(reply_markup):
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     new_rows = []
     modified = False
+    premium_enabled = is_premium_emojis_enabled()
 
     for row in reply_markup.inline_keyboard:
         new_row = []
@@ -376,13 +379,52 @@ def enhance_reply_markup(reply_markup):
             text = btn_dict.get("text", "")
             btn_style = btn_dict.get("style")
             cb_data = btn_dict.get("callback_data", "")
+            emoji_id = btn_dict.get("icon_custom_emoji_id")
 
-            # 1. Never send icon_custom_emoji_id on keyboard buttons.
-            # Telegram strictly restricts icon_custom_emoji_id to bots with collectible Fragment usernames.
-            # Standard bots get rejected with HTTP 400 'can't use custom emoji', causing retry lag and frozen commands.
-            if "icon_custom_emoji_id" in btn_dict:
-                btn_dict.pop("icon_custom_emoji_id", None)
-                modified = True
+            # 1. Custom animated emoji icon on button & duplicate normal emoji removal
+            if premium_enabled:
+                if not emoji_id and text:
+                    # Check if button text starts with any registered emoji
+                    for em in SORTED_EMOJI_KEYS:
+                        if text.startswith(em):
+                            emoji_id = str(EMOJI_MAPPING[em])
+                            btn_dict["icon_custom_emoji_id"] = emoji_id
+                            # Remove the normal emoji so only the animated custom icon is shown
+                            cleaned_text = text[len(em):].lstrip("\ufe0f\u200b\u200d \t")
+                            if cleaned_text:
+                                btn_dict["text"] = cleaned_text
+                                text = cleaned_text
+                            modified = True
+                            break
+                    # If not at start, check if it ends with an emoji (e.g. 'Next ➡️')
+                    if not emoji_id:
+                        for em in SORTED_EMOJI_KEYS:
+                            if text.endswith(em):
+                                emoji_id = str(EMOJI_MAPPING[em])
+                                btn_dict["icon_custom_emoji_id"] = emoji_id
+                                cleaned_text = text[:-len(em)].rstrip("\ufe0f\u200b\u200d \t")
+                                if cleaned_text:
+                                    btn_dict["text"] = cleaned_text
+                                    text = cleaned_text
+                                modified = True
+                                break
+                elif emoji_id and text:
+                    # icon_custom_emoji_id already present; strip any leading/trailing normal emoji
+                    for em in SORTED_EMOJI_KEYS:
+                        if text.startswith(em):
+                            cleaned_text = text[len(em):].lstrip("\ufe0f\u200b\u200d \t")
+                            if cleaned_text:
+                                btn_dict["text"] = cleaned_text
+                                text = cleaned_text
+                            modified = True
+                            break
+                        elif text.endswith(em):
+                            cleaned_text = text[:-len(em)].rstrip("\ufe0f\u200b\u200d \t")
+                            if cleaned_text:
+                                btn_dict["text"] = cleaned_text
+                                text = cleaned_text
+                            modified = True
+                            break
 
             # 2. Assign Telegram button color style if not explicitly set
             if not btn_style:

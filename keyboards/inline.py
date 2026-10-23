@@ -12,8 +12,9 @@ def create_styled_button(
     icon_custom_emoji_id: str = None,
     web_app: WebAppInfo = None
 ) -> InlineKeyboardButton:
-    """Helper to construct InlineKeyboardButton with native color style and rich emoji text."""
+    """Helper to construct InlineKeyboardButton with native color style and optional custom emoji icon."""
     btn_style = style or (getattr(config, "BUTTON_STYLES", {}).get(key) if key else None)
+    btn_emoji_id = icon_custom_emoji_id or (getattr(config, "CUSTOM_EMOJI_IDS", {}).get(key) if key else None)
 
     kwargs = {"text": text}
     if url:
@@ -24,6 +25,8 @@ def create_styled_button(
         kwargs["web_app"] = web_app
     if btn_style:
         kwargs["style"] = str(btn_style)
+    if btn_emoji_id:
+        kwargs["icon_custom_emoji_id"] = str(btn_emoji_id)
 
     return InlineKeyboardButton(**kwargs)
 

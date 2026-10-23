@@ -999,21 +999,22 @@ async def cmd_profile(message: Message, db: AsyncSession):
             db.add(user_db)
             await db.commit()
 
-        count_stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == user_id)
-        count_res = await db.execute(count_stmt)
-        total_caught = count_res.scalar() or 0
+        # Batched single query for user Pokemon stats (drastically reduces DB round-trips)
+        stats_stmt = select(
+            func.count(UserPokemon.id).label("total_caught"),
+            func.count(distinct(UserPokemon.pokemon_id)).label("unique_caught"),
+            func.count(UserPokemon.id).filter(UserPokemon.is_shiny == True).label("total_shiny")
+        ).where(UserPokemon.user_id == user_id)
+        stats_res = await db.execute(stats_stmt)
+        stats_row = stats_res.mappings().one()
+        total_caught = stats_row["total_caught"] or 0
+        unique_caught = stats_row["unique_caught"] or 0
+        total_shiny = stats_row["total_shiny"] or 0
 
-        unique_stmt = select(func.count(distinct(UserPokemon.pokemon_id))).where(UserPokemon.user_id == user_id)
-        unique_res = await db.execute(unique_stmt)
-        unique_caught = unique_res.scalar() or 0
-
-        shiny_stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == user_id, UserPokemon.is_shiny == True)
-        shiny_res = await db.execute(shiny_stmt)
-        total_shiny = shiny_res.scalar() or 0
-
-        total_species_stmt = select(func.count(Pokemon.id))
-        total_species_res = await db.execute(total_species_stmt)
-        total_species = total_species_res.scalar() or 1
+        # Total species from in-memory cache to eliminate redundant remote DB query
+        from utils.pokemon_cache import get_all_cached_pokemon
+        all_cached = get_all_cached_pokemon()
+        total_species = len(all_cached) if all_cached else 30
 
         dex_pct = (unique_caught / total_species) * 100
         dex_bar = get_progress_bar(unique_caught, total_species, 10, fill_char="▰", empty_char="▱")

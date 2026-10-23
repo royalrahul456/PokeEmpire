@@ -357,8 +357,10 @@ def clean_button_text(text: str) -> str:
 
 def enhance_reply_markup(reply_markup):
     """
-    Enhances an InlineKeyboardMarkup by attaching native custom animated emoji icons,
-    removing duplicate normal Unicode emojis from button text, and assigning color styles.
+    Enhances an InlineKeyboardMarkup by assigning native Telegram button color styles
+    (primary, success, danger) based on text or actions.
+    Ensures rich Unicode emojis in text and strips icon_custom_emoji_id to eliminate
+    Telegram API 400 Bad Request errors, retry delays, and connection throttling.
     """
     if not reply_markup or not hasattr(reply_markup, "inline_keyboard"):
         return reply_markup
@@ -373,26 +375,16 @@ def enhance_reply_markup(reply_markup):
             btn_dict = btn.model_dump(exclude_none=True)
             text = btn_dict.get("text", "")
             btn_style = btn_dict.get("style")
-            emoji_id = btn_dict.get("icon_custom_emoji_id")
             cb_data = btn_dict.get("callback_data", "")
 
-            # 1. Attach custom animated emoji id if enabled
-            if is_premium_emojis_enabled() and not emoji_id and text:
-                for em, eid in EMOJI_MAPPING.items():
-                    if em in text:
-                        emoji_id = str(eid)
-                        btn_dict["icon_custom_emoji_id"] = emoji_id
-                        modified = True
-                        break
+            # 1. Never send icon_custom_emoji_id on keyboard buttons.
+            # Telegram strictly restricts icon_custom_emoji_id to bots with collectible Fragment usernames.
+            # Standard bots get rejected with HTTP 400 'can't use custom emoji', causing retry lag and frozen commands.
+            if "icon_custom_emoji_id" in btn_dict:
+                btn_dict.pop("icon_custom_emoji_id", None)
+                modified = True
 
-            # 2. When an animated emoji is attached (or enabled), remove normal Unicode emoji from text
-            if emoji_id:
-                clean_text = clean_button_text(text)
-                if clean_text != text:
-                    btn_dict["text"] = clean_text
-                    modified = True
-
-            # 3. Assign Telegram button color style if not explicitly set
+            # 2. Assign Telegram button color style if not explicitly set
             if not btn_style:
                 assigned_style = None
                 low_text = text.lower()

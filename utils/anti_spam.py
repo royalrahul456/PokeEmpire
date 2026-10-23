@@ -104,7 +104,7 @@ class AntiSpamMiddleware(BaseMiddleware):
             # Stop the handler from running
             return
 
-        # Set a quick 0.15-second throttle to block machine-rate flooding without dropping fast human commands
-        cooldowns.set_cooldown(user_id, action, 0.15)
+        # Set a quick 0.05-second throttle to prevent rapid machine double-firing without dropping human commands
+        cooldowns.set_cooldown(user_id, action, 0.05)
         
         return await handler(event, data)

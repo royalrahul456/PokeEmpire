@@ -19,12 +19,12 @@ if "postgresql" in DATABASE_URL or "cockroachdb" in DATABASE_URL:
         DATABASE_URL,
         connect_args={
             "statement_cache_size": 0,
-            "command_timeout": 15
+            "command_timeout": 10
         },
-        pool_size=20,
-        max_overflow=20,
-        pool_recycle=1800,
-        pool_timeout=20,
+        pool_size=10,
+        max_overflow=15,
+        pool_recycle=300,
+        pool_timeout=5,
         pool_pre_ping=True
     )
 else:

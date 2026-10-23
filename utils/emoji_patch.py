@@ -318,33 +318,41 @@ def process_text_or_caption(text: str, parse_mode, bot_instance, max_len: int = 
     processed = replace_emojis(text)
     return processed, current_mode
 
+# Pure standard library regex matching all standard Unicode emoji ranges without requiring external packages
+_BUTTON_EMOJI_REGEX = re.compile(
+    r'[\U00010000-\U0010ffff\u200d\u200b\ufe0e\ufe0f\u2190-\u21ff\u2300-\u23ff\u2500-\u25ff\u2600-\u27bf\u2b00-\u2bff]'
+)
+
 def clean_button_text(text: str) -> str:
     """
     Removes normal/standard Unicode emojis from button text so only the animated custom emoji appears,
     preventing duplicate/double emojis (one animated and one normal) on keyboard buttons.
+    Uses pure Python standard library regex (zero external dependencies).
     """
     if not text:
         return text
-    import emoji
-    cleaned = emoji.replace_emoji(text, replace="")
-    cleaned = re.sub(r'[\ufe0e\ufe0f\u200b\u200d]', '', cleaned)
-    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
-    if not cleaned:
-        raw = text.strip()
-        if any(c in raw for c in ('\u2b05', '\u25c0')):
-            return 'Prev'
-        elif any(c in raw for c in ('\u27a1', '\u25b6')):
-            return 'Next'
-        elif '\U0001f519' in raw:
-            return 'Back'
-        elif any(c in raw for c in ('\u2714', '\u2705')):
-            return 'Accept'
-        elif any(c in raw for c in ('\u274c', '\u2716')):
-            return 'Decline'
-        elif '\u23f9' in raw:
-            return '-'
+    try:
+        cleaned = _BUTTON_EMOJI_REGEX.sub('', text)
+        cleaned = re.sub(r'[\ufe0e\ufe0f\u200b\u200d]', '', cleaned)
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+        if not cleaned:
+            raw = text.strip()
+            if any(c in raw for c in ('\u2b05', '\u25c0')):
+                return 'Prev'
+            elif any(c in raw for c in ('\u27a1', '\u25b6')):
+                return 'Next'
+            elif '\U0001f519' in raw:
+                return 'Back'
+            elif any(c in raw for c in ('\u2714', '\u2705')):
+                return 'Accept'
+            elif any(c in raw for c in ('\u274c', '\u2716')):
+                return 'Decline'
+            elif '\u23f9' in raw:
+                return '-'
+            return text
+        return cleaned
+    except Exception:
         return text
-    return cleaned
 
 
 def enhance_reply_markup(reply_markup):

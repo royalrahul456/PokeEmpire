@@ -23,7 +23,10 @@ def create_styled_button(
         emoji_id = None
 
     # When animated custom emoji is attached, remove the normal emoji from text to avoid double emojis
-    btn_text = clean_button_text(text) if emoji_id else text
+    try:
+        btn_text = clean_button_text(text) if emoji_id else text
+    except Exception:
+        btn_text = text
 
     kwargs = {"text": btn_text}
     if url:

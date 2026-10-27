@@ -522,9 +522,34 @@ async def main():
 
     dp = Dispatcher()
 
+    async def _handle_global_error(bot_name: str, event):
+        logger.error(f"⚠️ {bot_name} unhandled error: {event.exception}", exc_info=True)
+        try:
+            update = getattr(event, "update", None)
+            if not update:
+                return
+            if getattr(update, "message", None) and getattr(update.message, "text", None):
+                text = update.message.text.strip()
+                prefixes = ("/", ".", "!", "pe ", "PE ", "Pe ")
+                if any(text.startswith(p) for p in prefixes):
+                    await update.message.reply(
+                        "⚠️ <i>Request failed due to high load. Please try again in a moment!</i>",
+                        parse_mode="HTML"
+                    )
+            elif getattr(update, "callback_query", None):
+                try:
+                    await update.callback_query.answer(
+                        "⚠️ Server is busy, please try again in a moment.",
+                        show_alert=True
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     @dp.error()
     async def global_main_error_handler(event):
-        logger.error(f"⚠️ Main Bot unhandled error: {event.exception}", exc_info=True)
+        await _handle_global_error("Main Bot", event)
 
     # Register Middlewares
     # Outer middlewares: light in-memory checks for every message/callback
@@ -596,7 +621,7 @@ async def main():
 
         @dp_games.error()
         async def global_games_error_handler(event):
-            logger.error(f"⚠️ Games Bot unhandled error: {event.exception}", exc_info=True)
+            await _handle_global_error("Games Bot", event)
 
         dp_games.message.outer_middleware(CommandPrefixMiddleware())
         dp_games.message.outer_middleware(AntiSpamMiddleware())

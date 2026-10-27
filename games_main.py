@@ -25,6 +25,7 @@ import config
 from database.database import init_db, SessionLocal
 from utils.anti_spam import AntiSpamMiddleware
 from utils.group_monitor import GroupActivityMiddleware
+from utils.command_prefix import CommandPrefixMiddleware
 
 # Import Game Handler Routers
 from handlers import (
@@ -189,7 +190,34 @@ async def main():
 
     dp = Dispatcher()
 
+    @dp.error()
+    async def global_games_error_handler(event):
+        logger.error(f"⚠️ Games Bot unhandled error: {event.exception}", exc_info=True)
+        try:
+            update = getattr(event, "update", None)
+            if not update:
+                return
+            if getattr(update, "message", None) and getattr(update.message, "text", None):
+                text = update.message.text.strip()
+                prefixes = ("/", ".", "!", "pe ", "PE ", "Pe ")
+                if any(text.startswith(p) for p in prefixes):
+                    await update.message.reply(
+                        "⚠️ <i>Request failed due to high load. Please try again in a moment!</i>",
+                        parse_mode="HTML"
+                    )
+            elif getattr(update, "callback_query", None):
+                try:
+                    await update.callback_query.answer(
+                        "⚠️ Server is busy, please try again in a moment.",
+                        show_alert=True
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     # Register Middlewares
+    dp.message.outer_middleware(CommandPrefixMiddleware())
     dp.message.outer_middleware(GroupActivityMiddleware())
     dp.message.outer_middleware(AntiSpamMiddleware())
     dp.callback_query.outer_middleware(AntiSpamMiddleware())

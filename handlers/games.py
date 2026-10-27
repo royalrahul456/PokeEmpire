@@ -1178,6 +1178,25 @@ async def nameguess_timeout_task(chat_id: int, message_id: int, bot: Bot):
                     elif nameg_ok:
                         await start_auto_nameguess_game(chat_id, bot, db)
 
+async def _get_random_cached_pokemon(db: AsyncSession = None, condition=None) -> Optional[Pokemon]:
+    try:
+        from utils.pokemon_cache import get_all_cached_pokemon
+        all_p = get_all_cached_pokemon()
+        if all_p:
+            if condition:
+                all_p = [p for p in all_p if condition(p)]
+            if all_p:
+                return random.choice(all_p)
+    except Exception:
+        pass
+    if db:
+        stmt = select(Pokemon)
+        stmt = stmt.order_by(func.random()).limit(1)
+        res = await db.execute(stmt)
+        return res.scalar_one_or_none()
+    return None
+
+
 async def start_auto_scribble_game(chat_id: int, bot: Bot, db: AsyncSession):
     if get_chat_game(chat_id, "scribble") or get_chat_game(chat_id, "nameguess"):
         return
@@ -1190,10 +1209,8 @@ async def start_auto_scribble_game(chat_id: int, bot: Bot, db: AsyncSession):
     
     game_started = False
     try:
-        # Select random Pokémon
-        stmt = select(Pokemon).order_by(func.random()).limit(1)
-        res = await db.execute(stmt)
-        pokemon = res.scalar_one_or_none()
+        # Select random Pokémon from memory cache instantly
+        pokemon = await _get_random_cached_pokemon(db)
 
         if not pokemon:
             return
@@ -1261,9 +1278,7 @@ async def start_auto_nameguess_game(chat_id: int, bot: Bot, db: AsyncSession):
     
     game_started = False
     try:
-        stmt = select(Pokemon).order_by(func.random()).limit(1)
-        res = await db.execute(stmt)
-        pokemon = res.scalar_one_or_none()
+        pokemon = await _get_random_cached_pokemon(db)
 
         if not pokemon:
             return
@@ -1703,9 +1718,7 @@ async def cmd_scribble(message: Message, db: AsyncSession):
         return
 
     # Select random Pokémon
-    stmt = select(Pokemon).order_by(func.random()).limit(1)
-    res = await db.execute(stmt)
-    pokemon = res.scalar_one_or_none()
+    pokemon = await _get_random_cached_pokemon(db)
 
     if not pokemon:
         await message.answer("❌ Error initiating scribble. Try again.")
@@ -2272,9 +2285,7 @@ async def cb_play_scribble(callback: CallbackQuery, db: AsyncSession):
         return
 
     # Select random Pokémon
-    stmt = select(Pokemon).order_by(func.random()).limit(1)
-    res = await db.execute(stmt)
-    pokemon = res.scalar_one_or_none()
+    pokemon = await _get_random_cached_pokemon(db)
 
     if not pokemon:
         await callback.answer("❌ Error initiating scribble.", show_alert=True)
@@ -2481,9 +2492,7 @@ async def cmd_nameguess(message: Message, db: AsyncSession):
         return
 
     # Select random Pokémon
-    stmt = select(Pokemon).order_by(func.random()).limit(1)
-    res = await db.execute(stmt)
-    pokemon = res.scalar_one_or_none()
+    pokemon = await _get_random_cached_pokemon(db)
 
     if not pokemon:
         await message.answer("❌ Error initiating NameGuess. No Pokémon found in database.")
@@ -2626,9 +2635,7 @@ async def cmd_silhouette(message: Message, db: AsyncSession):
         return
 
     # Select random Pokémon with valid image
-    stmt = select(Pokemon).where(Pokemon.image_url.isnot(None)).order_by(func.random()).limit(1)
-    res = await db.execute(stmt)
-    pokemon = res.scalar_one_or_none()
+    pokemon = await _get_random_cached_pokemon(db, condition=lambda p: bool(getattr(p, 'image_url', None)))
 
     if not pokemon or not pokemon.image_url:
         await message.answer("❌ Error initiating Silhouette Trial. No Pokémon data available.")
@@ -2791,9 +2798,7 @@ async def cmd_typematch(message: Message, db: AsyncSession):
     mode = random.choice(["offensive", "defensive"])
 
     # Query a random Pokémon
-    stmt = select(Pokemon).where(Pokemon.type1.isnot(None)).order_by(func.random()).limit(1)
-    res = await db.execute(stmt)
-    pokemon = res.scalar_one_or_none()
+    pokemon = await _get_random_cached_pokemon(db, condition=lambda p: bool(getattr(p, 'type1', None)))
 
     if not pokemon:
         await message.answer("❌ Error initiating Type Matchup Blitz. No Pokémon data available.")

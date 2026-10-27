@@ -523,20 +523,31 @@ async def send_cover_media(
         )
 
 
-async def get_all_custom_rarities(db) -> dict:
-    from database.models import GlobalSetting
+async def get_all_custom_rarities(db=None) -> dict:
     import json
+    if "custom_rarities" in global_settings_cache:
+        val = global_settings_cache.get("custom_rarities")
+        if val:
+            try:
+                return json.loads(val)
+            except Exception:
+                pass
+        return {}
+    if not db:
+        return {}
+    from database.models import GlobalSetting
     stmt = select(GlobalSetting).where(GlobalSetting.key == "custom_rarities")
     res = await db.execute(stmt)
     setting = res.scalar_one_or_none()
     if setting and setting.value:
+        global_settings_cache["custom_rarities"] = setting.value
         try:
             return json.loads(setting.value)
         except Exception:
             pass
     return {}
 
-async def get_custom_rarity_forms(db) -> dict[int, tuple[str, str]]:
+async def get_custom_rarity_forms(db=None) -> dict[int, tuple[str, str]]:
     custom_rarities = await get_all_custom_rarities(db)
     standard = {"Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical", "Limited", "Limited Edition"}
     custom_list = [r for r in custom_rarities.keys() if r not in standard]

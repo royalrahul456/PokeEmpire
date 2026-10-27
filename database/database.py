@@ -19,13 +19,13 @@ if "postgresql" in DATABASE_URL or "cockroachdb" in DATABASE_URL:
         DATABASE_URL,
         connect_args={
             "statement_cache_size": 0,
-            "command_timeout": 10
+            "command_timeout": 30
         },
-        pool_size=10,
-        max_overflow=15,
-        pool_recycle=300,
-        pool_timeout=5,
-        pool_pre_ping=True
+        pool_size=25,
+        max_overflow=35,
+        pool_recycle=1800,
+        pool_timeout=30,
+        pool_pre_ping=False
     )
 else:
     engine = create_async_engine(

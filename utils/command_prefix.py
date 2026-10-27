@@ -13,6 +13,12 @@ COMMAND_ALIASES = {
     "sh": "shop",
     "tr": "trade",
     "r": "redeem",
+    "c": "check",
+    "ch": "check",
+    "dex": "pokedex",
+    "pd": "pokedex",
+    "bal": "balance",
+    "lb": "leaderboard",
 }
 
 def _apply_aliases(text: str) -> str:
@@ -78,6 +84,17 @@ def normalize_command_text(raw_text: str) -> str:
     # 3. Check existing '/' command for short form aliases
     if lraw.startswith("/"):
         return _apply_aliases(lraw)
+
+    # 4. Direct command words without prefix (e.g. 'check 1', 'c 1', 'check pikachu')
+    parts = lraw.split(maxsplit=1)
+    if parts:
+        first_word = parts[0].lower()
+        if first_word in ("check", "pokedex"):
+            converted = f"/{first_word}" + (f" {parts[1]}" if len(parts) > 1 else "")
+            return _apply_aliases(converted)
+        if first_word == "c" and len(parts) > 1:
+            converted = f"/check {parts[1]}"
+            return converted
 
     return raw_text
 

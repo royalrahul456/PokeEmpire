@@ -1180,14 +1180,40 @@ async def cmd_profile(message: Message, db: AsyncSession):
 
 @router.message(Command("check", ignore_mention=True))
 @router.message(Command("c", ignore_mention=True))
+@router.message(Command("ch", ignore_mention=True))
 async def cmd_check_pokemon(message: Message, db: AsyncSession):
-    parts = message.text.split()
-    if len(parts) < 2:
-        await message.answer("⚠️ Format: `/check <pokemon_name_or_id>`\n(e.g., `/check bulbasaur` or `/check 1`)")
+    parts = message.text.split() if message.text else []
+    query = ""
+    if len(parts) >= 2:
+        query = " ".join(parts[1:]).strip().lower()
+    elif message.reply_to_message:
+        reply_text = message.reply_to_message.caption or message.reply_to_message.text or ""
+        import re
+        id_match = re.search(r"ID[:\s]+<code>?(\d+(?:\.\d+)?)</code>?", reply_text, re.IGNORECASE)
+        if id_match:
+            query = id_match.group(1).lower()
+        else:
+            name_match = re.search(r"(?:wild\s+|pokemon:\s*|name:\s*)<b>?([a-zA-Z0-9\-\s\.]+?)</b>?", reply_text, re.IGNORECASE)
+            if name_match:
+                query = name_match.group(1).strip().lower()
+            else:
+                from utils.pokemon_cache import get_all_cached_pokemon
+                all_p = get_all_cached_pokemon()
+                low_reply = reply_text.lower()
+                for p in all_p:
+                    if len(p.name) > 3 and p.name.lower() in low_reply:
+                        query = p.name.lower()
+                        break
+
+    if not query:
+        await message.answer(
+            "⚠️ <b>Format:</b> <code>/check &lt;pokemon_name_or_id&gt;</code>\n"
+            "(e.g., <code>/check bulbasaur</code> or <code>/check 1</code>)\n\n"
+            "💡 <i>Tip: You can also reply to any Pokémon spawn or card with /check!</i>",
+            parse_mode="HTML"
+        )
         return
 
-    query = " ".join(parts[1:]).strip().lower()
-    
     pokemon_id = None
     form_index = 0
     pokemon_name_query = None
@@ -1202,26 +1228,43 @@ async def cmd_check_pokemon(message: Message, db: AsyncSession):
             pokemon_name_query = pq
         if fq.isdigit():
             form_index = int(fq)
+        else:
+            pokemon_name_query = query
+            form_index = 0
     else:
         if query.isdigit():
             pokemon_id = int(query)
         else:
             pokemon_name_query = query
-            
+
+    from utils.pokemon_cache import get_cached_pokemon_by_id, get_cached_pokemon_by_name, get_all_cached_pokemon
+    pokemon = None
     if pokemon_id is not None:
-        stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
-    else:
-        stmt = select(Pokemon).where(Pokemon.name.ilike(pokemon_name_query))
-        
-    res = await db.execute(stmt)
-    pokemon = res.scalar_one_or_none()
+        pokemon = get_cached_pokemon_by_id(pokemon_id)
+    elif pokemon_name_query:
+        pokemon = get_cached_pokemon_by_name(pokemon_name_query)
+        if not pokemon:
+            clean_q = pokemon_name_query.replace("-", "").replace(" ", "").replace(".", "").lower()
+            for p in get_all_cached_pokemon():
+                clean_pname = p.name.replace("-", "").replace(" ", "").replace(".", "").lower()
+                if clean_pname == clean_q:
+                    pokemon = p
+                    break
+
+    if not pokemon:
+        if pokemon_id is not None:
+            stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
+        else:
+            stmt = select(Pokemon).where(Pokemon.name.ilike(pokemon_name_query))
+        res = await db.execute(stmt)
+        pokemon = res.scalar_one_or_none()
     
     if not pokemon:
         searched_term = pokemon_name_query if pokemon_name_query else str(pokemon_id)
-        await message.answer(f"Pokemon '{html.escape(searched_term)}' not found in database.", parse_mode="HTML")
+        await message.answer(f"❌ Pokémon <code>{html.escape(searched_term)}</code> not found in database.", parse_mode="HTML")
         return
         
-    caption, reply_markup, media_type, media_value = await build_check_pokemon_payload(pokemon.id, form_index, db)
+    caption, reply_markup, media_type, media_value = await build_check_pokemon_payload(pokemon, form_index, db)
     
     if form_index > 0 and not media_value:
         custom_forms = await get_custom_rarity_forms(db)
@@ -1234,26 +1277,30 @@ async def cmd_check_pokemon(message: Message, db: AsyncSession):
         await message.answer(notif_text, reply_markup=reply_markup, parse_mode="HTML")
         return
     
-    from aiogram.types import FSInputFile
-    if isinstance(media_value, str) and os.path.exists(media_value):
-        media_value = FSInputFile(media_value)
-        
-    try:
-        if media_type == "video":
-            await message.answer_video(video=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
-        elif media_type == "animation":
-            await message.answer_animation(animation=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
-        else:
-            await message.answer_photo(photo=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
-    except Exception as e:
-        print(f"Error sending check media: {e}")
-        await message.answer(caption, reply_markup=reply_markup, parse_mode="HTML")
+    await send_safe_media(
+        bot=message.bot,
+        chat_id=message.chat.id,
+        media_type=media_type,
+        media_value=media_value,
+        caption=caption,
+        reply_markup=reply_markup,
+        parse_mode="HTML",
+        message_to_reply=message,
+        message_thread_id=getattr(message, "message_thread_id", None)
+    )
 
 
-async def build_check_pokemon_payload(pokemon_id: int, form_index: int, db: AsyncSession):
-    stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
-    res = await db.execute(stmt)
-    pokemon = res.scalar_one_or_none()
+async def build_check_pokemon_payload(pokemon_or_id, form_index: int, db: AsyncSession):
+    if isinstance(pokemon_or_id, Pokemon):
+        pokemon = pokemon_or_id
+    else:
+        from utils.pokemon_cache import get_cached_pokemon_by_id
+        pokemon = get_cached_pokemon_by_id(pokemon_or_id)
+        if not pokemon:
+            stmt = select(Pokemon).where(Pokemon.id == pokemon_or_id)
+            res = await db.execute(stmt)
+            pokemon = res.scalar_one_or_none()
+
     if not pokemon:
         return None, None, None, None
         
@@ -1273,8 +1320,9 @@ async def build_check_pokemon_payload(pokemon_id: int, form_index: int, db: Asyn
             media_type, media_value = parse_stored_media_value(pokemon.image_url)
             
     if form_index > 0:
-        form_media_db = await get_single_form_media_value(db, pokemon.id, form_index)
-        form_label = get_form_label(form_index, form_media_db)
+        form_media_db = form_media if 'form_media' in locals() and form_media else await get_single_form_media_value(db, pokemon.id, form_index)
+        custom_forms = await get_custom_rarity_forms(db)
+        form_label = get_form_label(form_index, form_media_db, custom_forms)
         r_emoji = "📺" if form_index == 1 else "🔮"
         rarity_str = f"{r_emoji} {form_label}"
         name_str = f"{pokemon.name.title()} ({form_label})"
@@ -1311,8 +1359,9 @@ async def cb_show_check_owners(callback: CallbackQuery, db: AsyncSession):
         .join(UserPokemon, UserPokemon.user_id == User.id)
         .where(UserPokemon.pokemon_id == pokemon_id)
         .where(UserPokemon.form_index == form_index)
-        .group_by(User.id)
+        .group_by(User.id, User.nickname)
         .order_by(func.count(UserPokemon.id).desc())
+        .limit(20)
     )
     owners_res = await db.execute(owners_stmt)
     owners = owners_res.all()

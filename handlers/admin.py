@@ -3400,7 +3400,55 @@ async def cmd_set_profile_name(message: Message, db: AsyncSession):
         or user_id in getattr(config, "OWNER_IDS", [])
     )
     if not is_auth:
-        await message.answer("❌ Denied. Only Bot Admins & Owners can change profile names.")
+        # Regular players can change their OWN profile name
+        parts = message.text.split(maxsplit=1)
+        if len(parts) < 2 or not parts[1].strip():
+            await message.answer(
+                "✏️ <b>Set Your In-Game Display Name:</b>\n"
+                "• Usage: <code>/setname &lt;new_name&gt;</code>\n"
+                "<i>(Aliases: /setprofile | Maximum 30 characters)</i>\n\n"
+                "• To restore your Telegram display name: <code>/resetname</code>\n"
+                "• To sync your Telegram username/name: <code>/sync</code>",
+                parse_mode="HTML"
+            )
+            return
+
+        new_profile_name = parts[1].strip()
+        if len(new_profile_name) > 30:
+            await message.answer("⚠️ In-game name cannot exceed 30 characters.")
+            return
+
+        for prohibited in ["http://", "https://", "t.me/", ".com", ".me", ".org", "@"]:
+            if prohibited in new_profile_name.lower():
+                await message.answer("⚠️ In-game name cannot contain links, URLs, or @mentions.")
+                return
+
+        u_stmt = select(User).where(User.id == user_id)
+        u_res = await db.execute(u_stmt)
+        my_user = u_res.scalar_one_or_none()
+        if not my_user:
+            my_user = User(
+                id=user_id,
+                username=message.from_user.username,
+                nickname=message.from_user.first_name or "Trainer",
+                coins=500
+            )
+            db.add(my_user)
+
+        old_profile_name = my_user.profile_name or my_user.nickname or "Trainer"
+        my_user.profile_name = new_profile_name
+        await db.commit()
+
+        await message.answer(
+            f"✨ <b>IN-GAME NAME UPDATED</b> ✨\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"🏷 <b>Previous Name:</b> <code>{html.escape(old_profile_name)}</code>\n"
+            f"👤 <b>New Display Name:</b> <b>{html.escape(new_profile_name)}</b>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"<i>Your new name will now appear on your /profile, Pokedex, and cards!</i>\n"
+            f"<i>Type <code>/resetname</code> anytime to restore your Telegram display name.</i>",
+            parse_mode="HTML"
+        )
         return
 
     target_user_obj = None
@@ -3496,7 +3544,36 @@ async def cmd_reset_profile_name(message: Message, db: AsyncSession):
         or user_id in getattr(config, "OWNER_IDS", [])
     )
     if not is_auth:
-        await message.answer("❌ Denied. Only Bot Admins & Owners can reset profile names.")
+        u_stmt = select(User).where(User.id == user_id)
+        u_res = await db.execute(u_stmt)
+        my_user = u_res.scalar_one_or_none()
+        if not my_user:
+            await message.answer("❌ Trainer record not found. Type /start to register.")
+            return
+
+        if not my_user.profile_name:
+            current_disp = my_user.nickname or message.from_user.first_name or "Trainer"
+            await message.answer(
+                f"ℹ️ You do not have a custom profile name set.\n"
+                f"Your display name is already using your Telegram name: <b>{html.escape(current_disp)}</b>\n"
+                f"<i>(Use <code>/sync</code> if you recently updated your Telegram name)</i>",
+                parse_mode="HTML"
+            )
+            return
+
+        my_user.profile_name = None
+        await db.commit()
+
+        default_name = my_user.nickname or message.from_user.first_name or "Trainer"
+        await message.answer(
+            f"🔄 <b>PROFILE NAME RESTORED</b> 🔄\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"✅ <i>Your display name has been restored to your Telegram name:</i>\n"
+            f"👤 <b>Display Name:</b> <b>{html.escape(default_name)}</b>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"<i>Type <code>/sync</code> to ensure your latest Telegram name is fresh!</i>",
+            parse_mode="HTML"
+        )
         return
 
     target_user_obj = None

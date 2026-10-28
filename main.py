@@ -109,6 +109,11 @@ class DbSessionMiddleware:
         async with SessionLocal() as session:
             data["db"] = session
             try:
+                from utils.user_sync import sync_user_identity
+                await sync_user_identity(session, event)
+            except Exception as sync_err:
+                logger.warning(f"User sync error in middleware: {sync_err}")
+            try:
                 return await handler(event, data)
             except Exception as e:
                 try:
@@ -154,6 +159,9 @@ async def register_bot_commands(bot: Bot):
         BotCommand(command="check", description="🔍 Check Pokémon card & details"),
         BotCommand(command="c", description="🔍 Check Pokémon card (Quick)"),
         BotCommand(command="profile", description="👤 Check Trainer coins & metrics"),
+        BotCommand(command="sync", description="🔄 Sync Telegram name and username with bot"),
+        BotCommand(command="setname", description="✏️ Set custom in-game display name"),
+        BotCommand(command="resetname", description="🔄 Reset display name back to Telegram name"),
         BotCommand(command="achievements", description="🏅 View Trainer achievement milestones"),
         BotCommand(command="balance", description="💰 Check current coin wallet balance"),
         BotCommand(command="bal", description="💳 Wallet Quick Balance"),
@@ -372,6 +380,15 @@ def apply_auto_reply_patch():
         except Exception:
             pass
 
+        # Try sending as animation if Telegram classifies it as animation
+        try:
+            anim_kwargs = dict(kwargs)
+            if "video" in anim_kwargs:
+                anim_kwargs["animation"] = anim_kwargs.pop("video")
+            return await original_answer_animation(self, *args, **anim_kwargs)
+        except Exception:
+            pass
+
         try:
             kwargs_no_markup = dict(kwargs)
             kwargs_no_markup["reply_markup"] = None
@@ -394,6 +411,15 @@ def apply_auto_reply_patch():
                 pass
         try:
             return await original_answer_animation(self, *args, **kwargs)
+        except Exception:
+            pass
+
+        # Try sending as video if Telegram classifies it as video
+        try:
+            vid_kwargs = dict(kwargs)
+            if "animation" in vid_kwargs:
+                vid_kwargs["video"] = vid_kwargs.pop("animation")
+            return await original_answer_video(self, *args, **vid_kwargs)
         except Exception:
             pass
 

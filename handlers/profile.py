@@ -40,6 +40,9 @@ FORM_LABELS = {
 FORM_KEYWORD_MAP = {
     "amv": 1,
     "art": 1,
+    "custom art": 1,
+    "custom arts": 1,
+    "custom": 1,
     "dmax": 2,
     "dynamax": 2,
     "gmax": 3,
@@ -50,10 +53,14 @@ FORM_KEYWORD_MAP = {
     "tera": 5,
     "shiny": 6,
     "s": 6,
+    "galar": 7,
+    "mega": 8,
+    "exclusive": 9,
+    "halloween": 10,
 }
 
 FORM_QUERY_PATTERN = re.compile(
-    r"^(.*?)[\.\s\-_]+(\d+|amv|art|dmax|dynamax|gmax|gigantamax|zmove|z-move|terastal|tera|shiny)$",
+    r"^(.*?)[\.\s\-_]+(\d+|amv|art|custom\s+arts?|custom|dmax|dynamax|gmax|gigantamax|zmove|z-move|terastal|tera|shiny|galar|mega|exclusive|halloween)$",
     re.IGNORECASE
 )
 
@@ -69,7 +76,8 @@ def parse_check_query(raw_query: str) -> tuple[int | None, str | None, int]:
         if form_part.isdigit():
             form_idx = int(form_part)
         else:
-            form_idx = FORM_KEYWORD_MAP.get(form_part, 0)
+            norm_form = " ".join(form_part.split())
+            form_idx = FORM_KEYWORD_MAP.get(norm_form, 0)
 
         if base_part.isdigit():
             return int(base_part), None, form_idx
@@ -1035,6 +1043,11 @@ async def cmd_profile(message: Message, db: AsyncSession):
             )
             db.add(user_db)
             await db.commit()
+        else:
+            if user_db.username != username or user_db.nickname != first_name:
+                user_db.username = username
+                user_db.nickname = first_name
+                await db.commit()
 
         # Batched single query for user Pokemon stats (drastically reduces DB round-trips)
         stats_stmt = select(
@@ -2900,3 +2913,42 @@ async def cb_tx_page(callback: CallbackQuery, db: AsyncSession):
 @router.callback_query(F.data == "tx_noop")
 async def cb_tx_noop(callback: CallbackQuery):
     await callback.answer()
+
+
+@router.message(Command("sync", "syncname", "syncprofile", "updatename", "refreshname", ignore_mention=True))
+async def cmd_sync_profile(message: Message, db: AsyncSession):
+    if not message.from_user or message.from_user.is_bot:
+        return
+
+    from utils.user_sync import sync_user_identity
+    user_db, changed = await sync_user_identity(db, message, force=True)
+
+    if not user_db:
+        user_id = message.from_user.id
+        stmt = select(User).where(User.id == user_id)
+        res = await db.execute(stmt)
+        user_db = res.scalar_one_or_none()
+
+    username_str = f"@{user_db.username}" if (user_db and user_db.username) else "<i>None</i>"
+    display_name = (user_db.profile_name or user_db.nickname) if user_db else (message.from_user.first_name or "Trainer")
+    coins_str = f"{user_db.coins:,}" if user_db else "500"
+
+    override_note = ""
+    if user_db and user_db.profile_name:
+        override_note = (
+            f"\n🏷 <i>Custom In-Game Name:</i> <b>{html.escape(user_db.profile_name)}</b>\n"
+            f"<i>(Use <code>/resetname</code> to restore your Telegram name)</i>\n"
+        )
+
+    text = (
+        f"🔄 <b>TRAINER PROFILE SYNCHRONIZED</b> 🔄\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"👤 <b>Trainer Name:</b> <b>{html.escape(display_name)}</b>\n"
+        f"🏷 <b>Telegram Handle:</b> {username_str}\n"
+        f"🆔 <b>Trainer ID:</b> <code>{message.from_user.id}</code>\n"
+        f"💰 <b>Coins:</b> <code>{coins_str}</code>\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"{override_note}\n"
+        f"✅ <i>Your latest Telegram username and display name are now synchronized with PokeEmpire!</i>"
+    )
+    await message.answer(text, parse_mode="HTML")

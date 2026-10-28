@@ -55,6 +55,11 @@ class DbSessionMiddleware:
     ) -> Any:
         async with SessionLocal() as session:
             data["db"] = session
+            try:
+                from utils.user_sync import sync_user_identity
+                await sync_user_identity(session, event)
+            except Exception as sync_err:
+                logger.warning(f"User sync error in games middleware: {sync_err}")
             return await handler(event, data)
 
 def apply_auto_reply_patch():

@@ -6,7 +6,7 @@ from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject, Message
 from typing import Callable, Dict, Any, Awaitable
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 from database.models import GroupSetting, User
 from services.spawn_service import SpawnService
 from utils.formatters import escape_md
@@ -338,15 +338,41 @@ async def flush_chat_activity(target_chat_id: int = None):
                 u_res = await db.execute(u_stmt)
                 existing_uids = set(u_res.scalars().all())
 
+                u_full_stmt = select(User).where(User.id.in_(user_ids))
+                u_full_res = await db.execute(u_full_stmt)
+                existing_users_map = {u.id: u for u in u_full_res.scalars().all()}
+
                 for uid in user_ids:
-                    if uid not in existing_uids:
-                        uname, nname = user_info_buffer.get(uid, (None, "Trainer"))
+                    uname, nname = user_info_buffer.get(uid, (None, "Trainer"))
+                    clean_nickname = (nname or "").strip() or uname or "Trainer"
+                    if uid not in existing_users_map:
                         db.add(User(
                             id=uid,
                             username=uname,
-                            nickname=nname or uname or "Trainer",
+                            nickname=clean_nickname,
                             coins=500
                         ))
+                        try:
+                            from utils.user_sync import set_cached_identity
+                            set_cached_identity(uid, uname, clean_nickname)
+                        except Exception:
+                            pass
+                    else:
+                        existing_u = existing_users_map[uid]
+                        if existing_u.username != uname or existing_u.nickname != clean_nickname:
+                            if uname:
+                                await db.execute(
+                                    update(User)
+                                    .where(func.lower(User.username) == uname.lower(), User.id != uid)
+                                    .values(username=None)
+                                )
+                            existing_u.username = uname
+                            existing_u.nickname = clean_nickname
+                            try:
+                                from utils.user_sync import set_cached_identity
+                                set_cached_identity(uid, uname, clean_nickname)
+                            except Exception:
+                                pass
             await db.flush()
 
             # 2. Batch-fetch ALL relevant ChatMessageStat rows in ONE query (avoids N+1)

@@ -1,5 +1,6 @@
 import os
 import html
+import re
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -23,6 +24,7 @@ FORM_INDEX_MAP = {
     "Gmax": 3,
     "Z-Move": 4,
     "Terastal": 5,
+    "Shiny": 6,
 }
 
 FORM_LABELS = {
@@ -32,24 +34,55 @@ FORM_LABELS = {
     3: "Gmax",
     4: "Z-Move",
     5: "Terastal",
+    6: "Shiny",
 }
+
+FORM_KEYWORD_MAP = {
+    "amv": 1,
+    "art": 1,
+    "dmax": 2,
+    "dynamax": 2,
+    "gmax": 3,
+    "gigantamax": 3,
+    "zmove": 4,
+    "z-move": 4,
+    "terastal": 5,
+    "tera": 5,
+    "shiny": 6,
+    "s": 6,
+}
+
+FORM_QUERY_PATTERN = re.compile(
+    r"^(.*?)[\.\s\-_]+(\d+|amv|art|dmax|dynamax|gmax|gigantamax|zmove|z-move|terastal|tera|shiny)$",
+    re.IGNORECASE
+)
+
+def parse_check_query(raw_query: str) -> tuple[int | None, str | None, int]:
+    q = raw_query.strip().lower()
+    if q.isdigit():
+        return int(q), None, 0
+
+    m = FORM_QUERY_PATTERN.match(q)
+    if m:
+        base_part = m.group(1).strip()
+        form_part = m.group(2).strip().lower()
+        if form_part.isdigit():
+            form_idx = int(form_part)
+        else:
+            form_idx = FORM_KEYWORD_MAP.get(form_part, 0)
+
+        if base_part.isdigit():
+            return int(base_part), None, form_idx
+        elif base_part:
+            return None, base_part, form_idx
+
+    return None, q, 0
 
 def parse_form_filter(form_str: str) -> int | None:
     form_str = form_str.strip().lower()
     if form_str.isdigit():
         return int(form_str)
-    mapping = {
-        "amv": 1,
-        "art": 1,
-        "dmax": 2,
-        "gmax": 3,
-        "z-move": 4,
-        "zmove": 4,
-        "z": 4,
-        "terastal": 5,
-        "tera": 5,
-    }
-    return mapping.get(form_str)
+    return FORM_KEYWORD_MAP.get(form_str)
 
 
 FORM_FILTER_LABELS = {
@@ -80,6 +113,10 @@ def get_media_type_from_value(media_value: str | None) -> str | None:
 def get_form_label(form_index: int, media_value: str | None = None, custom_forms: dict = None) -> str:
     if form_index == 1:
         return "Art" if get_media_type_from_value(media_value) == "photo" else "AMV"
+    if form_index == 6:
+        if custom_forms and 6 in custom_forms:
+            return custom_forms[6][0]
+        return "Shiny"
     if form_index in FORM_LABELS:
         return FORM_LABELS[form_index]
     if custom_forms and form_index in custom_forms:
@@ -1214,28 +1251,7 @@ async def cmd_check_pokemon(message: Message, db: AsyncSession):
         )
         return
 
-    pokemon_id = None
-    form_index = 0
-    pokemon_name_query = None
-    
-    if "." in query:
-        pq, fq = query.split(".", 1)
-        pq = pq.strip()
-        fq = fq.strip()
-        if pq.isdigit():
-            pokemon_id = int(pq)
-        else:
-            pokemon_name_query = pq
-        if fq.isdigit():
-            form_index = int(fq)
-        else:
-            pokemon_name_query = query
-            form_index = 0
-    else:
-        if query.isdigit():
-            pokemon_id = int(query)
-        else:
-            pokemon_name_query = query
+    pokemon_id, pokemon_name_query, form_index = parse_check_query(query)
 
     from utils.pokemon_cache import get_cached_pokemon_by_id, get_cached_pokemon_by_name, get_all_cached_pokemon
     pokemon = None
@@ -1307,12 +1323,21 @@ async def build_check_pokemon_payload(pokemon_or_id, form_index: int, db: AsyncS
     media_type = "photo"
     media_value = None
 
+    form_media = None
     if form_index > 0:
         form_media = await get_single_form_media_value(db, pokemon.id, form_index)
         if form_media:
             media_type, media_value = parse_stored_media_value(form_media)
-        elif form_index == 1 and pokemon.video_url:
+        elif form_index == 1 and getattr(pokemon, "video_url", None):
             media_type, media_value = parse_stored_media_value(pokemon.video_url)
+        elif form_index == 2 and getattr(pokemon, "dmax_url", None):
+            media_type, media_value = parse_stored_media_value(pokemon.dmax_url)
+        elif form_index == 3 and getattr(pokemon, "gmax_url", None):
+            media_type, media_value = parse_stored_media_value(pokemon.gmax_url)
+        elif form_index == 4 and getattr(pokemon, "zmove_url", None):
+            media_type, media_value = parse_stored_media_value(pokemon.zmove_url)
+        elif form_index == 5 and getattr(pokemon, "terastal_url", None):
+            media_type, media_value = parse_stored_media_value(pokemon.terastal_url)
         else:
             media_value = None
     else:
@@ -1320,11 +1345,34 @@ async def build_check_pokemon_payload(pokemon_or_id, form_index: int, db: AsyncS
             media_type, media_value = parse_stored_media_value(pokemon.image_url)
             
     if form_index > 0:
-        form_media_db = form_media if 'form_media' in locals() and form_media else await get_single_form_media_value(db, pokemon.id, form_index)
         custom_forms = await get_custom_rarity_forms(db)
-        form_label = get_form_label(form_index, form_media_db, custom_forms)
-        r_emoji = "📺" if form_index == 1 else "🔮"
-        rarity_str = f"{r_emoji} {form_label}"
+        form_label = get_form_label(form_index, form_media, custom_forms)
+        if form_index == 1:
+            r_emoji = "🎨" if form_label == "Art" else "📺"
+            rarity_str = f"{r_emoji} {form_label}"
+        elif form_index == 2:
+            r_emoji = "⚡"
+            rarity_str = f"{r_emoji} Dmax"
+        elif form_index == 3:
+            r_emoji = "💥"
+            rarity_str = f"{r_emoji} Gmax"
+        elif form_index == 4:
+            r_emoji = "🌀"
+            rarity_str = f"{r_emoji} Z-Move"
+        elif form_index == 5:
+            r_emoji = "💎"
+            rarity_str = f"{r_emoji} Terastal"
+        elif form_index == 6:
+            r_emoji = "✨"
+            rarity_str = f"{r_emoji} Shiny"
+        elif custom_forms and form_index in custom_forms:
+            form_name, form_emoji = custom_forms[form_index]
+            r_emoji = form_emoji or "🔮"
+            rarity_str = f"{r_emoji} {form_name}"
+        else:
+            r_emoji = "🔮"
+            rarity_str = f"{r_emoji} {form_label}"
+
         name_str = f"{pokemon.name.title()} ({form_label})"
         id_str = f"{pokemon.id}.{form_index}"
     else:

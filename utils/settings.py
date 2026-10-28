@@ -396,12 +396,23 @@ async def send_safe_media(
     for mtype in attempts:
         try:
             if message_to_reply:
-                if mtype == "video":
-                    return await message_to_reply.answer_video(video=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
-                elif mtype == "animation":
-                    return await message_to_reply.answer_animation(animation=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
-                else:
-                    return await message_to_reply.answer_photo(photo=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+                try:
+                    if mtype == "video":
+                        return await message_to_reply.answer_video(video=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+                    elif mtype == "animation":
+                        return await message_to_reply.answer_animation(animation=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+                    else:
+                        return await message_to_reply.answer_photo(photo=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+                except TelegramBadRequest as e:
+                    err_msg = str(e).lower()
+                    if any(r in err_msg for r in ["reply", "message to be replied"]) and bot:
+                        if mtype == "video":
+                            return await bot.send_video(chat_id=chat_id, video=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode, message_thread_id=thread_id)
+                        elif mtype == "animation":
+                            return await bot.send_animation(chat_id=chat_id, animation=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode, message_thread_id=thread_id)
+                        else:
+                            return await bot.send_photo(chat_id=chat_id, photo=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode, message_thread_id=thread_id)
+                    raise
             else:
                 if mtype == "video":
                     return await bot.send_video(chat_id=chat_id, video=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode, message_thread_id=thread_id)
@@ -411,9 +422,9 @@ async def send_safe_media(
                     return await bot.send_photo(chat_id=chat_id, photo=media_value, caption=caption, reply_markup=reply_markup, parse_mode=parse_mode, message_thread_id=thread_id)
         except TelegramBadRequest as e:
             err_msg = str(e).lower()
-            if any(p in err_msg for p in ["can't use file of type", "wrong file type", "failed to get http url", "wrong type", "invalid file", "failed to get url", "type"]):
+            if any(p in err_msg for p in ["can't use file of type", "wrong file type", "failed to get http url", "wrong type", "invalid file", "failed to get url", "type", "file_id", "wrong file_id", "unavailable"]):
                 continue
-            break
+            continue
         except Exception as e:
             continue
 

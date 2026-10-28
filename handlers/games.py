@@ -3540,20 +3540,3 @@ async def cb_dm_redeem_info(callback: CallbackQuery):
             pass
     await callback.answer()
 
-
-@router.message(Command('check', 'c', 'ch', ignore_mention=True))
-async def cmd_games_check(message: Message, db: AsyncSession):
-    from handlers.profile import cmd_check_pokemon
-    await cmd_check_pokemon(message, db)
-
-
-@router.callback_query(F.data.startswith('show_check_owners_'))
-async def cb_games_check_owners(callback: CallbackQuery, db: AsyncSession):
-    from handlers.profile import cb_show_check_owners
-    await cb_show_check_owners(callback, db)
-
-
-@router.callback_query(F.data.startswith('check_back_'))
-async def cb_games_check_back(callback: CallbackQuery, db: AsyncSession):
-    from handlers.profile import cb_check_back
-    await cb_check_back(callback, db)

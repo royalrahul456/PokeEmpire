@@ -92,8 +92,8 @@ def normalize_command_text(raw_text: str) -> str:
         if first_word in ("check", "pokedex"):
             converted = f"/{first_word}" + (f" {parts[1]}" if len(parts) > 1 else "")
             return _apply_aliases(converted)
-        if first_word == "c" and len(parts) > 1:
-            converted = f"/check {parts[1]}"
+        if first_word in ("c", "ch"):
+            converted = "/check" + (f" {parts[1]}" if len(parts) > 1 else "")
             return converted
 
     return raw_text

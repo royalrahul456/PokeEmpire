@@ -151,6 +151,8 @@ async def register_bot_commands(bot: Bot):
     from aiogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeAllPrivateChats, BotCommandScopeAllGroupChats, MenuButtonCommands
     commands = [
         BotCommand(command="start", description="🚀 Open primary Hub Dashboard"),
+        BotCommand(command="check", description="🔍 Check Pokémon card & details"),
+        BotCommand(command="c", description="🔍 Check Pokémon card (Quick)"),
         BotCommand(command="profile", description="👤 Check Trainer coins & metrics"),
         BotCommand(command="achievements", description="🏅 View Trainer achievement milestones"),
         BotCommand(command="balance", description="💰 Check current coin wallet balance"),

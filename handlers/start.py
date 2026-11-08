@@ -14,6 +14,8 @@ from keyboards.inline import (
     get_admin_menu_keyboard,
     get_uploader_menu_keyboard
 )
+import os
+import asyncio
 import html
 from utils.formatters import get_hp_bar, get_progress_bar, get_rarity_emoji, escape_md
 from utils.settings import (

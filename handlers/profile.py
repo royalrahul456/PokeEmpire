@@ -41,10 +41,14 @@ FORM_LABELS = {
 
 FORM_KEYWORD_MAP = {
     "amv": 1,
+    "amvs": 1,
     "art": 1,
+    "arts": 1,
     "custom art": 1,
     "custom arts": 1,
     "custom": 1,
+    "video": 1,
+    "v": 1,
     "dmax": 2,
     "dynamax": 2,
     "gmax": 3,
@@ -62,19 +66,27 @@ FORM_KEYWORD_MAP = {
 }
 
 FORM_QUERY_PATTERN = re.compile(
-    r"^(.*?)[\.\s\-_]+(\d+|amv|art|custom\s+arts?|custom|dmax|dynamax|gmax|gigantamax|zmove|z-move|terastal|tera|shiny|galar|mega|exclusive|halloween)$",
+    r"^(.*?)[\.\s\-_]+(\d+|amv|amvs|art|arts|custom\s+arts?|custom|video|dmax|dynamax|gmax|gigantamax|zmove|z-move|terastal|tera|shiny|galar|mega|exclusive|halloween)$",
     re.IGNORECASE
 )
 
 def parse_check_query(raw_query: str) -> tuple[int | None, str | None, int]:
     q = raw_query.strip().lower()
+    if not q:
+        return None, "", 0
     if q.isdigit():
         return int(q), None, 0
 
+    # 1. Check dot, dash, space notation at the end: e.g. '491.1', 'darkrai amv', '491 amv', 'amv 491'
     m = FORM_QUERY_PATTERN.match(q)
     if m:
         base_part = m.group(1).strip()
         form_part = m.group(2).strip().lower()
+
+        # Special case: prefix format caught by regex, e.g. 'amv 491', 'shiny 6'
+        if base_part in FORM_KEYWORD_MAP and form_part.isdigit():
+            return int(form_part), None, FORM_KEYWORD_MAP[base_part]
+
         if form_part.isdigit():
             form_idx = int(form_part)
         else:
@@ -85,6 +97,30 @@ def parse_check_query(raw_query: str) -> tuple[int | None, str | None, int]:
             return int(base_part), None, form_idx
         elif base_part:
             return None, base_part, form_idx
+
+    # 2. Check prefix keywords: e.g. 'amv darkrai', 'shiny charizard', 'mega charizard'
+    words = q.split()
+    if len(words) >= 2:
+        two_word_prefix = f"{words[0]} {words[1]}"
+        if two_word_prefix in FORM_KEYWORD_MAP:
+            f_idx = FORM_KEYWORD_MAP[two_word_prefix]
+            remainder = " ".join(words[2:]).strip()
+            if remainder.isdigit():
+                return int(remainder), None, f_idx
+            elif remainder:
+                return None, remainder, f_idx
+
+        first_word = words[0]
+        if first_word in FORM_KEYWORD_MAP:
+            f_idx = FORM_KEYWORD_MAP[first_word]
+            remainder = " ".join(words[1:]).strip()
+            if remainder.isdigit():
+                return int(remainder), None, f_idx
+            elif remainder:
+                return None, remainder, f_idx
+
+    if q in FORM_KEYWORD_MAP:
+        return None, "", FORM_KEYWORD_MAP[q]
 
     return None, q, 0
 
@@ -142,10 +178,12 @@ def parse_stored_media_value(media_value: str | None) -> tuple[str, str | None]:
         media_type, clean_value = media_value.split(":", 1)
         if media_type in {"photo", "video", "animation"}:
             return media_type, clean_value
-    if media_value.startswith("http") or media_value.startswith("AgAC"):
-        return "photo", media_value
+    if any(ext in media_value.lower() for ext in [".mp4", ".mov", ".webm", ".mkv"]):
+        return "video", media_value
     if media_value.startswith("BAAC"):
         return "video", media_value
+    if media_value.startswith("http") or media_value.startswith("AgAC"):
+        return "photo", media_value
     return "photo", media_value
 
 
@@ -1237,26 +1275,39 @@ async def cmd_check_pokemon(message: Message, db: AsyncSession):
     try:
         parts = message.text.split() if message.text else []
         query = ""
-        if len(parts) >= 2:
-            query = " ".join(parts[1:]).strip().lower()
-        elif message.reply_to_message:
+        form_override = None
+
+        if message.reply_to_message:
             reply_text = message.reply_to_message.caption or message.reply_to_message.text or ""
-            import re
-            id_match = re.search(r"ID[:\s]+<code>?(\d+(?:\.\d+)?)</code>?", reply_text, re.IGNORECASE)
-            if id_match:
-                query = id_match.group(1).lower()
-            else:
-                name_match = re.search(r"(?:wild\s+|pokemon:\s*|name:\s*)<b>?([a-zA-Z0-9\-\s\.]+?)</b>?", reply_text, re.IGNORECASE)
-                if name_match:
-                    query = name_match.group(1).strip().lower()
+            # If user provided a form argument while replying, e.g. "/check amv", "/check 1", "/check shiny"
+            if len(parts) >= 2:
+                arg = " ".join(parts[1:]).strip().lower()
+                if arg in FORM_KEYWORD_MAP:
+                    form_override = FORM_KEYWORD_MAP[arg]
+                elif arg.isdigit():
+                    form_override = int(arg)
                 else:
-                    from utils.pokemon_cache import get_all_cached_pokemon
-                    all_p = get_all_cached_pokemon()
-                    low_reply = reply_text.lower()
-                    for p in all_p:
-                        if p.name and len(p.name) > 3 and p.name.lower() in low_reply:
-                            query = p.name.lower()
-                            break
+                    query = arg
+
+            if not query:
+                import re
+                id_match = re.search(r"ID[:\s]+<code>?(\d+(?:\.\d+)?)</code>?", reply_text, re.IGNORECASE)
+                if id_match:
+                    query = id_match.group(1).lower()
+                else:
+                    name_match = re.search(r"(?:wild\s+|pokemon:\s*|name:\s*)<b>?([a-zA-Z0-9\-\s\.]+?)</b>?", reply_text, re.IGNORECASE)
+                    if name_match:
+                        query = name_match.group(1).strip().lower()
+                    else:
+                        from utils.pokemon_cache import get_all_cached_pokemon
+                        all_p = get_all_cached_pokemon()
+                        low_reply = reply_text.lower()
+                        for p in all_p:
+                            if p.name and len(p.name) > 3 and p.name.lower() in low_reply:
+                                query = p.name.lower()
+                                break
+        elif len(parts) >= 2:
+            query = " ".join(parts[1:]).strip().lower()
 
         if not query:
             await send_safe_media(
@@ -1266,8 +1317,8 @@ async def cmd_check_pokemon(message: Message, db: AsyncSession):
                 media_value=None,
                 caption=(
                     "⚠️ <b>Format:</b> <code>/check &lt;pokemon_name_or_id&gt;</code>\n"
-                    "(e.g., <code>/check bulbasaur</code> or <code>/check 1</code>)\n\n"
-                    "💡 <i>Tip: You can also reply to any Pokémon spawn or card with /check!</i>"
+                    "(e.g., <code>/check bulbasaur</code>, <code>/check darkrai amv</code>, or <code>/check 491.1</code>)\n\n"
+                    "💡 <i>Tip: You can also reply to any Pokémon spawn or card with /check or /check amv!</i>"
                 ),
                 reply_markup=None,
                 parse_mode="HTML",
@@ -1277,6 +1328,8 @@ async def cmd_check_pokemon(message: Message, db: AsyncSession):
             return
 
         pokemon_id, pokemon_name_query, form_index = parse_check_query(query)
+        if form_override is not None:
+            form_index = form_override
 
         from utils.pokemon_cache import get_cached_pokemon_by_id, get_cached_pokemon_by_name, get_all_cached_pokemon
         pokemon = None
@@ -1452,11 +1505,131 @@ async def build_check_pokemon_payload(pokemon_or_id, form_index: int, db: AsyncS
         f"🎬 <b>Rarity</b>: {html.escape(rarity_str)}"
     )
     
+    # Discover available alternate forms for this pokemon (AMV, Shiny, Dmax, etc.)
+    from database.models import PokemonFormMedia
+    stmt_forms = select(PokemonFormMedia.form_index).where(PokemonFormMedia.pokemon_id == pokemon.id).distinct()
+    res_forms = await db.execute(stmt_forms)
+    available_forms = set(res_forms.scalars().all())
+    if getattr(pokemon, "video_url", None):
+        available_forms.add(1)
+
+    custom_forms = await get_custom_rarity_forms(db)
+
+    form_buttons = []
+    # If currently on an alternate form, show button to view Standard artwork
+    if form_index != 0:
+        form_buttons.append(
+            InlineKeyboardButton(text="🖼️ Standard", callback_data=f"check_form_{pokemon.id}_0")
+        )
+
+    # If Form 1 (AMV / Art) is available and not currently viewing it
+    if 1 in available_forms and form_index != 1:
+        f1_media = await get_single_form_media_value(db, pokemon.id, 1) or getattr(pokemon, "video_url", None)
+        f1_label = get_form_label(1, f1_media, custom_forms)
+        f1_emoji = "🎨" if f1_label == "Art" else "🎬"
+        form_buttons.append(
+            InlineKeyboardButton(text=f"{f1_emoji} {f1_label}", callback_data=f"check_form_{pokemon.id}_1")
+        )
+
+    # If Form 6 (Shiny) is available and not currently viewing it
+    if 6 in available_forms and form_index != 6:
+        form_buttons.append(
+            InlineKeyboardButton(text="✨ Shiny", callback_data=f"check_form_{pokemon.id}_6")
+        )
+
+    # Other forms (Dmax, Gmax, Mega, Exclusive, Halloween, etc.)
+    for f_idx in sorted(available_forms):
+        if f_idx in (0, 1, 6) or f_idx == form_index:
+            continue
+        f_lbl = get_form_label(f_idx, None, custom_forms)
+        f_emoji = "🔮"
+        if f_idx == 2:
+            f_emoji = "⚡"
+        elif f_idx == 3:
+            f_emoji = "💥"
+        elif f_idx == 4:
+            f_emoji = "🌀"
+        elif f_idx == 5:
+            f_emoji = "💎"
+        elif f_idx == 8:
+            f_emoji = "🧬"
+        elif custom_forms and f_idx in custom_forms:
+            _, c_emoji = custom_forms[f_idx]
+            f_emoji = c_emoji or "🔮"
+        form_buttons.append(
+            InlineKeyboardButton(text=f"{f_emoji} {f_lbl}", callback_data=f"check_form_{pokemon.id}_{f_idx}")
+        )
+
     builder = InlineKeyboardBuilder()
+    if form_buttons:
+        for i in range(0, len(form_buttons), 2):
+            builder.row(*form_buttons[i:i+2])
+
     builder.row(
         InlineKeyboardButton(text="👥 Owners", callback_data=f"show_check_owners_{pokemon.id}_{form_index}")
     )
     return caption, builder.as_markup(), media_type, media_value
+
+
+@router.callback_query(F.data.startswith("check_form_"))
+async def cb_check_form(callback: CallbackQuery, db: AsyncSession):
+    try:
+        parts = callback.data.split("_")
+        pokemon_id = int(parts[2])
+        form_index = int(parts[3])
+
+        caption, reply_markup, media_type, media_value = await build_check_pokemon_payload(pokemon_id, form_index, db)
+        if not caption:
+            await callback.answer("❌ Pokémon not found.", show_alert=True)
+            return
+
+        from aiogram.types import InputMediaPhoto, InputMediaVideo, InputMediaAnimation
+        edited = False
+        if media_value and callback.message:
+            try:
+                if media_type == "video":
+                    input_media = InputMediaVideo(media=media_value, caption=caption, parse_mode="HTML")
+                elif media_type == "animation":
+                    input_media = InputMediaAnimation(media=media_value, caption=caption, parse_mode="HTML")
+                else:
+                    input_media = InputMediaPhoto(media=media_value, caption=caption, parse_mode="HTML")
+                await callback.message.edit_media(media=input_media, reply_markup=reply_markup)
+                edited = True
+            except Exception as edit_err:
+                logger.debug(f"edit_media failed: {edit_err}")
+                edited = False
+
+        if not edited and callback.message:
+            try:
+                await callback.message.edit_caption(caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+                edited = True
+            except Exception:
+                try:
+                    await callback.message.edit_text(text=caption, reply_markup=reply_markup, parse_mode="HTML")
+                    edited = True
+                except Exception:
+                    pass
+
+        # If switching across incompatible media types in edit_media failed, send fresh media
+        if not edited and media_value:
+            await send_safe_media(
+                bot=callback.bot,
+                chat_id=callback.message.chat.id,
+                media_type=media_type,
+                media_value=media_value,
+                caption=caption,
+                reply_markup=reply_markup,
+                parse_mode="HTML",
+                message_thread_id=getattr(callback.message, "message_thread_id", None)
+            )
+
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Error in cb_check_form: {e}", exc_info=True)
+        try:
+            await callback.answer("⚠️ Could not load form media.", show_alert=True)
+        except Exception:
+            pass
 
 
 @router.callback_query(F.data.startswith("show_check_owners_"))

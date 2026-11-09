@@ -1,660 +1,673 @@
-import os
-import json
-import config
-from sqlalchemy import select, update, delete
-from database.database import SessionLocal
-from database.models import GroupSetting, GlobalSetting
-from typing import Any, Optional
-from aiogram import Bot
-from aiogram.types import FSInputFile, Message
-import asyncio
-from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter, TelegramAPIError
-
-# Settings & Media cache
-scribble_settings_cache = {}
-nameguess_settings_cache = {}
-global_settings_cache = {}
-
-DEFAULT_SPAWN_SETTINGS = {
-    "group_rarity_probabilities": {
-        "Common": 70,
-        "Rare": 20,
-        "Epic": 7,
-        "Legendary": 2,
-        "Mythical": 1
-    }
-}
-
-async def load_all_settings_into_cache():
-    """Startup initialization: loads all database settings into memory cache and migrates old json files if present."""
-    global scribble_settings_cache, nameguess_settings_cache, global_settings_cache
-    
-    async with SessionLocal() as db:
-        # 1. Load Group Settings
-        stmt = select(GroupSetting)
-        res = await db.execute(stmt)
-        for gs in res.scalars().all():
-            scribble_settings_cache[gs.chat_id] = gs.scribble_enabled
-            nameguess_settings_cache[gs.chat_id] = gs.nameguess_enabled
-
-        # 2. Load Global Settings
-        stmt = select(GlobalSetting)
-        res = await db.execute(stmt)
-        for gs in res.scalars().all():
-            global_settings_cache[gs.key] = gs.value
-
-        # 3. Migrate Scribble Settings JSON
-        scribble_json = os.path.join("data", "scribble_settings.json")
-        if os.path.exists(scribble_json):
-            try:
-                with open(scribble_json, "r", encoding="utf-8") as f:
-                    old_scribble = json.load(f)
-                for chat_id_str, enabled in old_scribble.items():
-                    try:
-                        chat_id = int(chat_id_str)
-                        # Store in db and cache
-                        gs_stmt = select(GroupSetting).where(GroupSetting.chat_id == chat_id)
-                        gs_res = await db.execute(gs_stmt)
-                        gs = gs_res.scalar_one_or_none()
-                        if gs:
-                            gs.scribble_enabled = enabled
-                        else:
-                            gs = GroupSetting(chat_id=chat_id, scribble_enabled=enabled, nameguess_enabled=True)
-                            db.add(gs)
-                        scribble_settings_cache[chat_id] = enabled
-                    except ValueError:
-                        continue
-                await db.commit()
-                # Remove migrated file
-                try:
-                    os.remove(scribble_json)
-                except Exception:
-                    pass
-                print(f"✨ Migrated {scribble_json} to DB successfully.")
-            except Exception as e:
-                print(f"Error migrating scribble json: {e}")
-
-        # 4. Migrate Spawn Settings JSON
-        spawn_json = os.path.join("data", "spawn_settings.json")
-        if os.path.exists(spawn_json):
-            try:
-                with open(spawn_json, "r", encoding="utf-8") as f:
-                    old_spawn = json.load(f)
-                
-                if "group_rarity_probabilities" not in global_settings_cache:
-                    val = json.dumps(old_spawn.get("group_rarity_probabilities", DEFAULT_SPAWN_SETTINGS["group_rarity_probabilities"]))
-                    db.add(GlobalSetting(key="group_rarity_probabilities", value=val))
-                    global_settings_cache["group_rarity_probabilities"] = val
-                    
-                await db.commit()
-                # Remove migrated file
-                try:
-                    os.remove(spawn_json)
-                except Exception:
-                    pass
-                print(f"✨ Migrated {spawn_json} to DB successfully.")
-            except Exception as e:
-                print(f"Error migrating spawn json: {e}")
-
-def is_scribble_enabled(chat_id: int) -> bool:
-    return scribble_settings_cache.get(chat_id, True)
-
-def is_nameguess_enabled(chat_id: int) -> bool:
-    return nameguess_settings_cache.get(chat_id, True)
-
-async def set_scribble_status(chat_id: int, enabled: bool):
-    scribble_settings_cache[chat_id] = enabled
-    async with SessionLocal() as db:
-        stmt = select(GroupSetting).where(GroupSetting.chat_id == chat_id)
-        res = await db.execute(stmt)
-        gs = res.scalar_one_or_none()
-        if gs:
-            gs.scribble_enabled = enabled
-        else:
-            gs = GroupSetting(chat_id=chat_id, scribble_enabled=enabled, nameguess_enabled=True)
-            db.add(gs)
-        await db.commit()
-
-async def set_nameguess_status(chat_id: int, enabled: bool):
-    nameguess_settings_cache[chat_id] = enabled
-    async with SessionLocal() as db:
-        stmt = select(GroupSetting).where(GroupSetting.chat_id == chat_id)
-        res = await db.execute(stmt)
-        gs = res.scalar_one_or_none()
-        if gs:
-            gs.nameguess_enabled = enabled
-        else:
-            gs = GroupSetting(chat_id=chat_id, scribble_enabled=True, nameguess_enabled=enabled)
-            db.add(gs)
-        await db.commit()
-
-def load_spawn_settings() -> dict:
-    """Synchronous read from cache with default fallback."""
-    probs_val = global_settings_cache.get("group_rarity_probabilities", None)
-    if probs_val:
-        try:
-            group_rarity_probabilities = json.loads(probs_val)
-        except Exception:
-            group_rarity_probabilities = DEFAULT_SPAWN_SETTINGS["group_rarity_probabilities"]
-    else:
-        group_rarity_probabilities = DEFAULT_SPAWN_SETTINGS["group_rarity_probabilities"]
-        
-    return {
-        "group_rarity_probabilities": group_rarity_probabilities
-    }
-
-async def save_spawn_settings(settings: dict):
-    probs = settings.get("group_rarity_probabilities", DEFAULT_SPAWN_SETTINGS["group_rarity_probabilities"])
-    global_settings_cache["group_rarity_probabilities"] = json.dumps(probs)
-    
-    async with SessionLocal() as db:
-        k = "group_rarity_probabilities"
-        v = global_settings_cache["group_rarity_probabilities"]
-        stmt = select(GlobalSetting).where(GlobalSetting.key == k)
-        res = await db.execute(stmt)
-        gs = res.scalar_one_or_none()
-        if gs:
-            gs.value = v
-        else:
-            db.add(GlobalSetting(key=k, value=v))
-        await db.commit()
-
-DEFAULT_EVENT_CALENDAR_TEXT = (
-    "╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮\n"
-    "🦚✨ <b>POKEEMPIRE</b> ✨🦚\n"
-    "📅 <b>OFFICIAL EVENT CALENDAR</b>\n"
-    "╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n"
-    "🔥 <b>OCTOBER EVENTS & REWARDS</b> 🔥\n"
-    "A month packed with <b>LEGENDARY SPAWNS</b>, <b>QUIZZES</b> &amp; <b>REDEEM RUSHES!</b> ⚡️\n\n"
-    "╭───────────────╮\n"
-    "⚡️ <b>LEGENDARY SPAWN BOOST</b>\n"
-    "╰───────────────╯\n"
-    "✨ <b>Boosted Legendary Spawn Chance</b> across all active groups!\n\n"
-    "╭───────────────╮\n"
-    "🧠 <b>EVERY SATURDAY — QUIZ</b>\n"
-    "╰───────────────╯\n"
-    "🎯 Test your Pokémon knowledge &amp; win exclusive rewards!\n\n"
-    "╭───────────────╮\n"
-    "🎁 <b>EVERY SUNDAY — REDEEM RUSH</b>\n"
-    "╰───────────────╯\n"
-    "⚡️ Fastest trainers grab the codes! Drops appear across official channels.\n\n"
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    "🚨 <b>STAY ACTIVE. STAY READY.</b>\n"
-    "👑 <b>THE LEGENDS ARE WAITING.</b>\n\n"
-    "🦚 <b>POKEEMPIRE</b>\n"
-    "<i>Catch • Battle • Collect • Dominate</i>\n\n"
-    "Regards,\n"
-    "<a href='https://t.me/ThaDarkKratosX'>@ThaDarkKratosX</a>\n"
-    "PokeEmpire Team 🦚"
-)
-
-def get_events_calendar_text() -> str:
-    """Synchronous read from cache with default fallback."""
-    val = global_settings_cache.get("events_calendar_text")
-    if val and val.strip():
-        return val.strip()
-    return DEFAULT_EVENT_CALENDAR_TEXT
-
-async def set_events_calendar_text(text_val: str, db: Optional[Any] = None):
-    """Updates event calendar text in memory cache and database."""
-    clean_val = text_val.strip()
-    global_settings_cache["events_calendar_text"] = clean_val
-    k = "events_calendar_text"
-    
-    if db:
-        stmt = select(GlobalSetting).where(GlobalSetting.key == k)
-        res = await db.execute(stmt)
-        gs = res.scalar_one_or_none()
-        if gs:
-            gs.value = clean_val
-        else:
-            db.add(GlobalSetting(key=k, value=clean_val))
-        await db.commit()
-    else:
-        async with SessionLocal() as session:
-            stmt = select(GlobalSetting).where(GlobalSetting.key == k)
-            res = await session.execute(stmt)
-            gs = res.scalar_one_or_none()
-            if gs:
-                gs.value = clean_val
-            else:
-                session.add(GlobalSetting(key=k, value=clean_val))
-            await session.commit()
-
-async def reset_events_calendar_text(db: Optional[Any] = None):
-    """Resets event calendar text back to the default template."""
-    global_settings_cache.pop("events_calendar_text", None)
-    k = "events_calendar_text"
-    
-    if db:
-        await db.execute(delete(GlobalSetting).where(GlobalSetting.key == k))
-        await db.commit()
-    else:
-        async with SessionLocal() as session:
-            await session.execute(delete(GlobalSetting).where(GlobalSetting.key == k))
-            await session.commit()
-
-# Custom covers helper functions
-def get_custom_cover(key: str) -> tuple:
-    """Returns (media_type, media_value) or (None, None). Checks local disk first, then cache."""
-    # 1. Check local files on disk
-    cover_dirs = [os.path.join("data", "covers")]
-    if os.path.exists(getattr(config, "PERSISTENT_VOLUME", "/app/data_volume")):
-        cover_dirs.insert(0, os.path.join(getattr(config, "PERSISTENT_VOLUME", "/app/data_volume"), "covers"))
-
-    for c_dir in cover_dirs:
-        if os.path.exists(c_dir):
-            for ext, mtype in [("mp4", "video"), ("webm", "video"), ("gif", "animation"), ("jpg", "photo"), ("jpeg", "photo"), ("png", "photo")]:
-                candidate = os.path.join(c_dir, f"{key}.{ext}")
-                if os.path.exists(candidate) and os.path.getsize(candidate) > 0:
-                    return mtype, candidate
-
-    # 2. Check global settings cache
-    config_json = global_settings_cache.get(f"cover_{key}", None)
-    if config_json:
-        try:
-            data = json.loads(config_json)
-            return data.get("type"), data.get("value")
-        except Exception:
-            pass
-    return None, None
-
-async def get_custom_cover_async(key: str) -> tuple:
-    """Async retrieval: checks disk, cache, and if missing, queries DB."""
-    m_type, m_val = get_custom_cover(key)
-    if m_type is not None:
-        return m_type, m_val
-
-    try:
-        async with SessionLocal() as db:
-            stmt = select(GlobalSetting).where(GlobalSetting.key == f"cover_{key}")
-            res = await db.execute(stmt)
-            gs = res.scalar_one_or_none()
-            if gs and gs.value:
-                global_settings_cache[f"cover_{key}"] = gs.value
-                data = json.loads(gs.value)
-                return data.get("type"), data.get("value")
-    except Exception as e:
-        print(f"Error querying custom cover from DB: {e}")
-
-    return None, None
-
-async def set_custom_cover(key: str, media_type: str, media_value: str):
-    data = {"type": media_type, "value": media_value}
-    data_str = json.dumps(data)
-    global_settings_cache[f"cover_{key}"] = data_str
-    
-    async with SessionLocal() as db:
-        stmt = select(GlobalSetting).where(GlobalSetting.key == f"cover_{key}")
-        res = await db.execute(stmt)
-        gs = res.scalar_one_or_none()
-        if gs:
-            gs.value = data_str
-        else:
-            db.add(GlobalSetting(key=f"cover_{key}", value=data_str))
-        await db.commit()
-
-async def delete_custom_cover(key: str):
-    if f"cover_{key}" in global_settings_cache:
-        del global_settings_cache[f"cover_{key}"]
-
-    # Remove any local files on disk
-    cover_dirs = [os.path.join("data", "covers")]
-    if os.path.exists(getattr(config, "PERSISTENT_VOLUME", "/app/data_volume")):
-        cover_dirs.insert(0, os.path.join(getattr(config, "PERSISTENT_VOLUME", "/app/data_volume"), "covers"))
-
-    for c_dir in cover_dirs:
-        if os.path.exists(c_dir):
-            for ext in ["mp4", "webm", "gif", "jpg", "jpeg", "png"]:
-                candidate = os.path.join(c_dir, f"{key}.{ext}")
-                if os.path.exists(candidate):
-                    try:
-                        os.remove(candidate)
-                    except Exception:
-                        pass
-
-    async with SessionLocal() as db:
-        stmt = delete(GlobalSetting).where(GlobalSetting.key == f"cover_{key}")
-        await db.execute(stmt)
-        await db.commit()
-
-async def send_safe_media(
-    bot: Bot,
-    chat_id: int,
-    media_type: Optional[str],
-    media_value: Any,
-    caption: Optional[str] = None,
-    reply_markup: Any = None,
-    parse_mode: str = "HTML",
-    message_to_reply: Optional[Message] = None,
-    message_thread_id: Optional[int] = None
-) -> Optional[Message]:
-    """
-    Safely sends media (photo, video, animation) with automatic multi-layer fallback.
-    Supports Telegram Forum/Topic supergroups via message_thread_id and message_to_reply.
-    If media fails or permissions/buttons are restricted, gracefully falls back through:
-    1. Media + Markup + Formatting
-    2. Media + Formatting (No Markup)
-    3. Text + Markup + Formatting
-    4. Text + Formatting (No Markup)
-    5. Raw Plain Text (No Markup, No Formatting)
-    Never crashes out to silence.
-    """
-    thread_id = message_thread_id
-    if not thread_id and message_to_reply:
-        thread_id = getattr(message_to_reply, "message_thread_id", None)
-
-    # 1. If no media or caption plain text exceeds Telegram's photo caption limit (1024 rendered chars), send as text
-    import re
-    plain_caption_len = len(re.sub(r'<[^>]*>', '', caption)) if caption else 0
-    if not media_value or plain_caption_len > 1024:
-        # Attempt rich text with markup
-        if message_to_reply:
-            try:
-                return await message_to_reply.answer(text=caption or "", reply_markup=reply_markup, parse_mode=parse_mode)
-            except Exception:
-                pass
-        try:
-            return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=reply_markup, parse_mode=parse_mode, message_thread_id=thread_id)
-        except Exception:
-            pass
-
-        # Attempt text without markup
-        if message_to_reply:
-            try:
-                return await message_to_reply.answer(text=caption or "", reply_markup=None, parse_mode=parse_mode)
-            except Exception:
-                pass
-        try:
-            return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=None, parse_mode=parse_mode, message_thread_id=thread_id)
-        except Exception:
-            pass
-
-        # Attempt raw plain text without markup
-        if message_to_reply:
-            try:
-                return await message_to_reply.answer(text=caption or "", reply_markup=None, parse_mode=None)
-            except Exception:
-                pass
-        try:
-            return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=None, parse_mode=None, message_thread_id=thread_id)
-        except Exception as err:
-            print(f"❌ Failed to send text message in chat {chat_id}: {err}")
-            return None
-
-    if isinstance(media_value, str) and os.path.exists(media_value):
-        media_value = FSInputFile(media_value)
-
-    reply_id = message_to_reply.message_id if message_to_reply else None
-
-    primary = (media_type or "photo").lower()
-    if primary == "video":
-        attempts = ["video", "animation", "document", "photo"]
-    elif primary == "animation":
-        attempts = ["animation", "video", "document", "photo"]
-    else:
-        attempts = ["photo", "animation", "video", "document"]
-
-    async def _send_media(mtype, val, cap, markup, rep_id):
-        if mtype == "video":
-            return await bot.send_video(
-                chat_id=chat_id,
-                video=val,
-                caption=cap,
-                reply_markup=markup,
-                parse_mode=parse_mode,
-                reply_to_message_id=rep_id,
-                message_thread_id=thread_id,
-                supports_streaming=True
-            )
-        elif mtype == "animation":
-            return await bot.send_animation(
-                chat_id=chat_id,
-                animation=val,
-                caption=cap,
-                reply_markup=markup,
-                parse_mode=parse_mode,
-                reply_to_message_id=rep_id,
-                message_thread_id=thread_id
-            )
-        elif mtype == "document":
-            return await bot.send_document(
-                chat_id=chat_id,
-                document=val,
-                caption=cap,
-                reply_markup=markup,
-                parse_mode=parse_mode,
-                reply_to_message_id=rep_id,
-                message_thread_id=thread_id
-            )
-        else:
-            return await bot.send_photo(
-                chat_id=chat_id,
-                photo=val,
-                caption=cap,
-                reply_markup=markup,
-                parse_mode=parse_mode,
-                reply_to_message_id=rep_id,
-                message_thread_id=thread_id
-            )
-
-    # 2. Try sending media (first with reply_id, fallback to without reply_id if reply rejected)
-    for mtype in attempts:
-        try:
-            return await _send_media(mtype, media_value, caption, reply_markup, reply_id)
-        except TelegramRetryAfter as e:
-            try:
-                await asyncio.sleep(min(float(e.retry_after), 2.0))
-                return await _send_media(mtype, media_value, caption, reply_markup, None)
-            except Exception:
-                continue
-        except TelegramBadRequest as e:
-            err_msg = str(e).lower()
-            if any(r in err_msg for r in ["reply", "message to be replied"]):
-                try:
-                    return await _send_media(mtype, media_value, caption, reply_markup, None)
-                except Exception:
-                    pass
-            continue
-        except Exception:
-            continue
-
-    # 3. Try sending media WITHOUT markup and without reply_id (in case keyboard or reply was rejected)
-    if reply_markup is not None:
-        for mtype in attempts:
-            try:
-                return await _send_media(mtype, media_value, caption, None, None)
-            except Exception:
-                continue
-
-    # 4. Fallback: Text message with markup
-    try:
-        return await bot.send_message(
-            chat_id=chat_id,
-            text=caption or "",
-            reply_markup=reply_markup,
-            parse_mode=parse_mode,
-            reply_to_message_id=reply_id,
-            message_thread_id=thread_id
-        )
-    except Exception:
-        try:
-            return await bot.send_message(
-                chat_id=chat_id,
-                text=caption or "",
-                reply_markup=reply_markup,
-                parse_mode=parse_mode,
-                message_thread_id=thread_id
-            )
-        except Exception:
-            pass
-
-    # 5. Fallback: Text message without markup
-    try:
-        return await bot.send_message(
-            chat_id=chat_id,
-            text=caption or "",
-            reply_markup=None,
-            parse_mode=parse_mode,
-            message_thread_id=thread_id
-        )
-    except Exception:
-        pass
-
-    # 6. Ultimate Fallback: Plain text stripped of HTML tags
-    try:
-        import re
-        plain_caption = re.sub(r'<[^>]*>', '', caption or "") if caption else ""
-        return await bot.send_message(
-            chat_id=chat_id,
-            text=plain_caption,
-            reply_markup=None,
-            parse_mode=None,
-            message_thread_id=thread_id
-        )
-    except Exception:
-        return None
-async def send_cover_media(
-    chat_id: int, 
-    key: str, 
-    caption: str, 
-    reply_markup, 
-    bot: Bot, 
-    default_url=None, 
-    default_file=None, 
-    parse_mode="HTML",
-    message_to_reply: Optional[Message] = None,
-    message_thread_id: Optional[int] = None
-):
-    """Sends the configured custom media (photo, video, or animation) or falls back to defaults."""
-    media_type, media_value = await get_custom_cover_async(key)
-
-    if not media_type or not media_value:
-        if default_file and os.path.exists(default_file):
-            media_type = "photo"
-            media_value = default_file
-        elif default_url:
-            media_type = "photo"
-            media_value = default_url
-
-    thread_id = message_thread_id
-    if not thread_id and message_to_reply:
-        thread_id = getattr(message_to_reply, "message_thread_id", None)
-
-    try:
-        return await send_safe_media(
-            bot=bot,
-            chat_id=chat_id,
-            media_type=media_type,
-            media_value=media_value,
-            caption=caption,
-            reply_markup=reply_markup,
-            parse_mode=parse_mode,
-            message_to_reply=message_to_reply,
-            message_thread_id=thread_id
-        )
-    except Exception as e:
-        print(f"⚠️ send_cover_media failed for {key} with custom media ({e}). Retrying with default fallback...")
-        fb_val = default_file if (default_file and os.path.exists(default_file)) else default_url
-        fb_type = "photo" if fb_val else None
-        return await send_safe_media(
-            bot=bot,
-            chat_id=chat_id,
-            media_type=fb_type,
-            media_value=fb_val,
-            caption=caption,
-            reply_markup=reply_markup,
-            parse_mode=parse_mode,
-            message_to_reply=message_to_reply,
-            message_thread_id=thread_id
-        )
-
-
-async def get_all_custom_rarities(db=None) -> dict:
-    import json
-    if "custom_rarities" in global_settings_cache:
-        val = global_settings_cache.get("custom_rarities")
-        if val:
-            try:
-                return json.loads(val)
-            except Exception:
-                pass
-        return {}
-    if not db:
-        return {}
-    from database.models import GlobalSetting
-    stmt = select(GlobalSetting).where(GlobalSetting.key == "custom_rarities")
-    res = await db.execute(stmt)
-    setting = res.scalar_one_or_none()
-    if setting and setting.value:
-        global_settings_cache["custom_rarities"] = setting.value
-        try:
-            return json.loads(setting.value)
-        except Exception:
-            pass
-    return {}
-
-async def get_custom_rarity_forms(db=None) -> dict[int, tuple[str, str]]:
-    custom_rarities = await get_all_custom_rarities(db)
-    standard = {"Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical", "Limited", "Limited Edition"}
-    custom_list = [r for r in custom_rarities.keys() if r not in standard]
-    
-    mapping = {}
-    
-    shiny_name = None
-    for r in custom_list:
-        if r.lower() == "shiny":
-            shiny_name = r
-            break
-            
-    if shiny_name:
-        mapping[6] = (shiny_name, custom_rarities[shiny_name])
-    else:
-        mapping[6] = ("Shiny", "✨")
-        
-    next_idx = 7
-    for r in custom_list:
-        if r.lower() == "shiny":
-            continue
-        mapping[next_idx] = (r, custom_rarities[r])
-        next_idx += 1
-        
-    return mapping
-
-
-async def is_pokemon_soulbound(pokemon, user_pokemon=None, db=None) -> bool:
-    """Checks if a Pokémon or its form belongs to the soulbound/event-winner exclusive rarity tier."""
-    keywords = ("exclusive", "event", "winner", "bound")
-
-    # 1. Check Pokémon base rarity
-    if pokemon and getattr(pokemon, "rarity", None):
-        r = str(pokemon.rarity).lower()
-        if any(k in r for k in keywords):
-            return True
-
-    # 2. Check UserPokemon form_index (custom form rarity)
-    if user_pokemon and getattr(user_pokemon, "form_index", 0) > 0 and db:
-        try:
-            custom_forms = await get_custom_rarity_forms(db)
-            if user_pokemon.form_index in custom_forms:
-                form_name, _ = custom_forms[user_pokemon.form_index]
-                fn = str(form_name).lower()
-                if any(k in fn for k in keywords):
-                    return True
-        except Exception:
-            pass
-
-    # 3. Check custom_rarities list in DB if available
-    if db and pokemon and getattr(pokemon, "rarity", None):
-        try:
-            custom_rarities = await get_all_custom_rarities(db)
-            for r_name in custom_rarities.keys():
-                rn_lower = str(r_name).lower()
-                if any(k in rn_lower for k in keywords):
-                    if str(pokemon.rarity).lower() == rn_lower:
-                        return True
-        except Exception:
-            pass
-
-    return False
-
+import os
+import json
+import config
+from sqlalchemy import select, update, delete
+from database.database import SessionLocal
+from database.models import GroupSetting, GlobalSetting
+from typing import Any, Optional
+from aiogram import Bot
+from aiogram.types import FSInputFile, Message
+import asyncio
+from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter, TelegramAPIError
+
+# Settings & Media cache
+scribble_settings_cache = {}
+nameguess_settings_cache = {}
+global_settings_cache = {}
+
+DEFAULT_SPAWN_SETTINGS = {
+    "group_rarity_probabilities": {
+        "Common": 70,
+        "Rare": 20,
+        "Epic": 7,
+        "Legendary": 2,
+        "Mythical": 1
+    }
+}
+
+async def load_all_settings_into_cache():
+    """Startup initialization: loads all database settings into memory cache and migrates old json files if present."""
+    global scribble_settings_cache, nameguess_settings_cache, global_settings_cache
+    
+    async with SessionLocal() as db:
+        # 1. Load Group Settings
+        stmt = select(GroupSetting)
+        res = await db.execute(stmt)
+        for gs in res.scalars().all():
+            scribble_settings_cache[gs.chat_id] = gs.scribble_enabled
+            nameguess_settings_cache[gs.chat_id] = gs.nameguess_enabled
+
+        # 2. Load Global Settings
+        stmt = select(GlobalSetting)
+        res = await db.execute(stmt)
+        for gs in res.scalars().all():
+            global_settings_cache[gs.key] = gs.value
+
+        # 3. Migrate Scribble Settings JSON
+        scribble_json = os.path.join("data", "scribble_settings.json")
+        if os.path.exists(scribble_json):
+            try:
+                with open(scribble_json, "r", encoding="utf-8") as f:
+                    old_scribble = json.load(f)
+                for chat_id_str, enabled in old_scribble.items():
+                    try:
+                        chat_id = int(chat_id_str)
+                        # Store in db and cache
+                        gs_stmt = select(GroupSetting).where(GroupSetting.chat_id == chat_id)
+                        gs_res = await db.execute(gs_stmt)
+                        gs = gs_res.scalar_one_or_none()
+                        if gs:
+                            gs.scribble_enabled = enabled
+                        else:
+                            gs = GroupSetting(chat_id=chat_id, scribble_enabled=enabled, nameguess_enabled=True)
+                            db.add(gs)
+                        scribble_settings_cache[chat_id] = enabled
+                    except ValueError:
+                        continue
+                await db.commit()
+                # Remove migrated file
+                try:
+                    os.remove(scribble_json)
+                except Exception:
+                    pass
+                print(f"✨ Migrated {scribble_json} to DB successfully.")
+            except Exception as e:
+                print(f"Error migrating scribble json: {e}")
+
+        # 4. Migrate Spawn Settings JSON
+        spawn_json = os.path.join("data", "spawn_settings.json")
+        if os.path.exists(spawn_json):
+            try:
+                with open(spawn_json, "r", encoding="utf-8") as f:
+                    old_spawn = json.load(f)
+                
+                if "group_rarity_probabilities" not in global_settings_cache:
+                    val = json.dumps(old_spawn.get("group_rarity_probabilities", DEFAULT_SPAWN_SETTINGS["group_rarity_probabilities"]))
+                    db.add(GlobalSetting(key="group_rarity_probabilities", value=val))
+                    global_settings_cache["group_rarity_probabilities"] = val
+                    
+                await db.commit()
+                # Remove migrated file
+                try:
+                    os.remove(spawn_json)
+                except Exception:
+                    pass
+                print(f"✨ Migrated {spawn_json} to DB successfully.")
+            except Exception as e:
+                print(f"Error migrating spawn json: {e}")
+
+def is_scribble_enabled(chat_id: int) -> bool:
+    return scribble_settings_cache.get(chat_id, True)
+
+def is_nameguess_enabled(chat_id: int) -> bool:
+    return nameguess_settings_cache.get(chat_id, True)
+
+async def set_scribble_status(chat_id: int, enabled: bool):
+    scribble_settings_cache[chat_id] = enabled
+    async with SessionLocal() as db:
+        stmt = select(GroupSetting).where(GroupSetting.chat_id == chat_id)
+        res = await db.execute(stmt)
+        gs = res.scalar_one_or_none()
+        if gs:
+            gs.scribble_enabled = enabled
+        else:
+            gs = GroupSetting(chat_id=chat_id, scribble_enabled=enabled, nameguess_enabled=True)
+            db.add(gs)
+        await db.commit()
+
+async def set_nameguess_status(chat_id: int, enabled: bool):
+    nameguess_settings_cache[chat_id] = enabled
+    async with SessionLocal() as db:
+        stmt = select(GroupSetting).where(GroupSetting.chat_id == chat_id)
+        res = await db.execute(stmt)
+        gs = res.scalar_one_or_none()
+        if gs:
+            gs.nameguess_enabled = enabled
+        else:
+            gs = GroupSetting(chat_id=chat_id, scribble_enabled=True, nameguess_enabled=enabled)
+            db.add(gs)
+        await db.commit()
+
+def load_spawn_settings() -> dict:
+    """Synchronous read from cache with default fallback."""
+    probs_val = global_settings_cache.get("group_rarity_probabilities", None)
+    if probs_val:
+        try:
+            group_rarity_probabilities = json.loads(probs_val)
+        except Exception:
+            group_rarity_probabilities = DEFAULT_SPAWN_SETTINGS["group_rarity_probabilities"]
+    else:
+        group_rarity_probabilities = DEFAULT_SPAWN_SETTINGS["group_rarity_probabilities"]
+        
+    return {
+        "group_rarity_probabilities": group_rarity_probabilities
+    }
+
+async def save_spawn_settings(settings: dict):
+    probs = settings.get("group_rarity_probabilities", DEFAULT_SPAWN_SETTINGS["group_rarity_probabilities"])
+    global_settings_cache["group_rarity_probabilities"] = json.dumps(probs)
+    
+    async with SessionLocal() as db:
+        k = "group_rarity_probabilities"
+        v = global_settings_cache["group_rarity_probabilities"]
+        stmt = select(GlobalSetting).where(GlobalSetting.key == k)
+        res = await db.execute(stmt)
+        gs = res.scalar_one_or_none()
+        if gs:
+            gs.value = v
+        else:
+            db.add(GlobalSetting(key=k, value=v))
+        await db.commit()
+
+DEFAULT_EVENT_CALENDAR_TEXT = (
+    "╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮\n"
+    "🦚✨ <b>POKEEMPIRE</b> ✨🦚\n"
+    "📅 <b>OFFICIAL EVENT CALENDAR</b>\n"
+    "╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n"
+    "🔥 <b>OCTOBER EVENTS & REWARDS</b> 🔥\n"
+    "A month packed with <b>LEGENDARY SPAWNS</b>, <b>QUIZZES</b> &amp; <b>REDEEM RUSHES!</b> ⚡️\n\n"
+    "╭───────────────╮\n"
+    "⚡️ <b>LEGENDARY SPAWN BOOST</b>\n"
+    "╰───────────────╯\n"
+    "✨ <b>Boosted Legendary Spawn Chance</b> across all active groups!\n\n"
+    "╭───────────────╮\n"
+    "🧠 <b>EVERY SATURDAY — QUIZ</b>\n"
+    "╰───────────────╯\n"
+    "🎯 Test your Pokémon knowledge &amp; win exclusive rewards!\n\n"
+    "╭───────────────╮\n"
+    "🎁 <b>EVERY SUNDAY — REDEEM RUSH</b>\n"
+    "╰───────────────╯\n"
+    "⚡️ Fastest trainers grab the codes! Drops appear across official channels.\n\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    "🚨 <b>STAY ACTIVE. STAY READY.</b>\n"
+    "👑 <b>THE LEGENDS ARE WAITING.</b>\n\n"
+    "🦚 <b>POKEEMPIRE</b>\n"
+    "<i>Catch • Battle • Collect • Dominate</i>\n\n"
+    "Regards,\n"
+    "<a href='https://t.me/ThaDarkKratosX'>@ThaDarkKratosX</a>\n"
+    "PokeEmpire Team 🦚"
+)
+
+def get_events_calendar_text() -> str:
+    """Synchronous read from cache with default fallback."""
+    val = global_settings_cache.get("events_calendar_text")
+    if val and val.strip():
+        return val.strip()
+    return DEFAULT_EVENT_CALENDAR_TEXT
+
+async def set_events_calendar_text(text_val: str, db: Optional[Any] = None):
+    """Updates event calendar text in memory cache and database."""
+    clean_val = text_val.strip()
+    global_settings_cache["events_calendar_text"] = clean_val
+    k = "events_calendar_text"
+    
+    if db:
+        stmt = select(GlobalSetting).where(GlobalSetting.key == k)
+        res = await db.execute(stmt)
+        gs = res.scalar_one_or_none()
+        if gs:
+            gs.value = clean_val
+        else:
+            db.add(GlobalSetting(key=k, value=clean_val))
+        await db.commit()
+    else:
+        async with SessionLocal() as session:
+            stmt = select(GlobalSetting).where(GlobalSetting.key == k)
+            res = await session.execute(stmt)
+            gs = res.scalar_one_or_none()
+            if gs:
+                gs.value = clean_val
+            else:
+                session.add(GlobalSetting(key=k, value=clean_val))
+            await session.commit()
+
+async def reset_events_calendar_text(db: Optional[Any] = None):
+    """Resets event calendar text back to the default template."""
+    global_settings_cache.pop("events_calendar_text", None)
+    k = "events_calendar_text"
+    
+    if db:
+        await db.execute(delete(GlobalSetting).where(GlobalSetting.key == k))
+        await db.commit()
+    else:
+        async with SessionLocal() as session:
+            await session.execute(delete(GlobalSetting).where(GlobalSetting.key == k))
+            await session.commit()
+
+# Custom covers helper functions
+def get_custom_cover(key: str) -> tuple:
+    """Returns (media_type, media_value) or (None, None). Checks local disk first, then cache."""
+    # 1. Check local files on disk
+    cover_dirs = [os.path.join("data", "covers")]
+    if os.path.exists(getattr(config, "PERSISTENT_VOLUME", "/app/data_volume")):
+        cover_dirs.insert(0, os.path.join(getattr(config, "PERSISTENT_VOLUME", "/app/data_volume"), "covers"))
+
+    for c_dir in cover_dirs:
+        if os.path.exists(c_dir):
+            for ext, mtype in [("mp4", "video"), ("webm", "video"), ("gif", "animation"), ("jpg", "photo"), ("jpeg", "photo"), ("png", "photo")]:
+                candidate = os.path.join(c_dir, f"{key}.{ext}")
+                if os.path.exists(candidate) and os.path.getsize(candidate) > 0:
+                    return mtype, candidate
+
+    # 2. Check global settings cache
+    config_json = global_settings_cache.get(f"cover_{key}", None)
+    if config_json:
+        try:
+            data = json.loads(config_json)
+            return data.get("type"), data.get("value")
+        except Exception:
+            pass
+    return None, None
+
+async def get_custom_cover_async(key: str) -> tuple:
+    """Async retrieval: checks disk, cache, and if missing, queries DB."""
+    m_type, m_val = get_custom_cover(key)
+    if m_type is not None:
+        return m_type, m_val
+
+    try:
+        async with SessionLocal() as db:
+            stmt = select(GlobalSetting).where(GlobalSetting.key == f"cover_{key}")
+            res = await db.execute(stmt)
+            gs = res.scalar_one_or_none()
+            if gs and gs.value:
+                global_settings_cache[f"cover_{key}"] = gs.value
+                data = json.loads(gs.value)
+                return data.get("type"), data.get("value")
+    except Exception as e:
+        print(f"Error querying custom cover from DB: {e}")
+
+    return None, None
+
+async def set_custom_cover(key: str, media_type: str, media_value: str):
+    data = {"type": media_type, "value": media_value}
+    data_str = json.dumps(data)
+    global_settings_cache[f"cover_{key}"] = data_str
+    
+    async with SessionLocal() as db:
+        stmt = select(GlobalSetting).where(GlobalSetting.key == f"cover_{key}")
+        res = await db.execute(stmt)
+        gs = res.scalar_one_or_none()
+        if gs:
+            gs.value = data_str
+        else:
+            db.add(GlobalSetting(key=f"cover_{key}", value=data_str))
+        await db.commit()
+
+async def delete_custom_cover(key: str):
+    if f"cover_{key}" in global_settings_cache:
+        del global_settings_cache[f"cover_{key}"]
+
+    # Remove any local files on disk
+    cover_dirs = [os.path.join("data", "covers")]
+    if os.path.exists(getattr(config, "PERSISTENT_VOLUME", "/app/data_volume")):
+        cover_dirs.insert(0, os.path.join(getattr(config, "PERSISTENT_VOLUME", "/app/data_volume"), "covers"))
+
+    for c_dir in cover_dirs:
+        if os.path.exists(c_dir):
+            for ext in ["mp4", "webm", "gif", "jpg", "jpeg", "png"]:
+                candidate = os.path.join(c_dir, f"{key}.{ext}")
+                if os.path.exists(candidate):
+                    try:
+                        os.remove(candidate)
+                    except Exception:
+                        pass
+
+    async with SessionLocal() as db:
+        stmt = delete(GlobalSetting).where(GlobalSetting.key == f"cover_{key}")
+        await db.execute(stmt)
+        await db.commit()
+
+async def send_safe_media(
+    bot: Bot,
+    chat_id: int,
+    media_type: Optional[str],
+    media_value: Any,
+    caption: Optional[str] = None,
+    reply_markup: Any = None,
+    parse_mode: str = "HTML",
+    message_to_reply: Optional[Message] = None,
+    message_thread_id: Optional[int] = None
+) -> Optional[Message]:
+    """
+    Safely sends media (photo, video, animation) with automatic multi-layer fallback.
+    Supports Telegram Forum/Topic supergroups via message_thread_id and message_to_reply.
+    If media fails or permissions/buttons are restricted, gracefully falls back through:
+    1. Media + Markup + Formatting
+    2. Media + Formatting (No Markup)
+    3. Text + Markup + Formatting
+    4. Text + Formatting (No Markup)
+    5. Raw Plain Text (No Markup, No Formatting)
+    Never crashes out to silence.
+    """
+    thread_id = message_thread_id
+    if not thread_id and message_to_reply:
+        thread_id = getattr(message_to_reply, "message_thread_id", None)
+
+    # 1. If no media or caption plain text exceeds Telegram's photo caption limit (1024 rendered chars), send as text
+    import re
+    plain_caption_len = len(re.sub(r'<[^>]*>', '', caption)) if caption else 0
+    if not media_value or plain_caption_len > 1024:
+        # Attempt rich text with markup
+        if message_to_reply:
+            try:
+                return await message_to_reply.answer(text=caption or "", reply_markup=reply_markup, parse_mode=parse_mode)
+            except Exception:
+                pass
+        try:
+            return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=reply_markup, parse_mode=parse_mode, message_thread_id=thread_id)
+        except Exception:
+            pass
+
+        # Attempt text without markup
+        if message_to_reply:
+            try:
+                return await message_to_reply.answer(text=caption or "", reply_markup=None, parse_mode=parse_mode)
+            except Exception:
+                pass
+        try:
+            return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=None, parse_mode=parse_mode, message_thread_id=thread_id)
+        except Exception:
+            pass
+
+        # Attempt raw plain text without markup
+        if message_to_reply:
+            try:
+                return await message_to_reply.answer(text=caption or "", reply_markup=None, parse_mode=None)
+            except Exception:
+                pass
+        try:
+            return await bot.send_message(chat_id=chat_id, text=caption or "", reply_markup=None, parse_mode=None, message_thread_id=thread_id)
+        except Exception as err:
+            print(f"❌ Failed to send text message in chat {chat_id}: {err}")
+            return None
+
+    if isinstance(media_value, str) and os.path.exists(media_value):
+        media_value = FSInputFile(media_value)
+
+    reply_id = message_to_reply.message_id if message_to_reply else None
+
+    primary = (media_type or "photo").lower()
+    if primary == "video":
+        attempts = ["video", "animation", "document", "photo"]
+    elif primary == "animation":
+        attempts = ["animation", "video", "document", "photo"]
+    else:
+        attempts = ["photo", "animation", "video", "document"]
+
+    async def _send_media(mtype, val, cap, markup, rep_id):
+        if mtype == "video":
+            try:
+                return await bot.send_video(
+                    chat_id=chat_id,
+                    video=val,
+                    caption=cap,
+                    reply_markup=markup,
+                    parse_mode=parse_mode,
+                    reply_to_message_id=rep_id,
+                    message_thread_id=thread_id,
+                    supports_streaming=True
+                )
+            except TelegramBadRequest as b_err:
+                if "stream" in str(b_err).lower():
+                    return await bot.send_video(
+                        chat_id=chat_id,
+                        video=val,
+                        caption=cap,
+                        reply_markup=markup,
+                        parse_mode=parse_mode,
+                        reply_to_message_id=rep_id,
+                        message_thread_id=thread_id
+                    )
+                raise b_err
+        elif mtype == "animation":
+            return await bot.send_animation(
+                chat_id=chat_id,
+                animation=val,
+                caption=cap,
+                reply_markup=markup,
+                parse_mode=parse_mode,
+                reply_to_message_id=rep_id,
+                message_thread_id=thread_id
+            )
+        elif mtype == "document":
+            return await bot.send_document(
+                chat_id=chat_id,
+                document=val,
+                caption=cap,
+                reply_markup=markup,
+                parse_mode=parse_mode,
+                reply_to_message_id=rep_id,
+                message_thread_id=thread_id
+            )
+        else:
+            return await bot.send_photo(
+                chat_id=chat_id,
+                photo=val,
+                caption=cap,
+                reply_markup=markup,
+                parse_mode=parse_mode,
+                reply_to_message_id=rep_id,
+                message_thread_id=thread_id
+            )
+
+    # 2. Try sending media (first with reply_id, fallback to without reply_id if reply rejected)
+    for mtype in attempts:
+        try:
+            return await _send_media(mtype, media_value, caption, reply_markup, reply_id)
+        except TelegramRetryAfter as e:
+            try:
+                await asyncio.sleep(min(float(e.retry_after), 2.0))
+                return await _send_media(mtype, media_value, caption, reply_markup, None)
+            except Exception:
+                continue
+        except TelegramBadRequest as e:
+            err_msg = str(e).lower()
+            if any(r in err_msg for r in ["reply", "message to be replied"]):
+                try:
+                    return await _send_media(mtype, media_value, caption, reply_markup, None)
+                except Exception:
+                    pass
+            continue
+        except Exception:
+            continue
+
+    # 3. Try sending media WITHOUT markup and without reply_id (in case keyboard or reply was rejected)
+    if reply_markup is not None:
+        for mtype in attempts:
+            try:
+                return await _send_media(mtype, media_value, caption, None, None)
+            except Exception:
+                continue
+
+    # 4. Fallback: Text message with markup
+    try:
+        return await bot.send_message(
+            chat_id=chat_id,
+            text=caption or "",
+            reply_markup=reply_markup,
+            parse_mode=parse_mode,
+            reply_to_message_id=reply_id,
+            message_thread_id=thread_id
+        )
+    except Exception:
+        try:
+            return await bot.send_message(
+                chat_id=chat_id,
+                text=caption or "",
+                reply_markup=reply_markup,
+                parse_mode=parse_mode,
+                message_thread_id=thread_id
+            )
+        except Exception:
+            pass
+
+    # 5. Fallback: Text message without markup
+    try:
+        return await bot.send_message(
+            chat_id=chat_id,
+            text=caption or "",
+            reply_markup=None,
+            parse_mode=parse_mode,
+            message_thread_id=thread_id
+        )
+    except Exception:
+        pass
+
+    # 6. Ultimate Fallback: Plain text stripped of HTML tags
+    try:
+        import re
+        plain_caption = re.sub(r'<[^>]*>', '', caption or "") if caption else ""
+        return await bot.send_message(
+            chat_id=chat_id,
+            text=plain_caption,
+            reply_markup=None,
+            parse_mode=None,
+            message_thread_id=thread_id
+        )
+    except Exception:
+        return None
+async def send_cover_media(
+    chat_id: int, 
+    key: str, 
+    caption: str, 
+    reply_markup, 
+    bot: Bot, 
+    default_url=None, 
+    default_file=None, 
+    parse_mode="HTML",
+    message_to_reply: Optional[Message] = None,
+    message_thread_id: Optional[int] = None
+):
+    """Sends the configured custom media (photo, video, or animation) or falls back to defaults."""
+    media_type, media_value = await get_custom_cover_async(key)
+
+    if not media_type or not media_value:
+        if default_file and os.path.exists(default_file):
+            media_type = "photo"
+            media_value = default_file
+        elif default_url:
+            media_type = "photo"
+            media_value = default_url
+
+    thread_id = message_thread_id
+    if not thread_id and message_to_reply:
+        thread_id = getattr(message_to_reply, "message_thread_id", None)
+
+    try:
+        return await send_safe_media(
+            bot=bot,
+            chat_id=chat_id,
+            media_type=media_type,
+            media_value=media_value,
+            caption=caption,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode,
+            message_to_reply=message_to_reply,
+            message_thread_id=thread_id
+        )
+    except Exception as e:
+        print(f"⚠️ send_cover_media failed for {key} with custom media ({e}). Retrying with default fallback...")
+        fb_val = default_file if (default_file and os.path.exists(default_file)) else default_url
+        fb_type = "photo" if fb_val else None
+        return await send_safe_media(
+            bot=bot,
+            chat_id=chat_id,
+            media_type=fb_type,
+            media_value=fb_val,
+            caption=caption,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode,
+            message_to_reply=message_to_reply,
+            message_thread_id=thread_id
+        )
+
+
+async def get_all_custom_rarities(db=None) -> dict:
+    import json
+    if "custom_rarities" in global_settings_cache:
+        val = global_settings_cache.get("custom_rarities")
+        if val:
+            try:
+                return json.loads(val)
+            except Exception:
+                pass
+        return {}
+    if not db:
+        return {}
+    from database.models import GlobalSetting
+    stmt = select(GlobalSetting).where(GlobalSetting.key == "custom_rarities")
+    res = await db.execute(stmt)
+    setting = res.scalar_one_or_none()
+    if setting and setting.value:
+        global_settings_cache["custom_rarities"] = setting.value
+        try:
+            return json.loads(setting.value)
+        except Exception:
+            pass
+    return {}
+
+async def get_custom_rarity_forms(db=None) -> dict[int, tuple[str, str]]:
+    custom_rarities = await get_all_custom_rarities(db)
+    standard = {"Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical", "Limited", "Limited Edition"}
+    custom_list = [r for r in custom_rarities.keys() if r not in standard]
+    
+    mapping = {}
+    
+    shiny_name = None
+    for r in custom_list:
+        if r.lower() == "shiny":
+            shiny_name = r
+            break
+            
+    if shiny_name:
+        mapping[6] = (shiny_name, custom_rarities[shiny_name])
+    else:
+        mapping[6] = ("Shiny", "✨")
+        
+    next_idx = 7
+    for r in custom_list:
+        if r.lower() == "shiny":
+            continue
+        mapping[next_idx] = (r, custom_rarities[r])
+        next_idx += 1
+        
+    return mapping
+
+
+async def is_pokemon_soulbound(pokemon, user_pokemon=None, db=None) -> bool:
+    """Checks if a Pokémon or its form belongs to the soulbound/event-winner exclusive rarity tier."""
+    keywords = ("exclusive", "event", "winner", "bound")
+
+    # 1. Check Pokémon base rarity
+    if pokemon and getattr(pokemon, "rarity", None):
+        r = str(pokemon.rarity).lower()
+        if any(k in r for k in keywords):
+            return True
+
+    # 2. Check UserPokemon form_index (custom form rarity)
+    if user_pokemon and getattr(user_pokemon, "form_index", 0) > 0 and db:
+        try:
+            custom_forms = await get_custom_rarity_forms(db)
+            if user_pokemon.form_index in custom_forms:
+                form_name, _ = custom_forms[user_pokemon.form_index]
+                fn = str(form_name).lower()
+                if any(k in fn for k in keywords):
+                    return True
+        except Exception:
+            pass
+
+    # 3. Check custom_rarities list in DB if available
+    if db and pokemon and getattr(pokemon, "rarity", None):
+        try:
+            custom_rarities = await get_all_custom_rarities(db)
+            for r_name in custom_rarities.keys():
+                rn_lower = str(r_name).lower()
+                if any(k in rn_lower for k in keywords):
+                    if str(pokemon.rarity).lower() == rn_lower:
+                        return True
+        except Exception:
+            pass
+
+    return False
+

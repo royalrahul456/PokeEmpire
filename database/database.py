@@ -176,6 +176,7 @@ async def init_db():
             "ALTER TABLE user_pokemon ADD COLUMN IF NOT EXISTS form_index INTEGER DEFAULT 0;",
             "ALTER TABLE user_pokemon ADD COLUMN IF NOT EXISTS serial_number VARCHAR(20);",
             "ALTER TABLE redeem_codes ADD COLUMN IF NOT EXISTS reward_form_index INTEGER DEFAULT 0;",
+            "ALTER TABLE guilds ADD COLUMN IF NOT EXISTS flag VARCHAR(255) DEFAULT '🛡️';",
             # Pokédex vault items table
             """CREATE TABLE IF NOT EXISTS pokedex_items (
                 id BIGSERIAL PRIMARY KEY,
@@ -276,6 +277,8 @@ async def init_db():
                     try: await conn.execute(text(f"ALTER TABLE user_pokemon ADD COLUMN {col} {col_type}"))
                     except Exception: pass
                 try: await conn.execute(text("ALTER TABLE redeem_codes ADD COLUMN reward_form_index INTEGER DEFAULT 0"))
+                except Exception: pass
+                try: await conn.execute(text("ALTER TABLE guilds ADD COLUMN flag VARCHAR(255) DEFAULT '🛡️'"))
                 except Exception: pass
         except Exception as ex:
             safe_print(f"Schema migration check completed: {ex}")

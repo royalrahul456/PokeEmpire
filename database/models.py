@@ -228,6 +228,7 @@ class Guild(Base):
     owner_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     treasury = Column(Integer, default=0, nullable=False)
     level = Column(Integer, default=1, nullable=False)
+    flag = Column(String(255), default="🛡️", nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)
 
     owner = relationship("User", foreign_keys=[owner_id])

@@ -1215,10 +1215,22 @@ async def cmd_profile(message: Message, db: AsyncSession):
         from utils.vip import is_user_vip
         vip_tag = " [👑 VIP]" if is_user_vip(user_db) else ""
 
+        # Guild info & animated flag
+        from database.models import Guild, GuildMember
+        from utils.guild_flags import format_guild_flag
+        gm_stmt = select(Guild).join(GuildMember, GuildMember.guild_id == Guild.id).where(GuildMember.user_id == user_id)
+        gm_res = await db.execute(gm_stmt)
+        user_guild = gm_res.scalar_one_or_none()
+        guild_line = ""
+        if user_guild:
+            u_flag = format_guild_flag(getattr(user_guild, "flag", "🛡️"))
+            guild_line = f"├─➩ 🏰 Guild: {u_flag} <b>{html.escape(user_guild.name)}</b> [{html.escape(user_guild.tag)}]\n"
+
         profile_card = (
             f"╭──「 🏆 Trainer Profile 」\n"
             f"├─➩ 🏓 User: {html.escape(user_nickname)}{vip_tag}\n"
             f"├─➩ 🆔 ID: <code>{user_db.id}</code>\n"
+            f"{guild_line}"
             f"├─➩ 🎖️ Level: <code>Lv. {lvl} ({title})</code>\n"
             f"├─➩ ⚡ EXP: [{xp_bar}] {xp_pct}% (<code>{xp:,}/{req_xp:,}</code>)\n"
             f"├─➩ 💰 Balance: <code>{formatted_coins} coins</code> | 💎 <code>{gems:,} gems</code>\n"

@@ -33,7 +33,18 @@ def create_styled_button(
 def get_start_welcome_keyboard(bot_username: str) -> InlineKeyboardMarkup:
     """Generates primary start welcome keyboard."""
     builder = InlineKeyboardBuilder()
-    
+
+    # WebApp Mini App Row (Full Width)
+    miniapp_url = getattr(config, "WEBAPP_URL", "")
+    if miniapp_url:
+        builder.row(
+            create_styled_button(
+                text="⚡ Open PokéEmpire App",
+                key="miniapp",
+                web_app=WebAppInfo(url=miniapp_url)
+            )
+        )
+
     # Row 1 (Full Width): Add to Group
     builder.row(
         create_styled_button(
@@ -74,6 +85,17 @@ def get_start_welcome_keyboard(bot_username: str) -> InlineKeyboardMarkup:
 def get_dm_menu_keyboard() -> InlineKeyboardMarkup:
     """Generates the primary Hub menu keyboard for DMs."""
     builder = InlineKeyboardBuilder()
+
+    miniapp_url = getattr(config, "WEBAPP_URL", "")
+    if miniapp_url:
+        builder.row(
+            create_styled_button(
+                text="⚡ Open PokéEmpire App",
+                key="miniapp",
+                web_app=WebAppInfo(url=miniapp_url)
+            )
+        )
+
     builder.row(
         create_styled_button(text="👤 Profile", key="profile", callback_data="dm_profile"),
         create_styled_button(text="📖 Pokédex", key="pokedex", callback_data="dm_dex_1")

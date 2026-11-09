@@ -1,4 +1,5 @@
 import html
+from typing import Optional, Tuple
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
@@ -8,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import User, Guild, GuildMember
 from utils.trainer_level import log_transaction
+from utils.guild_flags import format_guild_flag, get_all_guild_flags, register_guild_flag, PRESET_GUILD_FLAGS
 import config
 
 router = Router()
@@ -17,6 +19,70 @@ async def get_user_guild_data(user_id: int, db: AsyncSession):
     stmt = select(GuildMember, Guild).join(Guild, GuildMember.guild_id == Guild.id).where(GuildMember.user_id == user_id)
     res = await db.execute(stmt)
     return res.first() or (None, None)
+
+
+def extract_custom_emoji_or_flag(message: Message, param: str = "") -> Tuple[Optional[str], str]:
+    """
+    Extracts a custom emoji tag or returns the flag string from message/reply.
+    Returns (flag_formatted, description) or (None, error_msg).
+    """
+    # 1. Check for custom_emoji entities in message itself
+    entities = message.entities or message.caption_entities or []
+    for ent in entities:
+        if ent.type == "custom_emoji" and ent.custom_emoji_id:
+            txt = message.text or message.caption or "🛡️"
+            char = txt[ent.offset:ent.offset + ent.length] if ent.offset is not None else "🛡️"
+            return f'<tg-emoji emoji-id="{ent.custom_emoji_id}">{char}</tg-emoji>', f"Custom Animated Emoji ({ent.custom_emoji_id})"
+
+    # 2. Check reply_to_message if user replied to an animated emoji
+    if message.reply_to_message:
+        rep_entities = message.reply_to_message.entities or message.reply_to_message.caption_entities or []
+        for ent in rep_entities:
+            if ent.type == "custom_emoji" and ent.custom_emoji_id:
+                txt = message.reply_to_message.text or message.reply_to_message.caption or "🛡️"
+                char = txt[ent.offset:ent.offset + ent.length] if ent.offset is not None else "🛡️"
+                return f'<tg-emoji emoji-id="{ent.custom_emoji_id}">{char}</tg-emoji>', f"Custom Animated Emoji ({ent.custom_emoji_id})"
+
+    param = param.strip()
+    if not param:
+        return None, "No flag specified."
+
+    # 3. Check if param is already HTML tag
+    if "<tg-emoji" in param:
+        return param, "Custom Animated Tag"
+
+    # 4. Check if param is numeric custom emoji ID
+    if param.isdigit():
+        return f'<tg-emoji emoji-id="{param}">🛡️</tg-emoji>', f"Custom Emoji ID ({param})"
+
+    # 5. Check if matches preset
+    low_param = param.lower()
+    if low_param in PRESET_GUILD_FLAGS:
+        preset = PRESET_GUILD_FLAGS[low_param]
+        return preset.get("tag", preset.get("fallback", "🛡️")), preset.get("name", "Preset Flag")
+
+    # 6. Plain emoji/text
+    return param[:30], "Custom Guild Flag"
+
+
+async def build_flag_picker_keyboard(db: AsyncSession, is_leader: bool = True):
+    """Builds an interactive keyboard of available flags."""
+    flags = await get_all_guild_flags(db)
+    builder = InlineKeyboardBuilder()
+    row = []
+    for k, v in flags.items():
+        icon = v.get("fallback", "🛡️")
+        name = v.get("name", k)
+        btn_text = f"{icon} {name[:12]}"
+        row.append(InlineKeyboardButton(text=btn_text, callback_data=f"gflag_set:{k}"))
+        if len(row) == 2:
+            builder.row(*row)
+            row = []
+    if row:
+        builder.row(*row)
+    builder.row(InlineKeyboardButton(text="🔙 Back to Guild Profile", callback_data="gflag_back"))
+    return builder.as_markup()
+
 
 @router.message(Command("guild", "clan", ignore_mention=True))
 async def cmd_guild(message: Message, db: AsyncSession):
@@ -34,6 +100,8 @@ async def cmd_guild(message: Message, db: AsyncSession):
                 f"💡 <b>Guild Commands</b>:\n"
                 f"👉 <code>/guild create &lt;name&gt;</code> — Found a new Guild (500k coins)\n"
                 f"👉 <code>/guild join &lt;name&gt;</code> — Join an existing Guild\n"
+                f"👉 <code>/guild flag</code> — Choose or view Guild Animated Flags\n"
+                f"👉 <code>/guild setflag &lt;emoji&gt;</code> — Set custom/animated flag\n"
                 f"👉 <code>/guild deposit &lt;amount&gt;</code> — Donate coins to Treasury\n"
                 f"👉 <code>/guild withdraw &lt;amount&gt;</code> — Withdraw coins from Treasury (Leader only)\n"
                 f"👉 <code>/guild delete</code> — Disband/Delete your Guild (Owner only)\n"
@@ -55,16 +123,20 @@ async def cmd_guild(message: Message, db: AsyncSession):
         owner = owner_res.scalar_one_or_none()
         owner_name = html.escape(owner.nickname or owner.username or f"Trainer {owner.id}") if owner else "Unknown"
 
+        flag = format_guild_flag(getattr(guild, "flag", "🛡️"))
+
         leader_tip = (
-            f"👉 <i>Use <code>/guild withdraw &lt;amount&gt;</code> to withdraw from Treasury!</i>"
+            f"👉 <i>Use <code>/guild withdraw &lt;amount&gt;</code> to withdraw from Treasury!</i>\n"
+            f"👉 <i>Use <code>/guild flag</code> or <code>/guild setflag &lt;emoji&gt;</code> to change your Flag!</i>"
             if guild.owner_id == user_id
             else f"👉 <i>Use <code>/guild deposit &lt;amount&gt;</code> to donate to the Treasury!</i>"
         )
 
         text = (
-            f"🏰 <b>GUILD: {html.escape(guild.name).upper()} [{html.escape(guild.tag)}]</b> 🏰\n"
+            f"🏰 {flag} <b>GUILD: {html.escape(guild.name).upper()} [{html.escape(guild.tag)}]</b> {flag} 🏰\n"
             f"◈ ────────────────── ◈\n"
             f"👑 <b>Leader:</b> {owner_name}\n"
+            f"🚩 <b>Guild Flag:</b> {flag}\n"
             f"👥 <b>Members:</b> <code>{total_members} members</code>\n"
             f"💎 <b>Guild Level:</b> <code>Lv. {guild.level}</code>\n"
             f"🏛️ <b>Guild Treasury:</b> <code>💰 {guild.treasury:,} coins</code>\n"
@@ -72,7 +144,12 @@ async def cmd_guild(message: Message, db: AsyncSession):
             f"◈ ────────────────── ◈\n"
             f"{leader_tip}"
         )
-        await message.answer(text, parse_mode="HTML")
+        builder = InlineKeyboardBuilder()
+        if guild.owner_id == user_id or user_id in getattr(config, "ADMIN_IDS", []):
+            builder.row(InlineKeyboardButton(text="🚩 Change Guild Flag", callback_data="gflag_menu"))
+            await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        else:
+            await message.answer(text, parse_mode="HTML")
         return
 
     sub = parts[1].lower()
@@ -118,7 +195,8 @@ async def cmd_guild(message: Message, db: AsyncSession):
             tag=tag,
             owner_id=user_id,
             treasury=0,
-            level=1
+            level=1,
+            flag="🛡️"
         )
         db.add(new_guild)
         await db.flush()
@@ -131,7 +209,113 @@ async def cmd_guild(message: Message, db: AsyncSession):
         db.add(gm)
         await db.commit()
 
-        await message.answer(f"🎉 <b>Guild Created Successfully!</b>\n\n🏰 Welcome to <b>{html.escape(guild_name)}</b>!", parse_mode="HTML")
+        await message.answer(
+            f"🎉 <b>Guild Created Successfully!</b>\n\n"
+            f"🏰 Welcome to 🛡️ <b>{html.escape(guild_name)}</b> [{tag}]!\n"
+            f"👉 <i>Use <code>/guild flag</code> to choose an animated flag or banner for your Guild!</i>",
+            parse_mode="HTML"
+        )
+
+    elif sub in ["flag", "flags"]:
+        member, guild = await get_user_guild_data(user_id, db)
+        if not guild:
+            await message.answer("❌ You are not in any Guild!", parse_mode="HTML")
+            return
+
+        curr_flag = format_guild_flag(getattr(guild, "flag", "🛡️"))
+        text = (
+            f"🚩 <b>GUILD FLAG SELECTION</b> 🚩\n"
+            f"◈ ────────────────── ◈\n"
+            f"🏰 Guild: <b>{html.escape(guild.name)}</b> [{guild.tag}]\n"
+            f"🏳️ Current Flag: {curr_flag}\n"
+            f"◈ ────────────────── ◈\n"
+            f"✨ <i>Choose a flag from the options below, or set any custom animated emoji:</i>\n\n"
+            f"💡 <b>To use custom animated emojis:</b>\n"
+            f"• Send <code>/guild setflag &lt;emoji&gt;</code>\n"
+            f"• Or reply to any animated emoji with <code>/guild setflag</code>!"
+        )
+        markup = await build_flag_picker_keyboard(db, is_leader=(guild.owner_id == user_id))
+        await message.answer(text, reply_markup=markup, parse_mode="HTML")
+
+    elif sub in ["setflag", "changeflag"]:
+        member, guild = await get_user_guild_data(user_id, db)
+        if not guild:
+            await message.answer("❌ You are not in any Guild!", parse_mode="HTML")
+            return
+
+        if guild.owner_id != user_id and user_id not in getattr(config, "ADMIN_IDS", []):
+            await message.answer("❌ Only the Guild Leader can change the Guild Flag!", parse_mode="HTML")
+            return
+
+        param = parts[2] if len(parts) >= 3 else ""
+        flag_val, desc = extract_custom_emoji_or_flag(message, param)
+
+        if not flag_val:
+            await message.answer(
+                "⚠️ <b>How to set a Guild Flag:</b>\n\n"
+                "1️⃣ <b>Preset Flag:</b> <code>/guild setflag &lt;flag_name&gt;</code> (e.g. <code>strawhat</code>, <code>phoenix</code>, <code>samurai</code>, <code>dragon</code>)\n"
+                "2️⃣ <b>Custom Animated Emoji:</b> Send <code>/guild setflag 🏴‍☠️</code> with your premium/custom emoji, or reply to an animated emoji with <code>/guild setflag</code>!\n"
+                "3️⃣ <b>Flag Picker:</b> Use <code>/guild flag</code> to browse interactive catalog.",
+                parse_mode="HTML"
+            )
+            return
+
+        guild.flag = flag_val
+        await db.commit()
+
+        display_flag = format_guild_flag(flag_val)
+        await message.answer(
+            f"🎉 <b>Guild Flag Updated Successfully!</b>\n"
+            f"◈ ────────────────── ◈\n"
+            f"🏰 Guild: <b>{html.escape(guild.name)}</b> [{guild.tag}]\n"
+            f"🚩 New Flag: {display_flag}\n"
+            f"◈ ────────────────── ◈\n"
+            f"Your new flag will now proudly fly in <code>/guild</code>, <code>/guildlb</code>, and trainer profiles!",
+            parse_mode="HTML"
+        )
+
+    elif sub == "addflag":
+        # Owner/Admin only: register new animated flag into global catalog
+        if user_id not in getattr(config, "ADMIN_IDS", []):
+            await message.answer("❌ Owner/Admin only command.")
+            return
+
+        # Format: /guild addflag <key> <name>
+        if len(parts) < 3:
+            await message.answer(
+                "⚠️ Format: Reply to a custom animated emoji with:\n"
+                "<code>/guild addflag &lt;key&gt; &lt;Flag Title&gt;</code>\n"
+                "Example: <code>/guild addflag pirate Straw Hat Flag</code>",
+                parse_mode="HTML"
+            )
+            return
+
+        sub_args = parts[2].split(maxsplit=1)
+        flag_key = sub_args[0].lower().strip()
+        flag_name = sub_args[1].strip() if len(sub_args) > 1 else flag_key.title()
+
+        flag_val, _ = extract_custom_emoji_or_flag(message, "")
+        # Extract emoji_id from flag_val
+        import re
+        m = re.search(r'emoji-id="(\d+)"', flag_val or "")
+        if not m:
+            await message.answer("❌ Please reply to a message containing a Telegram custom animated emoji.")
+            return
+
+        emoji_id = m.group(1)
+        success = await register_guild_flag(flag_key, flag_name, emoji_id, "🛡️", db)
+        if success:
+            tag = f'<tg-emoji emoji-id="{emoji_id}">🛡️</tg-emoji>'
+            await message.answer(
+                f"✅ <b>New Guild Flag Registered!</b>\n\n"
+                f"• Key: <code>{flag_key}</code>\n"
+                f"• Name: <b>{html.escape(flag_name)}</b>\n"
+                f"• Preview: {tag}\n\n"
+                f"All Guild Leaders can now choose this flag from <code>/guild flag</code>!",
+                parse_mode="HTML"
+            )
+        else:
+            await message.answer("❌ Failed to save new flag to database.")
 
     elif sub == "join":
         if len(parts) < 3:
@@ -160,7 +344,8 @@ async def cmd_guild(message: Message, db: AsyncSession):
         db.add(gm)
         await db.commit()
 
-        await message.answer(f"🎉 <b>Joined Guild!</b> You are now a member of <b>{html.escape(guild.name)}</b>!", parse_mode="HTML")
+        flag = format_guild_flag(getattr(guild, "flag", "🛡️"))
+        await message.answer(f"🎉 <b>Joined Guild!</b> You are now a member of {flag} <b>{html.escape(guild.name)}</b>!", parse_mode="HTML")
 
     elif sub == "deposit":
         if len(parts) < 3 or not parts[2].isdigit():
@@ -195,9 +380,10 @@ async def cmd_guild(message: Message, db: AsyncSession):
         await log_transaction(user_id, -amount, "GUILD_DEPOSIT", f"Donated to Guild Treasury", db)
         await db.commit()
 
+        flag = format_guild_flag(getattr(guild, "flag", "🛡️"))
         await message.answer(
             f"🏛️ <b>Guild Deposit Successful!</b>\n\n"
-            f"You donated <b>💰 {amount:,} coins</b> to <b>{html.escape(guild.name)}</b> Treasury!\n"
+            f"You donated <b>💰 {amount:,} coins</b> to {flag} <b>{html.escape(guild.name)}</b> Treasury!\n"
             f"New Treasury Balance: <b>💰 {guild.treasury:,} coins</b> (Guild Level: {guild.level}).",
             parse_mode="HTML"
         )
@@ -243,11 +429,12 @@ async def cmd_guild(message: Message, db: AsyncSession):
         await db.commit()
 
         leader_name = user.nickname or user.username or message.from_user.first_name or "Trainer"
+        flag = format_guild_flag(getattr(guild, "flag", "🛡️"))
         await message.answer(
             f"🏛️ <b>Guild Treasury Withdrawal Successful!</b>\n"
             f"◈ ────────────────── ◈\n"
             f"👑 <b>Leader:</b> {html.escape(leader_name)}\n"
-            f"🏰 <b>Guild:</b> {html.escape(guild.name)}\n"
+            f"🏰 <b>Guild:</b> {flag} {html.escape(guild.name)}\n"
             f"💰 <b>Withdrawn:</b> <code>+{amount:,} coins</code>\n"
             f"🏛️ <b>Remaining Treasury:</b> <code>💰 {guild.treasury:,} coins</code>\n"
             f"👤 <b>Your New Balance:</b> <code>💰 {user.coins:,} coins</code>\n"
@@ -287,6 +474,179 @@ async def cmd_guild(message: Message, db: AsyncSession):
         await db.commit()
 
         await message.answer(f"🗑️ Guild <b>{html.escape(guild_name)}</b> has been successfully disbanded and deleted!", parse_mode="HTML")
+
+
+@router.message(Command("guildflag", "gflag", "setguildflag", ignore_mention=True))
+async def cmd_guild_flag_shortcut(message: Message, db: AsyncSession):
+    """Shortcut command to view or set guild flag directly."""
+    parts = message.text.split(maxsplit=1)
+    user_id = message.from_user.id
+
+    member, guild = await get_user_guild_data(user_id, db)
+    if not guild:
+        await message.answer("❌ You are not in any Guild!", parse_mode="HTML")
+        return
+
+    # If no argument and not replying to emoji: show picker
+    if len(parts) < 2 and not message.reply_to_message:
+        curr_flag = format_guild_flag(getattr(guild, "flag", "🛡️"))
+        text = (
+            f"🚩 <b>GUILD FLAG SELECTION</b> 🚩\n"
+            f"◈ ────────────────── ◈\n"
+            f"🏰 Guild: <b>{html.escape(guild.name)}</b> [{guild.tag}]\n"
+            f"🏳️ Current Flag: {curr_flag}\n"
+            f"◈ ────────────────── ◈\n"
+            f"✨ <i>Choose a flag below, or reply to any custom animated emoji with <code>/setguildflag</code>!</i>"
+        )
+        markup = await build_flag_picker_keyboard(db, is_leader=(guild.owner_id == user_id))
+        await message.answer(text, reply_markup=markup, parse_mode="HTML")
+        return
+
+    if guild.owner_id != user_id and user_id not in getattr(config, "ADMIN_IDS", []):
+        await message.answer("❌ Only the Guild Leader can change the Guild Flag!", parse_mode="HTML")
+        return
+
+    param = parts[1] if len(parts) >= 2 else ""
+    flag_val, desc = extract_custom_emoji_or_flag(message, param)
+
+    if not flag_val:
+        await message.answer("⚠️ Could not detect a valid flag or custom emoji.", parse_mode="HTML")
+        return
+
+    guild.flag = flag_val
+    await db.commit()
+
+    display_flag = format_guild_flag(flag_val)
+    await message.answer(
+        f"🎉 <b>Guild Flag Updated!</b>\n\n"
+        f"🏰 <b>{html.escape(guild.name)}</b> [{guild.tag}] is now flying the flag: {display_flag}",
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data == "gflag_menu")
+async def cb_guild_flag_menu(callback: CallbackQuery, db: AsyncSession):
+    """Opens flag picker from Guild profile button."""
+    user_id = callback.from_user.id
+    member, guild = await get_user_guild_data(user_id, db)
+    if not guild:
+        await callback.answer("You are not in a Guild!", show_alert=True)
+        return
+
+    curr_flag = format_guild_flag(getattr(guild, "flag", "🛡️"))
+    text = (
+        f"🚩 <b>SELECT GUILD FLAG</b> 🚩\n"
+        f"◈ ────────────────── ◈\n"
+        f"🏰 Guild: <b>{html.escape(guild.name)}</b> [{guild.tag}]\n"
+        f"🏳️ Current Flag: {curr_flag}\n"
+        f"◈ ────────────────── ◈\n"
+        f"Tap any flag below to apply it immediately!\n\n"
+        f"💡 <i>Or send <code>/guild setflag &lt;emoji&gt;</code> to use your own custom animated emoji!</i>"
+    )
+    markup = await build_flag_picker_keyboard(db, is_leader=(guild.owner_id == user_id))
+    try:
+        await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("gflag_set:"))
+async def cb_guild_flag_apply(callback: CallbackQuery, db: AsyncSession):
+    """Applies selected preset flag to the guild."""
+    user_id = callback.from_user.id
+    member, guild = await get_user_guild_data(user_id, db)
+    if not guild:
+        await callback.answer("You are not in a Guild!", show_alert=True)
+        return
+
+    if guild.owner_id != user_id and user_id not in getattr(config, "ADMIN_IDS", []):
+        await callback.answer("Only the Guild Leader can change the Flag!", show_alert=True)
+        return
+
+    flag_key = callback.data.split(":", 1)[1]
+    all_flags = await get_all_guild_flags(db)
+
+    if flag_key not in all_flags:
+        await callback.answer("Flag not found!", show_alert=True)
+        return
+
+    preset = all_flags[flag_key]
+    flag_val = preset.get("tag", preset.get("fallback", "🛡️"))
+    guild.flag = flag_val
+    await db.commit()
+
+    display_flag = format_guild_flag(flag_val)
+    await callback.answer(f"Flag set to {preset.get('name')}!", show_alert=False)
+
+    # Return to updated guild screen
+    mem_stmt = select(func.count(GuildMember.id)).where(GuildMember.guild_id == guild.id)
+    mem_res = await db.execute(mem_stmt)
+    total_members = mem_res.scalar() or 0
+
+    owner_stmt = select(User).where(User.id == guild.owner_id)
+    owner_res = await db.execute(owner_stmt)
+    owner = owner_res.scalar_one_or_none()
+    owner_name = html.escape(owner.nickname or owner.username or f"Trainer {owner.id}") if owner else "Unknown"
+
+    text = (
+        f"🏰 {display_flag} <b>GUILD: {html.escape(guild.name).upper()} [{html.escape(guild.tag)}]</b> {display_flag} 🏰\n"
+        f"◈ ────────────────── ◈\n"
+        f"👑 <b>Leader:</b> {owner_name}\n"
+        f"🚩 <b>Guild Flag:</b> {display_flag}\n"
+        f"👥 <b>Members:</b> <code>{total_members} members</code>\n"
+        f"💎 <b>Guild Level:</b> <code>Lv. {guild.level}</code>\n"
+        f"🏛️ <b>Guild Treasury:</b> <code>💰 {guild.treasury:,} coins</code>\n"
+        f"⚡ <b>Guild Perks:</b> <code>+5% Shiny Chance | +10% Coin Earnings</code>\n"
+        f"◈ ────────────────── ◈\n"
+        f"🎉 <i>Guild Flag updated successfully!</i>"
+    )
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🚩 Change Flag Again", callback_data="gflag_menu"))
+    try:
+        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+
+
+@router.callback_query(F.data == "gflag_back")
+async def cb_guild_flag_back(callback: CallbackQuery, db: AsyncSession):
+    """Returns to Guild overview from flag menu."""
+    user_id = callback.from_user.id
+    member, guild = await get_user_guild_data(user_id, db)
+    if not guild:
+        await callback.answer()
+        return
+
+    mem_stmt = select(func.count(GuildMember.id)).where(GuildMember.guild_id == guild.id)
+    mem_res = await db.execute(mem_stmt)
+    total_members = mem_res.scalar() or 0
+
+    owner_stmt = select(User).where(User.id == guild.owner_id)
+    owner_res = await db.execute(owner_stmt)
+    owner = owner_res.scalar_one_or_none()
+    owner_name = html.escape(owner.nickname or owner.username or f"Trainer {owner.id}") if owner else "Unknown"
+    flag = format_guild_flag(getattr(guild, "flag", "🛡️"))
+
+    text = (
+        f"🏰 {flag} <b>GUILD: {html.escape(guild.name).upper()} [{html.escape(guild.tag)}]</b> {flag} 🏰\n"
+        f"◈ ────────────────── ◈\n"
+        f"👑 <b>Leader:</b> {owner_name}\n"
+        f"🚩 <b>Guild Flag:</b> {flag}\n"
+        f"👥 <b>Members:</b> <code>{total_members} members</code>\n"
+        f"💎 <b>Guild Level:</b> <code>Lv. {guild.level}</code>\n"
+        f"🏛️ <b>Guild Treasury:</b> <code>💰 {guild.treasury:,} coins</code>\n"
+        f"⚡ <b>Guild Perks:</b> <code>+5% Shiny Chance | +10% Coin Earnings</code>\n"
+        f"◈ ────────────────── ◈"
+    )
+    builder = InlineKeyboardBuilder()
+    if guild.owner_id == user_id or user_id in getattr(config, "ADMIN_IDS", []):
+        builder.row(InlineKeyboardButton(text="🚩 Change Guild Flag", callback_data="gflag_menu"))
+    try:
+        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    except Exception:
+        pass
+    await callback.answer()
 
 
 @router.message(Command("guildwithdraw", "gwithdraw", ignore_mention=True))
@@ -335,11 +695,12 @@ async def cmd_guild_withdraw_standalone(message: Message, db: AsyncSession):
     await db.commit()
 
     leader_name = user.nickname or user.username or message.from_user.first_name or "Trainer"
+    flag = format_guild_flag(getattr(guild, "flag", "🛡️"))
     await message.answer(
         f"🏛️ <b>Guild Treasury Withdrawal Successful!</b>\n"
         f"◈ ────────────────── ◈\n"
         f"👑 <b>Leader:</b> {html.escape(leader_name)}\n"
-        f"🏰 <b>Guild:</b> {html.escape(guild.name)}\n"
+        f"🏰 <b>Guild:</b> {flag} {html.escape(guild.name)}\n"
         f"💰 <b>Withdrawn:</b> <code>+{amount:,} coins</code>\n"
         f"🏛️ <b>Remaining Treasury:</b> <code>💰 {guild.treasury:,} coins</code>\n"
         f"👤 <b>Your New Balance:</b> <code>💰 {user.coins:,} coins</code>\n"
@@ -360,7 +721,8 @@ async def cmd_guild_lb(message: Message, db: AsyncSession):
 
     rows = []
     for idx, g in enumerate(guilds, start=1):
-        rows.append(f"✦ {idx}. 🏰 <b>{html.escape(g.name)}</b> • 💰 {g.treasury:,} coins (Lv. {g.level})")
+        flag = format_guild_flag(getattr(g, "flag", "🛡️"))
+        rows.append(f"✦ {idx}. {flag} <b>{html.escape(g.name)}</b> [{g.tag}] • 💰 {g.treasury:,} coins (Lv. {g.level})")
 
     ranks_body = "\n".join(rows)
 
@@ -391,6 +753,8 @@ async def cb_dm_guild_info(callback: CallbackQuery, db: AsyncSession):
             f"💡 <b>Guild Commands</b>:\n"
             f"👉 <code>/guild create &lt;name&gt;</code> — Found a new Guild (500k coins)\n"
             f"👉 <code>/guild join &lt;name&gt;</code> — Join an existing Guild\n"
+            f"👉 <code>/guild flag</code> — Choose or view Guild Animated Flags\n"
+            f"👉 <code>/guild setflag &lt;emoji&gt;</code> — Set custom/animated flag\n"
             f"👉 <code>/guild deposit &lt;amount&gt;</code> — Donate coins to Guild Treasury\n"
             f"👉 <code>/guild withdraw &lt;amount&gt;</code> — Withdraw coins from Treasury (Leader only)\n"
             f"👉 <code>/guild delete</code> — Disband/Delete your Guild (Owner only)\n"
@@ -409,16 +773,20 @@ async def cb_dm_guild_info(callback: CallbackQuery, db: AsyncSession):
         owner = owner_res.scalar_one_or_none()
         owner_name = html.escape(owner.nickname or owner.username or f"Trainer {owner.id}") if owner else "Unknown"
 
+        flag = format_guild_flag(getattr(guild, "flag", "🛡️"))
+
         leader_tip = (
-            f"👉 <i>Use <code>/guild withdraw &lt;amount&gt;</code> to withdraw from Treasury!</i>"
+            f"👉 <i>Use <code>/guild withdraw &lt;amount&gt;</code> to withdraw from Treasury!</i>\n"
+            f"👉 <i>Use <code>/guild flag</code> to change your Guild Flag!</i>"
             if guild.owner_id == user_id
             else f"👉 <i>Use <code>/guild deposit &lt;amount&gt;</code> to donate to the Treasury!</i>"
         )
 
         text = (
-            f"🏰 <b>GUILD: {html.escape(guild.name).upper()} [{html.escape(guild.tag)}]</b> 🏰\n"
+            f"🏰 {flag} <b>GUILD: {html.escape(guild.name).upper()} [{html.escape(guild.tag)}]</b> {flag} 🏰\n"
             f"◈ ────────────────── ◈\n"
             f"👑 <b>Leader:</b> {owner_name}\n"
+            f"🚩 <b>Guild Flag:</b> {flag}\n"
             f"👥 <b>Members:</b> <code>{total_members} members</code>\n"
             f"💎 <b>Guild Level:</b> <code>Lv. {guild.level}</code>\n"
             f"🏛️ <b>Guild Treasury:</b> <code>💰 {guild.treasury:,} coins</code>\n"
@@ -426,6 +794,8 @@ async def cb_dm_guild_info(callback: CallbackQuery, db: AsyncSession):
             f"◈ ────────────────── ◈\n"
             f"{leader_tip}"
         )
+        if guild.owner_id == user_id or user_id in getattr(config, "ADMIN_IDS", []):
+            builder.row(InlineKeyboardButton(text="🚩 Change Guild Flag", callback_data="gflag_menu"))
 
     try:
         await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")

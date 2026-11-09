@@ -229,6 +229,7 @@ class Guild(Base):
     treasury = Column(Integer, default=0, nullable=False)
     level = Column(Integer, default=1, nullable=False)
     flag = Column(String(255), default="🛡️", nullable=False)
+    flag_locked = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)
 
     owner = relationship("User", foreign_keys=[owner_id])

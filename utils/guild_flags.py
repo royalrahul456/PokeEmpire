@@ -188,3 +188,42 @@ async def register_guild_flag(key: str, name: str, emoji_id: str, fallback: str,
     except Exception as e:
         print(f"Error registering guild flag: {e}")
         return False
+
+async def auto_save_custom_flag_to_db(emoji_id: str, fallback: str, db, name: str = "") -> str:
+    """
+    Autosaves any detected animated custom emoji into GlobalSetting (DB) so it is
+    permanently cached in the database flag catalog.
+    """
+    import json
+    try:
+        stmt = select(GlobalSetting).where(GlobalSetting.key == "guild_custom_flags")
+        res = await db.execute(stmt)
+        record = res.scalar_one_or_none()
+        current_data = {}
+        if record and record.value:
+            try:
+                current_data = json.loads(record.value)
+            except Exception:
+                current_data = {}
+
+        key = f"flag_{emoji_id}"
+        if not name:
+            name = f"Custom Flag {emoji_id[-4:]}"
+
+        tag = f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
+        if key not in current_data:
+            current_data[key] = {
+                "name": name,
+                "fallback": fallback,
+                "tag": tag,
+                "emoji_id": emoji_id
+            }
+            if record:
+                record.value = json.dumps(current_data)
+            else:
+                db.add(GlobalSetting(key="guild_custom_flags", value=json.dumps(current_data)))
+            await db.commit()
+        return tag
+    except Exception as e:
+        print(f"Error autosaving flag to db: {e}")
+        return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'

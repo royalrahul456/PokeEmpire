@@ -1101,7 +1101,8 @@ async def cb_owner_tools(callback: CallbackQuery):
         f"<b>👑 Admin Management</b>\n"
         f"• <code>/makeadmin @user</code> — Grant admin\n"
         f"• <code>/removeadmin @user</code> — Revoke admin\n"
-        f"• <code>/adminlist</code> — List all admins"
+        f"• <code>/adminlist</code> — List all admins\n"
+        f"• <code>/transferguild &lt;guild&gt; @user</code> — Transfer Guild ownership\n"
     )
     builder = InlineKeyboardBuilder()
     builder.row(

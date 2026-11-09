@@ -200,6 +200,7 @@ async def register_bot_commands(bot: Bot):
         BotCommand(command="app", description="⚡ Open PokeEmpire Mini App"),
         BotCommand(command="quests", description="⚔️ View Daily & Weekly Bounties"),
         BotCommand(command="guild", description="🏰 Manage Trainer Guild & Clan"),
+        BotCommand(command="transferguild", description="👑 Transfer Guild Ownership (Owner/Admin)"),
         BotCommand(command="transactions", description="💳 View coin transaction history"),
         BotCommand(command="events", description="📅 View Event Calendar & Schedule"),
         BotCommand(command="setevents", description="📅 Update Event Calendar (Admin only)"),

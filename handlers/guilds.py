@@ -421,6 +421,7 @@ async def cmd_guild(message: Message, db: AsyncSession):
                 f"👉 <code>/flagstore</code> — Browse & buy animated flags (100k coins)\n"
                 f"👉 <code>/guild deposit &lt;amount&gt;</code> — Donate coins to Treasury\n"
                 f"👉 <code>/guild withdraw &lt;amount&gt;</code> — Withdraw coins from Treasury (Leader only)\n"
+                f"👉 <code>/guild transfer &lt;name&gt; &lt;user&gt;</code> — Transfer Guild Ownership\n"
                 f"👉 <code>/guild delete</code> — Disband/Delete your Guild (Owner only)\n"
                 f"👉 <code>/guild leave</code> — Leave your current Guild\n"
                 f"👉 <code>/guildlb</code> — View top Guild Leaderboards\n"
@@ -804,7 +805,7 @@ async def cmd_guild(message: Message, db: AsyncSession):
             return
 
         if guild.owner_id == user_id:
-            await message.answer("❌ Guild Leaders cannot leave. Use <code>/guild delete</code> to disband the Guild.", parse_mode="HTML")
+            await message.answer("❌ Guild Leaders cannot leave. Use <code>/guild transfer &lt;user&gt;</code> to transfer ownership or <code>/guild delete</code> to disband the Guild.", parse_mode="HTML")
             return
 
         await db.delete(member)
@@ -828,6 +829,13 @@ async def cmd_guild(message: Message, db: AsyncSession):
         await db.commit()
 
         await message.answer(f"🗑️ Guild <b>{html.escape(guild_name)}</b> has been successfully disbanded and deleted!", parse_mode="HTML")
+
+    elif sub in ["transfer", "transferowner", "transferownership"]:
+        raw_cmd = message.text or message.caption or ""
+        match = re.search(r'\b(?:transfer|transferowner|transferownership)\b(.*)', raw_cmd, re.IGNORECASE | re.DOTALL)
+        cmd_args = match.group(1).strip() if match else ""
+        await handle_guild_transfer_flow(message, cmd_args, db)
+        return
 
 
 @router.callback_query(F.data == "gflag_back")
@@ -958,6 +966,320 @@ async def cmd_guild_lb(message: Message, db: AsyncSession):
     await message.answer(text, parse_mode="HTML")
 
 
+async def handle_guild_transfer_flow(message: Message, cmd_args: str, db: AsyncSession):
+    """
+    Handles transferring ownership of a Guild to a new user.
+    Can be executed by Bot Owners for ANY guild, or by Guild Leaders for their own Guild.
+    """
+    caller_id = message.from_user.id
+    is_bot_owner = bool(
+        caller_id in getattr(config, "OWNER_IDS", [])
+        or caller_id in getattr(config, "CO_OWNER_IDS", [])
+        or (getattr(config, "ADMIN_IDS", None) and caller_id in config.ADMIN_IDS)
+    )
+
+    # 1. Parse target user and guild name
+    target_tg_user = None
+    target_str = None
+    guild_str = None
+
+    # Check reply first
+    if message.reply_to_message and message.reply_to_message.from_user:
+        target_tg_user = message.reply_to_message.from_user
+        target_str = str(target_tg_user.id)
+        guild_str = cmd_args.strip() if cmd_args.strip() else None
+    else:
+        # Check text_mention entity in message
+        entities = message.entities or message.caption_entities or []
+        for ent in entities:
+            if ent.type == "text_mention" and ent.user:
+                target_tg_user = ent.user
+                target_str = str(target_tg_user.id)
+                full_text = message.text or message.caption or ""
+                mention_text = full_text[ent.offset:ent.offset + ent.length]
+                cleaned_args = cmd_args.replace(mention_text, "").strip()
+                guild_str = cleaned_args if cleaned_args else None
+                break
+
+        # If not text_mention and not reply, parse text tokens
+        if not target_str and cmd_args:
+            tokens = cmd_args.split()
+            if len(tokens) == 1:
+                # 1 token: could be target (@user or user_id) or guild name
+                if tokens[0].isdigit() or tokens[0].startswith("@"):
+                    target_str = tokens[0]
+                    guild_str = None
+                else:
+                    guild_str = tokens[0]
+                    target_str = None
+            elif len(tokens) >= 2:
+                # Check if last token is target (@user or user_id)
+                if tokens[-1].isdigit() or tokens[-1].startswith("@"):
+                    target_str = tokens[-1]
+                    guild_str = " ".join(tokens[:-1]).strip()
+                # Or if first token is target (@user or user_id)
+                elif tokens[0].isdigit() or tokens[0].startswith("@"):
+                    target_str = tokens[0]
+                    guild_str = " ".join(tokens[1:]).strip()
+                else:
+                    # Check if last token matches a known username in DB
+                    u_chk_stmt = select(User.id).where(func.lower(User.username) == tokens[-1].lower())
+                    u_chk = (await db.execute(u_chk_stmt)).scalar_one_or_none()
+                    if u_chk:
+                        target_str = tokens[-1]
+                        guild_str = " ".join(tokens[:-1]).strip()
+                    else:
+                        target_str = tokens[-1]
+                        guild_str = " ".join(tokens[:-1]).strip()
+
+    # 2. Resolve the Guild
+    guild = None
+    if guild_str:
+        clean_g = guild_str.strip('\'"')
+        # 1. Exact match by name
+        g_stmt = select(Guild).where(func.lower(Guild.name) == clean_g.lower())
+        guild = (await db.execute(g_stmt)).scalar_one_or_none()
+        # 2. Exact match by tag
+        if not guild:
+            g_stmt = select(Guild).where(func.lower(Guild.tag) == clean_g.lower())
+            guild = (await db.execute(g_stmt)).scalar_one_or_none()
+        # 3. Match by numeric ID
+        if not guild and clean_g.isdigit():
+            g_stmt = select(Guild).where(Guild.id == int(clean_g))
+            guild = (await db.execute(g_stmt)).scalar_one_or_none()
+        # 4. Partial match by name
+        if not guild:
+            g_stmt = select(Guild).where(Guild.name.ilike(f"%{clean_g}%"))
+            guild = (await db.execute(g_stmt)).scalar_one_or_none()
+
+        if not guild:
+            await message.answer(
+                f"❌ Guild '<b>{html.escape(guild_str)}</b>' not found.\n"
+                f"Please check the spelling of the Guild name or tag and try again.",
+                parse_mode="HTML"
+            )
+            return
+    else:
+        # No guild name provided; check if caller is in a guild
+        caller_member, caller_guild = await get_user_guild_data(caller_id, db)
+        if caller_guild:
+            guild = caller_guild
+        else:
+            await message.answer(
+                "⚠️ <b>Guild Transfer Command Usage:</b>\n"
+                "◈ ────────────────────────── ◈\n"
+                "👉 <code>/transferguild &lt;Guild Name&gt; &lt;@username/ID&gt;</code>\n"
+                "👉 Reply to a user's message: <code>/transferguild &lt;Guild Name&gt;</code>\n"
+                "👉 Or: <code>/guild transfer &lt;Guild Name&gt; &lt;@username/ID&gt;</code>\n"
+                "◈ ────────────────────────── ◈\n"
+                "👑 <i>Bot Owners can transfer any Guild. Guild Leaders can transfer their own Guild.</i>",
+                parse_mode="HTML"
+            )
+            return
+
+    # 3. Check authorization for this guild
+    if not is_bot_owner and guild.owner_id != caller_id:
+        await message.answer(
+            f"❌ Denied. Only Bot Owners or the Leader of <b>{html.escape(guild.name)}</b> can transfer its ownership.",
+            parse_mode="HTML"
+        )
+        return
+
+    # 4. Resolve Target User
+    target_id = None
+    target_name = None
+    target_username = None
+    is_bot = False
+
+    if target_tg_user:
+        target_id = target_tg_user.id
+        target_name = target_tg_user.first_name
+        target_username = target_tg_user.username
+        is_bot = getattr(target_tg_user, "is_bot", False)
+    elif target_str:
+        if target_str.isdigit():
+            target_id = int(target_str)
+            u_stmt = select(User).where(User.id == target_id)
+            u_res = await db.execute(u_stmt)
+            target_u = u_res.scalar_one_or_none()
+            if target_u:
+                target_name = target_u.nickname or target_u.username or f"Trainer {target_id}"
+                target_username = target_u.username
+            else:
+                try:
+                    chat = await message.bot.get_chat(target_id)
+                    target_name = chat.first_name
+                    target_username = chat.username
+                    is_bot = getattr(chat, "is_bot", False)
+                except Exception:
+                    target_name = f"Trainer {target_id}"
+                    target_username = None
+        else:
+            clean_u = target_str.lstrip("@").strip()
+            u_stmt = select(User).where(func.lower(User.username) == clean_u.lower())
+            u_res = await db.execute(u_stmt)
+            target_u = u_res.scalar_one_or_none()
+            if target_u:
+                target_id = target_u.id
+                target_name = target_u.nickname or target_u.username or f"Trainer {target_u.id}"
+                target_username = target_u.username
+            else:
+                await message.answer(
+                    f"❌ User <b>@{html.escape(clean_u)}</b> was not found in PokéEmpire.\n"
+                    f"They must register or start the bot before they can lead a Guild.",
+                    parse_mode="HTML"
+                )
+                return
+
+    if not target_id:
+        await message.answer(
+            "⚠️ <b>Please specify the target user to receive ownership:</b>\n\n"
+            f"👉 <code>/transferguild {html.escape(guild.name)} &lt;@username/ID&gt;</code>\n"
+            f"👉 Or reply to their message with: <code>/transferguild {html.escape(guild.name)}</code>",
+            parse_mode="HTML"
+        )
+        return
+
+    # 5. Target validations
+    if is_bot:
+        await message.answer("❌ You cannot transfer Guild ownership to a Telegram bot.", parse_mode="HTML")
+        return
+
+    if target_id == guild.owner_id:
+        await message.answer(
+            f"⚠️ <b>{html.escape(target_name or str(target_id))}</b> is already the Leader of <b>{html.escape(guild.name)}</b>!",
+            parse_mode="HTML"
+        )
+        return
+
+    # 6. Ensure target exists in User table
+    u_stmt = select(User).where(User.id == target_id)
+    u_res = await db.execute(u_stmt)
+    target_user_record = u_res.scalar_one_or_none()
+    if not target_user_record:
+        target_user_record = User(
+            id=target_id,
+            username=target_username,
+            nickname=target_name or f"Trainer {target_id}",
+            coins=500
+        )
+        db.add(target_user_record)
+        await db.flush()
+
+    # 7. Check if target user is in any guild
+    tgt_m_stmt = select(GuildMember, Guild).join(Guild, GuildMember.guild_id == Guild.id).where(GuildMember.user_id == target_id)
+    tgt_m_res = await db.execute(tgt_m_stmt)
+    tgt_membership = tgt_m_res.first()
+
+    old_guild_note = ""
+    if tgt_membership:
+        existing_tgt_member, existing_tgt_guild = tgt_membership
+        if existing_tgt_guild.id == guild.id:
+            # Target is already in this guild: promote to leader
+            existing_tgt_member.role = "leader"
+        else:
+            # Target is in another guild
+            if existing_tgt_guild.owner_id == target_id:
+                await message.answer(
+                    f"❌ Cannot transfer: Target user is already the Leader of another Guild (<b>{html.escape(existing_tgt_guild.name)}</b> [{existing_tgt_guild.tag}]).\n"
+                    f"They must transfer or disband that Guild before taking over a new one.",
+                    parse_mode="HTML"
+                )
+                return
+            old_guild_note = f"\nℹ️ <i>(Moved from previous Guild: {html.escape(existing_tgt_guild.name)})</i>"
+            await db.delete(existing_tgt_member)
+            await db.flush()
+            new_target_member = GuildMember(guild_id=guild.id, user_id=target_id, role="leader")
+            db.add(new_target_member)
+    else:
+        new_target_member = GuildMember(guild_id=guild.id, user_id=target_id, role="leader")
+        db.add(new_target_member)
+
+    # 8. Demote previous owner to member
+    old_owner_id = guild.owner_id
+    old_m_stmt = select(GuildMember).where(GuildMember.guild_id == guild.id, GuildMember.user_id == old_owner_id)
+    old_m_res = await db.execute(old_m_stmt)
+    old_member = old_m_res.scalar_one_or_none()
+    if old_member:
+        old_member.role = "member"
+    else:
+        db.add(GuildMember(guild_id=guild.id, user_id=old_owner_id, role="member"))
+
+    # 9. Update Guild owner_id
+    guild.owner_id = target_id
+    await db.commit()
+
+    # 10. Prepare success announcement
+    old_u_stmt = select(User).where(User.id == old_owner_id)
+    old_u_res = await db.execute(old_u_stmt)
+    old_u = old_u_res.scalar_one_or_none()
+    old_owner_name = html.escape(old_u.nickname or old_u.username or f"Trainer {old_owner_id}") if old_u else f"Trainer {old_owner_id}"
+
+    new_leader_name = html.escape(target_user_record.nickname or target_user_record.username or f"Trainer {target_id}")
+    caller_display = html.escape(message.from_user.first_name or message.from_user.username or "Admin")
+
+    if is_bot_owner:
+        auth_title = f"👑 <b>Bot Executive Admin</b> ({caller_display})"
+    else:
+        auth_title = f"👑 <b>Previous Leader</b> ({caller_display})"
+
+    flag = format_guild_flag(getattr(guild, "flag", "🛡️"))
+
+    success_text = (
+        f"👑 <b>GUILD OWNERSHIP TRANSFERRED!</b> 👑\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"🏰 <b>Guild:</b> {flag} <b>{html.escape(guild.name)}</b> [{html.escape(guild.tag)}]\n"
+        f"👤 <b>Previous Leader:</b> {old_owner_name}\n"
+        f"👑 <b>New Leader:</b> {new_leader_name} (<code>{target_id}</code>)\n"
+        f"🛡️ <b>Authorized By:</b> {auth_title}\n"
+        f"🏛️ <b>Guild Treasury:</b> <code>💰 {guild.treasury:,} coins</code>\n"
+        f"◈ ────────────────────────── ◈{old_guild_note}\n"
+        f"✨ <i>All Guild Leadership privileges, Treasury withdrawals, and Flag controls have been transferred to {new_leader_name}!</i>"
+    )
+    await message.answer(success_text, parse_mode="HTML")
+
+    # Send notifications in DM
+    try:
+        await message.bot.send_message(
+            chat_id=target_id,
+            text=(
+                f"👑 <b>Congratulations!</b>\n\n"
+                f"You have been appointed as the new <b>Leader</b> of Guild {flag} <b>{html.escape(guild.name)}</b> [{html.escape(guild.tag)}]!\n\n"
+                f"👉 Use <code>/guild</code> to manage your clan, check treasury balance, and view perks."
+            ),
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+
+    if old_owner_id != caller_id:
+        try:
+            await message.bot.send_message(
+                chat_id=old_owner_id,
+                text=(
+                    f"ℹ️ <b>Guild Notice:</b>\n\n"
+                    f"Leadership of Guild {flag} <b>{html.escape(guild.name)}</b> [{html.escape(guild.tag)}] "
+                    f"has been transferred to <b>{new_leader_name}</b> by {auth_title}."
+                ),
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+
+
+@router.message(Command("transferguild", "guildtransfer", "setguildowner", "transferclan", ignore_mention=True))
+async def cmd_transfer_guild_standalone(message: Message, db: AsyncSession):
+    """
+    Standalone command for transferring Guild ownership:
+    /transferguild <Guild Name> <@username/user_id>
+    Or reply to a user: /transferguild <Guild Name>
+    """
+    raw_cmd = message.text or message.caption or ""
+    parts = raw_cmd.split(maxsplit=1)
+    cmd_args = parts[1].strip() if len(parts) > 1 else ""
+    await handle_guild_transfer_flow(message, cmd_args, db)
+
+
 @router.callback_query(F.data == "dm_guild_info")
 async def cb_dm_guild_info(callback: CallbackQuery, db: AsyncSession):
     """Hub Menu callback handler for Guilds."""
@@ -978,6 +1300,7 @@ async def cb_dm_guild_info(callback: CallbackQuery, db: AsyncSession):
             f"👉 <code>/flagstore</code> — Browse & buy animated flags (100k coins)\n"
             f"👉 <code>/guild deposit &lt;amount&gt;</code> — Donate coins to Guild Treasury\n"
             f"👉 <code>/guild withdraw &lt;amount&gt;</code> — Withdraw coins from Treasury (Leader only)\n"
+            f"👉 <code>/guild transfer &lt;name&gt; &lt;user&gt;</code> — Transfer Guild Ownership\n"
             f"👉 <code>/guild delete</code> — Disband/Delete your Guild (Owner only)\n"
             f"👉 <code>/guild leave</code> — Leave your current Guild\n"
             f"👉 <code>/guildlb</code> — View top Guild Leaderboards\n"

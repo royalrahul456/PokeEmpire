@@ -1,277 +1,311 @@
-import imghdr
-import asyncio
-import logging
-import sys
-from aiogram import Bot, Dispatcher
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
-from aiogram.types import TelegramObject, Message
-from typing import Callable, Dict, Any, Awaitable
-
-if sys.platform == "win32":
-    try:
-        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
-    except Exception:
-        pass
-else:
-    try:
-        import uvloop
-        uvloop.install()
-    except Exception:
-        pass
-
-import config
-from database.database import init_db, SessionLocal
-from utils.anti_spam import AntiSpamMiddleware
-from utils.group_monitor import GroupActivityMiddleware
-from utils.command_prefix import CommandPrefixMiddleware
-
-# Import Game Handler Routers
-from handlers import (
-    games_start,
-    games,
-    xo,
-    mines
-)
-
-# Set up logging configuration
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - [GAMES_BOT] - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-logger = logging.getLogger("games_bot")
-
-class DbSessionMiddleware:
-    """aiogram Middleware that opens a SQLAlchemy async session for each update."""
-    async def __call__(
-        self,
-        handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
-        event: TelegramObject,
-        data: Dict[str, Any]
-    ) -> Any:
-        async with SessionLocal() as session:
-            data["db"] = session
-            try:
-                from utils.user_sync import sync_user_identity
-                await sync_user_identity(session, event)
-            except Exception as sync_err:
-                logger.warning(f"User sync error in games middleware: {sync_err}")
-            return await handler(event, data)
-
-def apply_auto_reply_patch():
-    """Monkey-patches Message.answer methods for group chats."""
-    original_answer = Message.answer
-    original_answer_photo = Message.answer_photo
-    original_answer_video = Message.answer_video
-    original_answer_animation = Message.answer_animation
-
-    async def patched_answer(self: Message, *args, **kwargs):
-        if self.chat.type != "private":
-            try:
-                return await self.reply(*args, **kwargs)
-            except Exception:
-                return await original_answer(self, *args, **kwargs)
-        return await original_answer(self, *args, **kwargs)
-
-    async def patched_answer_photo(self: Message, *args, **kwargs):
-        if self.chat.type != "private":
-            try:
-                return await self.reply_photo(*args, **kwargs)
-            except Exception:
-                return await original_answer_photo(self, *args, **kwargs)
-        return await original_answer_photo(self, *args, **kwargs)
-
-    async def patched_answer_video(self: Message, *args, **kwargs):
-        if self.chat.type != "private":
-            try:
-                return await self.reply_video(*args, **kwargs)
-            except Exception:
-                return await original_answer_video(self, *args, **kwargs)
-        return await original_answer_video(self, *args, **kwargs)
-
-    async def patched_answer_animation(self: Message, *args, **kwargs):
-        if self.chat.type != "private":
-            try:
-                return await self.reply_animation(*args, **kwargs)
-            except Exception:
-                return await original_answer_animation(self, *args, **kwargs)
-        return await original_answer_animation(self, *args, **kwargs)
-
-    Message.answer = patched_answer
-    Message.answer_photo = patched_answer_photo
-    Message.answer_video = patched_answer_video
-    Message.answer_animation = patched_answer_animation
-    logger.info("Applied auto-reply monkey patch for group chats.")
-
-async def register_games_bot_commands(bot: Bot):
-    from aiogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeAllPrivateChats, BotCommandScopeAllGroupChats, MenuButtonCommands
-    commands = [
-        BotCommand(command="start", description="🎮 Launch PokeArena Games Hub"),
-        BotCommand(command="games", description="🎰 Open Games Hub"),
-        BotCommand(command="balance", description="💰 Check your Coins & Gems"),
-        BotCommand(command="bal", description="💳 Wallet Quick Balance"),
-        BotCommand(command="streak", description="🔥 View Daily Catch Streak"),
-        BotCommand(command="whothat", description="👤 The Silhouette Trial"),
-        BotCommand(command="blitz", description="⚡ Type Matchup Blitz"),
-        BotCommand(command="voltorb", description="⚡ The Voltorb Lock (Num Guess)"),
-        BotCommand(command="mines", description="💣 Play Mines Game"),
-        BotCommand(command="ttc", description="❌ Play Tic-Tac-Toe PvP Duel"),
-        BotCommand(command="spin", description="🎡 Free Hourly Fortune Wheel"),
-        BotCommand(command="dice", description="🎲 Roll Dice Duel vs AI"),
-        BotCommand(command="darts", description="🎯 Darts Target Challenge"),
-        BotCommand(command="basketball", description="🏀 Basketball Free Throw"),
-        BotCommand(command="football", description="⚽ Football Penalty Shootout"),
-        BotCommand(command="bowling", description="🎳 Bowling Strike Alley"),
-        BotCommand(command="coinflip", description="🪙 Flip Coin 50/50"),
-        BotCommand(command="rps", description="✊ Play Rock Paper Scissors"),
-        BotCommand(command="scribble", description="✏️ Play Drawing & Guessing"),
-        BotCommand(command="nameguess", description="💡 Play Pokémon Name Quiz"),
-        BotCommand(command="abort", description="🛑 Abort active mini-game in chat"),
-        BotCommand(command="help", description="📖 How to Play Mini-Games"),
-    ]
-    try:
-        await bot.set_my_commands(commands, scope=BotCommandScopeDefault())
-        await bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats())
-        await bot.set_my_commands(commands, scope=BotCommandScopeAllGroupChats())
-        logger.info("Registered Telegram menu commands across all scopes for PokeArena.")
-    except Exception as e:
-        logger.warning(f"Failed to register Telegram menu commands: {e}")
-
-    try:
-        await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
-    except Exception:
-        pass
-
-async def main():
-    token = config.GAMES_BOT_TOKEN or config.BOT_TOKEN
-    if not token or token == "YOUR_BOT_TOKEN_HERE":
-        logger.error("GAMES_BOT_TOKEN (or BOT_TOKEN) is missing or not set in environment! Exiting.")
-        sys.exit(1)
-
-    logger.info("Starting PokeEmpire Games Bot engine...")
-
-    # Apply auto-reply patch
-    apply_auto_reply_patch()
-
-    # Initialize Database connection
-    logger.info("Initializing database connection...")
-    await init_db()
-    logger.info("Database initialized successfully.")
-
-    # Initialize sub-millisecond in-memory Pokemon Cache
-    logger.info("Initializing Pokemon cache...")
-    from utils.pokemon_cache import init_pokemon_cache
-    async with SessionLocal() as db:
-        await init_pokemon_cache(db)
-
-    # Load settings cache
-    logger.info("Loading settings cache...")
-    from utils.settings import load_all_settings_into_cache
-    await load_all_settings_into_cache()
-    logger.info("Settings cache loaded successfully.")
-
-    # Initialize Bot & Dispatcher
-    if config.TELEGRAM_PROXY:
-        from aiogram.client.session.aiohttp import AiohttpSession
-        session = AiohttpSession(proxy=config.TELEGRAM_PROXY)
-        bot = Bot(
-            token=token,
-            session=session,
-            default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
-        )
-    else:
-        bot = Bot(
-            token=token,
-            default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
-        )
-
-    # Apply custom premium emoji patch
-    from utils.emoji_patch import patch_bot_emojis
-    patch_bot_emojis(bot)
-
-    dp = Dispatcher()
-
-    @dp.error()
-    async def global_games_error_handler(event):
-        logger.error(f"⚠️ Games Bot unhandled error: {event.exception}", exc_info=True)
-        try:
-            update = getattr(event, "update", None)
-            if not update:
-                return
-            if getattr(update, "message", None) and getattr(update.message, "text", None):
-                text = update.message.text.strip()
-                prefixes = ("/", ".", "!", "pe ", "PE ", "Pe ")
-                if any(text.startswith(p) for p in prefixes):
-                    await update.message.reply(
-                        "⚠️ <i>Request failed due to high load. Please try again in a moment!</i>",
-                        parse_mode="HTML"
-                    )
-            elif getattr(update, "callback_query", None):
-                try:
-                    await update.callback_query.answer(
-                        "⚠️ Server is busy, please try again in a moment.",
-                        show_alert=True
-                    )
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-    # Register Middlewares
-    dp.message.outer_middleware(CommandPrefixMiddleware())
-    dp.message.outer_middleware(GroupActivityMiddleware())
-    dp.message.outer_middleware(AntiSpamMiddleware())
-    dp.callback_query.outer_middleware(AntiSpamMiddleware())
-    dp.message.middleware(DbSessionMiddleware())
-    dp.callback_query.middleware(DbSessionMiddleware())
-
-    # Register Game Handlers
-    dp.include_router(games_start.router)
-    dp.include_router(games.router)
-    dp.include_router(xo.router)
-    dp.include_router(mines.router)
-
-    logger.info("Games Bot handlers registered.")
-
-    # Register bot commands menu in Telegram
-    await register_games_bot_commands(bot)
-
-    # Fetch bot info to store main bot username if available
-    try:
-        bot_info = await bot.get_me()
-        logger.info(f"Games Bot active as @{bot_info.username}")
-    except Exception as e:
-        logger.warning(f"Could not fetch bot info: {e}")
-
-    # Start Polling Loop
-    ALLOWED_UPDATES = ["message", "edited_message", "callback_query", "chat_member", "my_chat_member", "inline_query"]
-    try:
-        retry_count = 0
-        while True:
-            try:
-                try:
-                    await bot.delete_webhook(drop_pending_updates=True)
-                except Exception as wh_err:
-                    logger.warning(f"Could not delete webhook: {wh_err}")
-                await dp.start_polling(bot, allowed_updates=ALLOWED_UPDATES)
-                break
-            except Exception as e:
-                retry_count += 1
-                logger.error(f"Games Bot connection failed (attempt {retry_count}): {e}")
-                logger.info("Retrying connection in 5 seconds...")
-                await asyncio.sleep(5)
-    finally:
-        try:
-            await bot.session.close()
-        except Exception:
-            pass
-
-if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("Games Bot stopped by user.")
+import imghdr
+import asyncio
+import logging
+import sys
+from aiogram import Bot, Dispatcher
+from aiogram.exceptions import TelegramAPIError, TelegramForbiddenError, TelegramRetryAfter
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
+from aiogram.types import TelegramObject, Message
+from typing import Callable, Dict, Any, Awaitable
+
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+else:
+    try:
+        import uvloop
+        uvloop.install()
+    except Exception:
+        pass
+
+import config
+from database.database import init_db, SessionLocal
+from utils.anti_spam import AntiSpamMiddleware
+from utils.group_monitor import GroupActivityMiddleware
+from utils.command_prefix import CommandPrefixMiddleware
+
+# Import Game Handler Routers
+from handlers import (
+    games_start,
+    games,
+    xo,
+    mines
+)
+
+# Set up logging configuration
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - [GAMES_BOT] - %(levelname)s - %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger("games_bot")
+
+class DbSessionMiddleware:
+    """aiogram Middleware that opens a SQLAlchemy async session for each update."""
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: Dict[str, Any]
+    ) -> Any:
+        async with SessionLocal() as session:
+            data["db"] = session
+            try:
+                from utils.user_sync import sync_user_identity
+                await sync_user_identity(session, event)
+            except Exception as sync_err:
+                logger.warning(f"User sync error in games middleware: {sync_err}")
+            return await handler(event, data)
+
+def apply_auto_reply_patch():
+    """Monkey-patches Message.answer methods for group chats."""
+    original_answer = Message.answer
+    original_answer_photo = Message.answer_photo
+    original_answer_video = Message.answer_video
+    original_answer_animation = Message.answer_animation
+
+    async def patched_answer(self: Message, *args, **kwargs):
+        if self.chat.type != "private":
+            try:
+                return await self.reply(*args, **kwargs)
+            except Exception:
+                return await original_answer(self, *args, **kwargs)
+        return await original_answer(self, *args, **kwargs)
+
+    async def patched_answer_photo(self: Message, *args, **kwargs):
+        if self.chat.type != "private":
+            try:
+                return await self.reply_photo(*args, **kwargs)
+            except Exception:
+                return await original_answer_photo(self, *args, **kwargs)
+        return await original_answer_photo(self, *args, **kwargs)
+
+    async def patched_answer_video(self: Message, *args, **kwargs):
+        if self.chat.type != "private":
+            try:
+                return await self.reply_video(*args, **kwargs)
+            except Exception:
+                return await original_answer_video(self, *args, **kwargs)
+        return await original_answer_video(self, *args, **kwargs)
+
+    async def patched_answer_animation(self: Message, *args, **kwargs):
+        if self.chat.type != "private":
+            try:
+                return await self.reply_animation(*args, **kwargs)
+            except Exception:
+                return await original_answer_animation(self, *args, **kwargs)
+        return await original_answer_animation(self, *args, **kwargs)
+
+    Message.answer = patched_answer
+    Message.answer_photo = patched_answer_photo
+    Message.answer_video = patched_answer_video
+    Message.answer_animation = patched_answer_animation
+    logger.info("Applied auto-reply monkey patch for group chats.")
+
+async def register_games_bot_commands(bot: Bot):
+    from aiogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeAllPrivateChats, BotCommandScopeAllGroupChats, MenuButtonCommands
+    commands = [
+        BotCommand(command="start", description="🎮 Launch PokeArena Games Hub"),
+        BotCommand(command="games", description="🎰 Open Games Hub"),
+        BotCommand(command="balance", description="💰 Check your Coins & Gems"),
+        BotCommand(command="bal", description="💳 Wallet Quick Balance"),
+        BotCommand(command="streak", description="🔥 View Daily Catch Streak"),
+        BotCommand(command="whothat", description="👤 The Silhouette Trial"),
+        BotCommand(command="blitz", description="⚡ Type Matchup Blitz"),
+        BotCommand(command="voltorb", description="⚡ The Voltorb Lock (Num Guess)"),
+        BotCommand(command="mines", description="💣 Play Mines Game"),
+        BotCommand(command="ttc", description="❌ Play Tic-Tac-Toe PvP Duel"),
+        BotCommand(command="spin", description="🎡 Free Hourly Fortune Wheel"),
+        BotCommand(command="dice", description="🎲 Roll Dice Duel vs AI"),
+        BotCommand(command="darts", description="🎯 Darts Target Challenge"),
+        BotCommand(command="basketball", description="🏀 Basketball Free Throw"),
+        BotCommand(command="football", description="⚽ Football Penalty Shootout"),
+        BotCommand(command="bowling", description="🎳 Bowling Strike Alley"),
+        BotCommand(command="coinflip", description="🪙 Flip Coin 50/50"),
+        BotCommand(command="rps", description="✊ Play Rock Paper Scissors"),
+        BotCommand(command="scribble", description="✏️ Play Drawing & Guessing"),
+        BotCommand(command="nameguess", description="💡 Play Pokémon Name Quiz"),
+        BotCommand(command="abort", description="🛑 Abort active mini-game in chat"),
+        BotCommand(command="help", description="📖 How to Play Mini-Games"),
+    ]
+    try:
+        await bot.set_my_commands(commands, scope=BotCommandScopeDefault())
+        await bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats())
+        await bot.set_my_commands(commands, scope=BotCommandScopeAllGroupChats())
+        logger.info("Registered Telegram menu commands across all scopes for PokeArena.")
+    except Exception as e:
+        logger.warning(f"Failed to register Telegram menu commands: {e}")
+
+    try:
+        await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+    except Exception:
+        pass
+
+async def main():
+    token = config.GAMES_BOT_TOKEN or config.BOT_TOKEN
+    if not token or token == "YOUR_BOT_TOKEN_HERE":
+        logger.error("GAMES_BOT_TOKEN (or BOT_TOKEN) is missing or not set in environment! Exiting.")
+        sys.exit(1)
+
+    logger.info("Starting PokeEmpire Games Bot engine...")
+
+    # Apply auto-reply patch
+    apply_auto_reply_patch()
+
+    # Initialize Database connection
+    logger.info("Initializing database connection...")
+    await init_db()
+    logger.info("Database initialized successfully.")
+
+    # Initialize sub-millisecond in-memory Pokemon Cache
+    logger.info("Initializing Pokemon cache...")
+    from utils.pokemon_cache import init_pokemon_cache
+    async with SessionLocal() as db:
+        await init_pokemon_cache(db)
+
+    # Load settings cache
+    logger.info("Loading settings cache...")
+    from utils.settings import load_all_settings_into_cache
+    await load_all_settings_into_cache()
+    logger.info("Settings cache loaded successfully.")
+
+    # Initialize Bot & Dispatcher
+    if config.TELEGRAM_PROXY:
+        from aiogram.client.session.aiohttp import AiohttpSession
+        session = AiohttpSession(proxy=config.TELEGRAM_PROXY)
+        bot = Bot(
+            token=token,
+            session=session,
+            default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
+        )
+    else:
+        bot = Bot(
+            token=token,
+            default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
+        )
+
+    # Apply custom premium emoji patch
+    from utils.emoji_patch import patch_bot_emojis
+    patch_bot_emojis(bot)
+
+    dp = Dispatcher()
+
+    @dp.error()
+    async def global_games_error_handler(event):
+        update = getattr(event, "update", None)
+        chat_id = None
+        user_id = None
+        cmd_text = None
+        if update:
+            msg = getattr(update, "message", None)
+            cb = getattr(update, "callback_query", None)
+            if msg:
+                chat_id = getattr(msg.chat, "id", None)
+                user_id = getattr(msg.from_user, "id", None) if msg.from_user else None
+                cmd_text = getattr(msg, "text", None) or getattr(msg, "caption", None)
+            elif cb:
+                chat_id = getattr(cb.message.chat, "id", None) if cb.message else None
+                user_id = getattr(cb.from_user, "id", None) if cb.from_user else None
+                cmd_text = getattr(cb, "data", None)
+
+        logger.error(
+            f"⚠️ Games Bot unhandled error [chat={chat_id}, user={user_id}, cmd='{cmd_text}']: {event.exception}",
+            exc_info=True
+        )
+
+        if isinstance(event.exception, (TelegramForbiddenError, TelegramRetryAfter)):
+            return
+
+        try:
+            if not update:
+                return
+            if getattr(update, "message", None) and getattr(update.message, "text", None):
+                text = update.message.text.strip()
+                prefixes = ("/", ".", "!", "pe ", "PE ", "Pe ")
+                if any(text.startswith(p) for p in prefixes):
+                    try:
+                        from utils.settings import send_safe_media
+                        await send_safe_media(
+                            bot=update.message.bot,
+                            chat_id=update.message.chat.id,
+                            media_type="photo",
+                            media_value=None,
+                            caption="⚠️ <i>Request failed due to high load. Please try again in a moment!</i>",
+                            reply_markup=None,
+                            parse_mode="HTML",
+                            message_to_reply=update.message,
+                            message_thread_id=getattr(update.message, "message_thread_id", None)
+                        )
+                    except Exception:
+                        pass
+            elif getattr(update, "callback_query", None):
+                try:
+                    await update.callback_query.answer(
+                        "⚠️ Server is busy, please try again in a moment.",
+                        show_alert=True
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    # Register Middlewares
+    dp.message.outer_middleware(CommandPrefixMiddleware())
+    dp.message.outer_middleware(GroupActivityMiddleware())
+    dp.message.outer_middleware(AntiSpamMiddleware())
+    dp.callback_query.outer_middleware(AntiSpamMiddleware())
+    dp.message.middleware(DbSessionMiddleware())
+    dp.callback_query.middleware(DbSessionMiddleware())
+
+    # Register Game Handlers
+    dp.include_router(games_start.router)
+    dp.include_router(games.router)
+    dp.include_router(xo.router)
+    dp.include_router(mines.router)
+
+    logger.info("Games Bot handlers registered.")
+
+    # Register bot commands menu in Telegram
+    await register_games_bot_commands(bot)
+
+    # Fetch bot info to store main bot username if available
+    try:
+        bot_info = await bot.get_me()
+        logger.info(f"Games Bot active as @{bot_info.username}")
+    except Exception as e:
+        logger.warning(f"Could not fetch bot info: {e}")
+
+    # Start Polling Loop
+    ALLOWED_UPDATES = ["message", "edited_message", "callback_query", "chat_member", "my_chat_member", "inline_query"]
+    try:
+        retry_count = 0
+        while True:
+            try:
+                try:
+                    await bot.delete_webhook(drop_pending_updates=True)
+                except Exception as wh_err:
+                    logger.warning(f"Could not delete webhook: {wh_err}")
+                await dp.start_polling(bot, allowed_updates=ALLOWED_UPDATES)
+                break
+            except Exception as e:
+                retry_count += 1
+                logger.error(f"Games Bot connection failed (attempt {retry_count}): {e}")
+                logger.info("Retrying connection in 5 seconds...")
+                await asyncio.sleep(5)
+    finally:
+        try:
+            await bot.session.close()
+        except Exception:
+            pass
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Games Bot stopped by user.")

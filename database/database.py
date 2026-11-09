@@ -23,9 +23,9 @@ if "postgresql" in DATABASE_URL or "cockroachdb" in DATABASE_URL:
         },
         pool_size=25,
         max_overflow=35,
-        pool_recycle=1800,
+        pool_recycle=300,
         pool_timeout=30,
-        pool_pre_ping=False
+        pool_pre_ping=True
     )
 else:
     engine = create_async_engine(

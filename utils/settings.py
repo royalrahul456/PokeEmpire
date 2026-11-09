@@ -7,7 +7,8 @@ from database.models import GroupSetting, GlobalSetting
 from typing import Any, Optional
 from aiogram import Bot
 from aiogram.types import FSInputFile, Message
-from aiogram.exceptions import TelegramBadRequest
+import asyncio
+from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter, TelegramAPIError
 
 # Settings & Media cache
 scribble_settings_cache = {}
@@ -441,6 +442,12 @@ async def send_safe_media(
     for mtype in attempts:
         try:
             return await _send_media(mtype, media_value, caption, reply_markup, reply_id)
+        except TelegramRetryAfter as e:
+            try:
+                await asyncio.sleep(min(float(e.retry_after), 2.0))
+                return await _send_media(mtype, media_value, caption, reply_markup, None)
+            except Exception:
+                continue
         except TelegramBadRequest as e:
             err_msg = str(e).lower()
             if any(r in err_msg for r in ["reply", "message to be replied"]):
@@ -492,9 +499,21 @@ async def send_safe_media(
             message_thread_id=thread_id
         )
     except Exception:
+        pass
+
+    # 6. Ultimate Fallback: Plain text stripped of HTML tags
+    try:
+        import re
+        plain_caption = re.sub(r'<[^>]*>', '', caption or "") if caption else ""
+        return await bot.send_message(
+            chat_id=chat_id,
+            text=plain_caption,
+            reply_markup=None,
+            parse_mode=None,
+            message_thread_id=thread_id
+        )
+    except Exception:
         return None
-
-
 async def send_cover_media(
     chat_id: int, 
     key: str, 

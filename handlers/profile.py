@@ -1,2954 +1,3004 @@
-import os
-import html
-import re
-from aiogram import Router, F
-from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.utils.keyboard import InlineKeyboardBuilder
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, distinct, desc, case
-from sqlalchemy.orm import joinedload
-from database.models import User, UserPokemon, Pokemon
-from utils.formatters import get_hp_bar, get_progress_bar, get_rarity_emoji, escape_md
-from utils.favorite import get_favorite_id, set_favorite_id
-from utils.settings import send_cover_media, get_custom_cover, get_custom_rarity_forms, get_all_custom_rarities, send_safe_media, is_pokemon_soulbound
-import config
-
-from keyboards.inline import create_styled_button, get_tx_pagination_keyboard, get_gift_confirm_keyboard
-
-router = Router()
-
-FORM_INDEX_MAP = {
-    "AMV": 1,
-    "Dmax": 2,
-    "Gmax": 3,
-    "Z-Move": 4,
-    "Terastal": 5,
-    "Shiny": 6,
-}
-
-FORM_LABELS = {
-    0: "Standard",
-    1: "AMV",
-    2: "Dmax",
-    3: "Gmax",
-    4: "Z-Move",
-    5: "Terastal",
-    6: "Shiny",
-}
-
-FORM_KEYWORD_MAP = {
-    "amv": 1,
-    "art": 1,
-    "custom art": 1,
-    "custom arts": 1,
-    "custom": 1,
-    "dmax": 2,
-    "dynamax": 2,
-    "gmax": 3,
-    "gigantamax": 3,
-    "zmove": 4,
-    "z-move": 4,
-    "terastal": 5,
-    "tera": 5,
-    "shiny": 6,
-    "s": 6,
-    "galar": 7,
-    "mega": 8,
-    "exclusive": 9,
-    "halloween": 10,
-}
-
-FORM_QUERY_PATTERN = re.compile(
-    r"^(.*?)[\.\s\-_]+(\d+|amv|art|custom\s+arts?|custom|dmax|dynamax|gmax|gigantamax|zmove|z-move|terastal|tera|shiny|galar|mega|exclusive|halloween)$",
-    re.IGNORECASE
-)
-
-def parse_check_query(raw_query: str) -> tuple[int | None, str | None, int]:
-    q = raw_query.strip().lower()
-    if q.isdigit():
-        return int(q), None, 0
-
-    m = FORM_QUERY_PATTERN.match(q)
-    if m:
-        base_part = m.group(1).strip()
-        form_part = m.group(2).strip().lower()
-        if form_part.isdigit():
-            form_idx = int(form_part)
-        else:
-            norm_form = " ".join(form_part.split())
-            form_idx = FORM_KEYWORD_MAP.get(norm_form, 0)
-
-        if base_part.isdigit():
-            return int(base_part), None, form_idx
-        elif base_part:
-            return None, base_part, form_idx
-
-    return None, q, 0
-
-def parse_form_filter(form_str: str) -> int | None:
-    form_str = form_str.strip().lower()
-    if form_str.isdigit():
-        return int(form_str)
-    return FORM_KEYWORD_MAP.get(form_str)
-
-
-FORM_FILTER_LABELS = {
-    "AMV": "AMV / Art",
-}
-
-
-def get_filter_display_label(rarity_filter: str) -> str:
-    return FORM_FILTER_LABELS.get(rarity_filter, rarity_filter)
-
-
-def get_media_type_from_value(media_value: str | None) -> str | None:
-    if not media_value:
-        return None
-    if media_value.startswith("photo:"):
-        return "photo"
-    if media_value.startswith("video:"):
-        return "video"
-    if media_value.startswith("animation:"):
-        return "animation"
-    if media_value.startswith("http") or media_value.startswith("AgAC"):
-        return "photo"
-    if media_value.startswith("BAAC"):
-        return "video"
-    return "photo"
-
-
-def get_form_label(form_index: int, media_value: str | None = None, custom_forms: dict = None) -> str:
-    if form_index == 1:
-        return "Art" if get_media_type_from_value(media_value) == "photo" else "AMV"
-    if form_index == 6:
-        if custom_forms and 6 in custom_forms:
-            return custom_forms[6][0]
-        return "Shiny"
-    if form_index in FORM_LABELS:
-        return FORM_LABELS[form_index]
-    if custom_forms and form_index in custom_forms:
-        r_name, _ = custom_forms[form_index]
-        return f"{r_name} Form"
-    return f"Form {form_index}"
-
-
-def parse_stored_media_value(media_value: str | None) -> tuple[str, str | None]:
-    if not media_value:
-        return "photo", None
-    if ":" in media_value:
-        media_type, clean_value = media_value.split(":", 1)
-        if media_type in {"photo", "video", "animation"}:
-            return media_type, clean_value
-    if media_value.startswith("http") or media_value.startswith("AgAC"):
-        return "photo", media_value
-    if media_value.startswith("BAAC"):
-        return "video", media_value
-    return "photo", media_value
-
-
-async def get_form_media_lookup(db: AsyncSession, pokemon_ids: list[int]) -> dict[tuple[int, int], str]:
-    if not pokemon_ids:
-        return {}
-
-    from database.models import PokemonFormMedia
-
-    stmt = select(
-        PokemonFormMedia.pokemon_id,
-        PokemonFormMedia.form_index,
-        PokemonFormMedia.media_value,
-    ).where(PokemonFormMedia.pokemon_id.in_(pokemon_ids))
-    res = await db.execute(stmt)
-    return {(pid, form_index): media_value for pid, form_index, media_value in res.all()}
-
-
-async def get_single_form_media_value(db: AsyncSession, pokemon_id: int, form_index: int) -> str | None:
-    if form_index <= 0:
-        return None
-
-    from database.models import PokemonFormMedia
-
-    stmt = select(PokemonFormMedia.media_value).where(
-        PokemonFormMedia.pokemon_id == pokemon_id,
-        PokemonFormMedia.form_index == form_index,
-    ).limit(1)
-    res = await db.execute(stmt)
-    return res.scalar_one_or_none()
-
-async def get_player_cover_media(user_id: int, db: AsyncSession) -> tuple[str, str]:
-    fav_val = await get_favorite_id(user_id, db)
-    media_type = None
-    media_value = None
-    
-    if fav_val:
-        pokemon_id = None
-        form_index = 0
-        if "." in fav_val:
-            pq, fq = fav_val.split(".", 1)
-            if pq.isdigit() and fq.isdigit():
-                pokemon_id = int(pq)
-                form_index = int(fq)
-        elif fav_val.isdigit():
-            pokemon_id = int(fav_val)
-            
-        if pokemon_id:
-            stmt = select(UserPokemon).where(
-                UserPokemon.pokemon_id == pokemon_id,
-                UserPokemon.user_id == user_id
-            ).limit(1)
-            res = await db.execute(stmt)
-            owned = res.scalar() is not None
-            
-            if owned:
-                poke_stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
-                poke_res = await db.execute(poke_stmt)
-                pokemon = poke_res.scalar_one_or_none()
-                
-                if pokemon:
-                    if form_index == 0:
-                        media_type = "photo"
-                        media_value = pokemon.image_url
-                    else:
-                        from database.models import PokemonFormMedia
-                        media_stmt = select(PokemonFormMedia.media_value).where(
-                            PokemonFormMedia.pokemon_id == pokemon_id,
-                            PokemonFormMedia.form_index == form_index
-                        ).limit(1)
-                        media_res = await db.execute(media_stmt)
-                        media_val_db = media_res.scalar()
-                        
-                        if media_val_db:
-                            if ":" in media_val_db:
-                                mtype, mval = media_val_db.split(":", 1)
-                                if mtype in ["photo", "video", "animation"]:
-                                    media_type = mtype
-                                    media_value = mval
-                            else:
-                                media_type = "video"
-                                media_value = media_val_db
-                                
-    if not media_value:
-        rand_stmt = select(UserPokemon).where(
-            UserPokemon.user_id == user_id
-        ).order_by(func.random()).limit(1)
-        rand_res = await db.execute(rand_stmt)
-        up = rand_res.scalar_one_or_none()
-        if up:
-            if up.form_index > 0:
-                from database.models import PokemonFormMedia
-                media_stmt = select(PokemonFormMedia.media_value).where(
-                    PokemonFormMedia.pokemon_id == up.pokemon_id,
-                    PokemonFormMedia.form_index == up.form_index
-                ).limit(1)
-                media_res = await db.execute(media_stmt)
-                media_val_db = media_res.scalar()
-                
-                if media_val_db:
-                    media_type, media_value = parse_stored_media_value(media_val_db)
-            
-            if not media_value:
-                poke_stmt = select(Pokemon).where(Pokemon.id == up.pokemon_id)
-                poke_res = await db.execute(poke_stmt)
-                poke_obj = poke_res.scalar_one_or_none()
-                if poke_obj:
-                    media_type = "photo"
-                    media_value = poke_obj.image_url
-                
-    if not media_value:
-        media_type, media_value = get_custom_cover("profile")
-        if not media_value:
-            media_type, media_value = get_custom_cover("pokedex")
-        
-    if not media_value:
-        media_type = "photo"
-        media_value = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/890.png"
-        
-    return media_type, media_value
-
-async def send_player_cover(chat_id: int, user_id: int, caption: str, reply_markup, bot, db: AsyncSession, message_to_reply=None):
-    media_type, media_value = await get_player_cover_media(user_id, db)
-    return await send_safe_media(
-        bot=bot,
-        chat_id=chat_id,
-        media_type=media_type,
-        media_value=media_value,
-        caption=caption,
-        reply_markup=reply_markup,
-        parse_mode="HTML",
-        message_to_reply=message_to_reply
-    )
-
-async def edit_player_cover_message(callback: CallbackQuery, user_id: int, caption: str, reply_markup, db: AsyncSession, parse_mode="HTML"):
-    media_type, media_value = await get_player_cover_media(user_id, db)
-    from aiogram.types import InputMediaPhoto, InputMediaVideo
-    try:
-        if media_type == "video":
-            new_media = InputMediaVideo(media=media_value, caption=caption, parse_mode=parse_mode)
-        else:
-            new_media = InputMediaPhoto(media=media_value, caption=caption, parse_mode=parse_mode)
-            
-        await callback.message.edit_media(media=new_media, reply_markup=reply_markup)
-    except Exception as e:
-        print(f"Error editing player cover media: {e}")
-        try:
-            await callback.message.edit_caption(caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
-        except Exception:
-            try:
-                await callback.message.edit_text(text=caption, reply_markup=reply_markup, parse_mode=parse_mode)
-            except Exception:
-                pass
-
-@router.message(Command("pokemon", ignore_mention=True))
-async def cmd_pokemon_list(message: Message):
-    await message.answer(
-        "🎒 <b>The Pokémon Bag is now integrated!</b>\n"
-        "All collections are managed directly via your Pokédex.\n\n"
-        "👉 Use <code>/pokedex</code> to view your collection checklist and progress!\n"
-        "👉 Use <code>/fav &lt;pokedex_id&gt;</code> to set a Pokédex cover favorite.",
-        parse_mode="HTML"
-    )
-
-async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter: str, db: AsyncSession):
-    from database.models import PokemonFormMedia
-    from sqlalchemy import or_
-
-    form_idx = FORM_INDEX_MAP.get(rarity_filter)
-    filter_label = get_filter_display_label(rarity_filter)
-
-    custom_forms = await get_custom_rarity_forms(db)
-    matched_custom_form_idx = None
-    for c_fidx, (c_name, _) in custom_forms.items():
-        if c_name.lower() == rarity_filter.lower() or f"form_{c_fidx}" == rarity_filter.lower():
-            matched_custom_form_idx = c_fidx
-            break
-
-    if form_idx is not None:
-        view_mode = "form"
-    elif matched_custom_form_idx is not None:
-        view_mode = "custom_form_or_rarity"
-    elif rarity_filter and rarity_filter != "All":
-        view_mode = "rarity"
-    else:
-        view_mode = "all"
-
-    # 1. Total Species in Database (read from in-memory cache if available)
-    from utils.pokemon_cache import get_all_cached_pokemon, get_cached_pokemon_by_id
-    cached_all = get_all_cached_pokemon()
-    if cached_all:
-        total_species = len(cached_all)
-    else:
-        total_species_stmt = select(func.count(Pokemon.id))
-        total_species_res = await db.execute(total_species_stmt)
-        total_species = total_species_res.scalar() or 0
-
-    # Resolve display name: custom admin pokedex_name takes priority, then user nickname/passed nickname
-    u_stmt = select(User).where(User.id == user_id)
-    u_res = await db.execute(u_stmt)
-    u_obj = u_res.scalar_one_or_none()
-    display_name = (u_obj.pokedex_name or u_obj.nickname or nickname) if u_obj else nickname
-
-    # 2. Get distinct entries caught by this user: (pokemon_id, form_index, total_caught, has_shiny)
-    if view_mode == "all":
-        stmt = (
-            select(
-                UserPokemon.pokemon_id,
-                UserPokemon.form_index,
-                func.count(UserPokemon.id).label("total_caught"),
-                func.max(case((UserPokemon.is_shiny == True, 1), else_=0)).label("has_shiny")
-            )
-            .where(UserPokemon.user_id == user_id)
-            .group_by(UserPokemon.pokemon_id, UserPokemon.form_index)
-            .order_by(UserPokemon.pokemon_id.asc(), UserPokemon.form_index.asc())
-        )
-        res = await db.execute(stmt)
-        all_raw_entries = res.all()
-    elif view_mode == "form":
-        stmt = (
-            select(
-                UserPokemon.pokemon_id,
-                UserPokemon.form_index,
-                func.count(UserPokemon.id).label("total_caught"),
-                func.max(case((UserPokemon.is_shiny == True, 1), else_=0)).label("has_shiny")
-            )
-            .where(UserPokemon.user_id == user_id, UserPokemon.form_index == form_idx)
-            .group_by(UserPokemon.pokemon_id, UserPokemon.form_index)
-            .order_by(UserPokemon.pokemon_id.asc(), UserPokemon.form_index.asc())
-        )
-        res = await db.execute(stmt)
-        all_raw_entries = res.all()
-    elif view_mode == "custom_form_or_rarity":
-        stmt = (
-            select(
-                UserPokemon.pokemon_id,
-                UserPokemon.form_index,
-                func.count(UserPokemon.id).label("total_caught"),
-                func.max(case((UserPokemon.is_shiny == True, 1), else_=0)).label("has_shiny")
-            )
-            .join(Pokemon, UserPokemon.pokemon_id == Pokemon.id)
-            .where(
-                UserPokemon.user_id == user_id,
-                or_(
-                    func.lower(Pokemon.rarity) == rarity_filter.lower(),
-                    UserPokemon.form_index == matched_custom_form_idx
-                )
-            )
-            .group_by(UserPokemon.pokemon_id, UserPokemon.form_index)
-            .order_by(UserPokemon.pokemon_id.asc(), UserPokemon.form_index.asc())
-        )
-        res = await db.execute(stmt)
-        all_raw_entries = res.all()
-    else:
-        stmt = (
-            select(
-                UserPokemon.pokemon_id,
-                UserPokemon.form_index,
-                func.count(UserPokemon.id).label("total_caught"),
-                func.max(case((UserPokemon.is_shiny == True, 1), else_=0)).label("has_shiny")
-            )
-            .join(Pokemon, UserPokemon.pokemon_id == Pokemon.id)
-            .where(UserPokemon.user_id == user_id, func.lower(Pokemon.rarity) == rarity_filter.lower())
-            .group_by(UserPokemon.pokemon_id, UserPokemon.form_index)
-            .order_by(UserPokemon.pokemon_id.asc(), UserPokemon.form_index.asc())
-        )
-        res = await db.execute(stmt)
-        all_raw_entries = res.all()
-
-    total_caught_distinct = len(all_raw_entries)
-
-    if total_caught_distinct == 0:
-        filter_str = f" ({html.escape(filter_label)})" if rarity_filter and rarity_filter != "All" else ""
-        text = (
-            f"📖 <b>{html.escape(display_name)}'s Pokédex</b>{filter_str}\n"
-            f"◈ ────────────────── ◈\n\n"
-            f"⚠️ <b>Your Pokédex is empty!</b>\n"
-            f"Catch wild Pokémon in group chats to register them in your Pokédex."
-        )
-        return text, 0, 0
-
-    per_page = 8
-    max_page = max(1, (total_caught_distinct + per_page - 1) // per_page)
-    page = max(1, min(page, max_page))
-    offset = (page - 1) * per_page
-    page_raw_entries = all_raw_entries[offset:offset + per_page]
-
-    # Fetch Pokemon metadata for current page from cache first
-    page_pokemon_ids = list({row[0] for row in page_raw_entries})
-    pokemon_dict = {}
-    missing_pids = []
-    for pid in page_pokemon_ids:
-        cached_p = get_cached_pokemon_by_id(pid)
-        if cached_p:
-            pokemon_dict[pid] = cached_p
-        else:
-            missing_pids.append(pid)
-    if missing_pids:
-        p_stmt = select(Pokemon).where(Pokemon.id.in_(missing_pids))
-        p_res = await db.execute(p_stmt)
-        for p in p_res.scalars().all():
-            pokemon_dict[p.id] = p
-
-    form_media_lookup = await get_form_media_lookup(db, page_pokemon_ids)
-
-    # Unique species caught for overall completion percentage
-    unique_species_caught = len({row[0] for row in all_raw_entries})
-    percent = int((unique_species_caught / total_species * 100)) if total_species > 0 else 0
-    bar = get_progress_bar(unique_species_caught, total_species, length=10)
-
-    filter_str = f" ({html.escape(filter_label)})" if rarity_filter and rarity_filter != "All" else ""
-    text = (
-        f"📖 <b>{html.escape(display_name)}'s Pokédex</b>{filter_str}\n"
-        f"◈ ────────────────── ◈\n"
-        f"📊 <b>Completion:</b> <code>{unique_species_caught}/{total_species}</code> species (<b>{percent}%</b>)\n"
-        f"<code>[{bar}]</code>\n"
-        f"📑 <b>Page:</b> <code>{page}/{max_page}</code> | <b>Entries:</b> <code>{total_caught_distinct}</code>\n"
-        f"◈ ────────────────── ◈\n\n"
-    )
-
-    current_gen = None
-    for pid, f_idx, caught_cnt, has_shiny in page_raw_entries:
-        pokemon = pokemon_dict.get(pid)
-        if not pokemon:
-            continue
-
-        if pokemon.generation != current_gen:
-            current_gen = pokemon.generation
-            text += f"🌟 <b>Generation {current_gen}</b>\n"
-
-        shiny_tag = " ✨" if has_shiny else ""
-        poke_name = html.escape(pokemon.name.title())
-
-        if f_idx == 0:
-            rarity_emoji = get_rarity_emoji(pokemon.rarity)
-            entry_label = html.escape(pokemon.rarity)
-            entry_id = f"#{pokemon.id:03d}"
-            text += f"✦ {rarity_emoji} <b>{entry_id} {poke_name}</b>{shiny_tag} [<code>{entry_label}</code>] ×{caught_cnt}\n"
-        else:
-            media_value = form_media_lookup.get((pokemon.id, f_idx))
-            form_label = get_form_label(f_idx, media_value, custom_forms)
-            rarity_emoji = get_rarity_emoji(pokemon.rarity)
-            entry_label = html.escape(form_label)
-            entry_id = f"#{pokemon.id:03d}.{f_idx}"
-            text += f"✦ 🔮 <b>{entry_id} {entry_label} {poke_name}</b>{shiny_tag} ×{caught_cnt}\n"
-
-    text += f"\n◈ ────────────────── ◈"
-    return text, page, max_page
-
-def get_pokedex_keyboard(user_id: int, page: int, max_page: int, rarity_filter: str) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    
-    # Row 1: Tab Switches
-    builder.row(
-        InlineKeyboardButton(text="📖 Collection", callback_data=f"pd_tab_{user_id}_col"),
-        InlineKeyboardButton(text="💟 AMV", callback_data=f"pd_tab_{user_id}_cov")
-    )
-    
-    # Row 2: Dynamic Pagination Buttons
-    if max_page > 1:
-        nav_row = []
-        if page > 1:
-            nav_row.append(InlineKeyboardButton(text="⬅️", callback_data=f"pd_page_{user_id}_{page-1}_{rarity_filter}"))
-        
-        nav_row.append(InlineKeyboardButton(text=f"{page}/{max_page}", callback_data="pd_page_info_noop"))
-        
-        if page < max_page:
-            nav_row.append(InlineKeyboardButton(text="➡️", callback_data=f"pd_page_{user_id}_{page+1}_{rarity_filter}"))
-            
-        builder.row(*nav_row)
-        
-    # Row 3: Filter by Rarity Button
-    builder.row(
-        InlineKeyboardButton(text="🔍 Filter by Rarity", callback_data=f"pd_rarity_{user_id}_{page}_{rarity_filter}")
-    )
-    
-    # Row 4: View Profile Button
-    builder.row(
-        InlineKeyboardButton(text="👤 View Profile", callback_data=f"profile_view_{user_id}")
-    )
-    
-    return builder.as_markup()
-
-async def get_rarity_filter_keyboard(user_id: int, current_page: int, current_filter: str, db: AsyncSession) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    
-    # 1. Standard Base Rarities
-    standard_rarities = [
-        ("Common", "⚪ Common"),
-        ("Uncommon", "🟢 Uncommon"),
-        ("Medium", "🔵 Medium"),
-        ("Rare", "🟣 Rare"),
-        ("Epic", "🔮 Epic"),
-        ("Legendary", "🌟 Legendary"),
-        ("Mythical", "🌌 Mythical"),
-    ]
-    
-    # 2. Standard Forms
-    standard_forms = [
-        ("AMV", "🎬 AMV / Art"),
-        ("Dmax", "⚡ Dmax"),
-        ("Gmax", "💥 Gmax"),
-        ("Z-Move", "🌀 Z-Move"),
-        ("Terastal", "🔮 Terastal"),
-    ]
-    
-    # Add standard base rarities (2 per row)
-    for i in range(0, len(standard_rarities), 2):
-        chunk = standard_rarities[i:i+2]
-        row = [InlineKeyboardButton(text=lbl, callback_data=f"pd_setfilter_{user_id}_{code}") for code, lbl in chunk]
-        builder.row(*row)
-        
-    # Add standard forms (2 per row)
-    for i in range(0, len(standard_forms), 2):
-        chunk = standard_forms[i:i+2]
-        row = [InlineKeyboardButton(text=lbl, callback_data=f"pd_setfilter_{user_id}_{code}") for code, lbl in chunk]
-        builder.row(*row)
-
-    # 3. Dynamic Custom Rarities from DB and GlobalSetting
-    known_codes = {c.lower() for c, _ in standard_rarities} | {c.lower() for c, _ in standard_forms}
-    custom_buttons = []
-    
-    # From custom_rarities setting in DB
-    try:
-        custom_rarities = await get_all_custom_rarities(db)
-        for r_name, r_emoji in custom_rarities.items():
-            if r_name and r_name.lower() not in known_codes:
-                known_codes.add(r_name.lower())
-                custom_buttons.append((r_name, f"{r_emoji} {r_name}"))
-    except Exception as e:
-        print(f"Error fetching custom rarities for pokedex filter: {e}")
-
-    # Also discover any distinct Pokemon.rarity in DB not already covered
-    try:
-        stmt = select(distinct(Pokemon.rarity)).where(Pokemon.rarity.isnot(None))
-        res = await db.execute(stmt)
-        db_rarities = res.scalars().all()
-        for r_name in db_rarities:
-            if r_name and r_name.lower() not in known_codes:
-                known_codes.add(r_name.lower())
-                emoji = get_rarity_emoji(r_name)
-                custom_buttons.append((r_name, f"{emoji} {r_name}"))
-    except Exception as e:
-        print(f"Error fetching distinct rarities for pokedex filter: {e}")
-
-    # Add custom rarity buttons (2 per row)
-    for i in range(0, len(custom_buttons), 2):
-        chunk = custom_buttons[i:i+2]
-        row = [InlineKeyboardButton(text=lbl, callback_data=f"pd_setfilter_{user_id}_{code}") for code, lbl in chunk]
-        builder.row(*row)
-
-    # Control row: All + Back
-    builder.row(
-        InlineKeyboardButton(text="🌍 All", callback_data=f"pd_setfilter_{user_id}_All"),
-        InlineKeyboardButton(text="🔙 Back", callback_data=f"pd_page_{user_id}_{current_page}_{current_filter}")
-    )
-    
-    return builder.as_markup()
-
-@router.message(Command("pokedex", "dexlist", ignore_mention=True))
-async def cmd_pokedex(message: Message, db: AsyncSession):
-    text = None
-    kb = None
-    try:
-        user = message.from_user
-        if not user:
-            user_id = message.sender_chat.id if message.sender_chat else 0
-            nickname = "Trainer"
-        else:
-            user_id = user.id
-            nickname = user.first_name or "Trainer"
-
-        if not user_id:
-            await message.answer("⚠️ Please send commands as a personal user account.")
-            return
-
-        parts = (message.text or "").split()
-        page = 1
-        if len(parts) > 1 and parts[1].isdigit():
-            page = int(parts[1])
-
-        u_stmt = select(User).where(User.id == user_id)
-        u_res = await db.execute(u_stmt)
-        user_db = u_res.scalar_one_or_none()
-        if not user_db:
-            user_db = User(
-                id=user_id,
-                username=user.username if user else None,
-                nickname=nickname,
-                coins=500
-            )
-            db.add(user_db)
-            await db.commit()
-
-        display_nickname = (user_db.pokedex_name or user_db.nickname) if (user_db and (user_db.pokedex_name or user_db.nickname)) else nickname
-
-        text, final_page, max_page = await get_pokedex_data(user_id, display_nickname, page, "All", db)
-        
-        if max_page == 0:
-            await message.answer(text, parse_mode="HTML")
-            return
-
-        kb = get_pokedex_keyboard(user_id, final_page, max_page, "All")
-        await send_player_cover(
-            chat_id=message.chat.id,
-            user_id=user_id,
-            caption=text,
-            reply_markup=kb,
-            bot=message.bot,
-            db=db,
-            message_to_reply=message
-        )
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        if text:
-            try:
-                await message.answer(text, reply_markup=kb, parse_mode="HTML")
-                return
-            except Exception:
-                try:
-                    await message.answer(text, reply_markup=None, parse_mode="HTML")
-                    return
-                except Exception:
-                    await message.answer(text, reply_markup=None, parse_mode=None)
-                    return
-        await message.answer("⚠️ Unable to load Pokédex at this moment. Please try again.")
-
-@router.callback_query(F.data == "pd_page_info_noop")
-async def cb_pd_page_info_noop(callback: CallbackQuery):
-    await callback.answer()
-
-@router.callback_query(F.data.startswith("pd_tab_"))
-async def cb_pokedex_tab(callback: CallbackQuery, db: AsyncSession):
-    parts = callback.data.split("_")
-    user_id = int(parts[2])
-    tab = parts[3]
-    
-    if callback.from_user.id != user_id:
-        await callback.answer("❌ This is not your Pokédex! Use /pokedex to view yours.", show_alert=True)
-        return
-        
-    if tab == "cov":
-        text = (
-            f"💟 <b>AMV Cover Favorite</b>\n"
-            f"───────────────\n\n"
-            f"Set your favorite Pokémon AMV / Art as the Pokédex cover illustration!\n\n"
-            f"👉 <b>How to set</b>: Type <code>/fav &lt;pokedex_id&gt;.&lt;form_index&gt;</code> in chat.\n"
-            f"<i>(e.g., <code>/fav 6.1</code> to set Charizard AMV as cover)</i>"
-        )
-        builder = InlineKeyboardBuilder()
-        builder.row(InlineKeyboardButton(text="🔙 Back to Collection", callback_data=f"pd_page_{user_id}_1_All"))
-        
-        try:
-            await callback.message.edit_caption(caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
-        except Exception:
-            try:
-                await callback.message.edit_text(text=text, reply_markup=builder.as_markup(), parse_mode="HTML")
-            except Exception:
-                pass
-        await callback.answer()
-    else:
-        u_stmt = select(User).where(User.id == user_id)
-        u_res = await db.execute(u_stmt)
-        user = u_res.scalar_one_or_none()
-        nickname = user.nickname if (user and user.nickname) else (callback.from_user.first_name or "Trainer")
-        
-        text, final_page, max_page = await get_pokedex_data(user_id, nickname, 1, "All", db)
-        kb = get_pokedex_keyboard(user_id, final_page, max_page, "All")
-        
-        await edit_player_cover_message(callback, user_id, text, kb, db, parse_mode="HTML")
-        await callback.answer()
-
-@router.callback_query(F.data.startswith("pd_page_"))
-async def cb_pokedex_page(callback: CallbackQuery, db: AsyncSession):
-    parts = callback.data.split("_", 4)
-    user_id = int(parts[2])
-    page = int(parts[3])
-    rarity_filter = parts[4] if len(parts) > 4 else "All"
-    
-    if callback.from_user.id != user_id:
-        await callback.answer("❌ This is not your Pokédex! Use /pokedex to view yours.", show_alert=True)
-        return
-        
-    u_stmt = select(User).where(User.id == user_id)
-    u_res = await db.execute(u_stmt)
-    user = u_res.scalar_one_or_none()
-    nickname = user.nickname if (user and user.nickname) else (callback.from_user.first_name or "Trainer")
-    
-    text, final_page, max_page = await get_pokedex_data(user_id, nickname, page, rarity_filter, db)
-    kb = get_pokedex_keyboard(user_id, final_page, max_page, rarity_filter)
-    
-    await edit_player_cover_message(callback, user_id, text, kb, db, parse_mode="HTML")
-    await callback.answer()
-
-@router.callback_query(F.data.startswith("pd_rarity_"))
-async def cb_pokedex_rarity_menu(callback: CallbackQuery, db: AsyncSession):
-    parts = callback.data.split("_", 4)
-    user_id = int(parts[2])
-    page = int(parts[3])
-    rarity_filter = parts[4] if len(parts) > 4 else "All"
-    
-    if callback.from_user.id != user_id:
-        await callback.answer("❌ This is not your Pokédex! Use /pokedex to view yours.", show_alert=True)
-        return
-        
-    text = (
-        f"🔍 <b>Filter Pokédex by Rarity</b>\n"
-        f"───────────────\n\n"
-        f"Choose a rarity tier below to filter your species list:"
-    )
-    kb = await get_rarity_filter_keyboard(user_id, page, rarity_filter, db)
-    
-    try:
-        await callback.message.edit_caption(caption=text, reply_markup=kb, parse_mode="HTML")
-    except Exception:
-        try:
-            await callback.message.edit_text(text=text, reply_markup=kb, parse_mode="HTML")
-        except Exception:
-            pass
-    await callback.answer()
-
-@router.callback_query(F.data.startswith("pd_setfilter_"))
-async def cb_pokedex_set_filter(callback: CallbackQuery, db: AsyncSession):
-    parts = callback.data.split("_", 3)
-    user_id = int(parts[2])
-    rarity_filter = parts[3]
-    
-    if callback.from_user.id != user_id:
-        await callback.answer("❌ This is not your Pokédex! Use /pokedex to view yours.", show_alert=True)
-        return
-        
-    u_stmt = select(User).where(User.id == user_id)
-    u_res = await db.execute(u_stmt)
-    user = u_res.scalar_one_or_none()
-    nickname = user.nickname if (user and user.nickname) else (callback.from_user.first_name or "Trainer")
-    
-    text, final_page, max_page = await get_pokedex_data(user_id, nickname, 1, rarity_filter, db)
-    kb = get_pokedex_keyboard(user_id, final_page, max_page, rarity_filter)
-    
-    await edit_player_cover_message(callback, user_id, text, kb, db, parse_mode="HTML")
-    await callback.answer(f"Filtered by: {rarity_filter}")
-
-@router.message(Command("achievements", "achievement", ignore_mention=True))
-async def cmd_achievements(message: Message, db: AsyncSession):
-    user = message.from_user
-    if not user:
-        user_id = message.sender_chat.id if message.sender_chat else 0
-        nickname = "Trainer"
-    else:
-        user_id = user.id
-        nickname = user.first_name or "Trainer"
-
-    if not user_id:
-        await message.answer("⚠️ Please send commands as a personal user account.")
-        return
-
-    u_stmt = select(User).where(User.id == user_id)
-    u_res = await db.execute(u_stmt)
-    user_db = u_res.scalar_one_or_none()
-
-    if not user_db:
-        user_db = User(id=user_id, username=user.username if user else None, nickname=nickname, coins=500)
-        db.add(user_db)
-        await db.commit()
-
-    stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == user_id)
-    res = await db.execute(stmt)
-    total_catches = res.scalar() or 0
-
-    ACHIEVEMENTS = [
-        ("🥉 First Blood", 100),
-        ("🥈 Getting Started", 200),
-        ("🥇 Collector", 350),
-        ("💎 Elite Collector", 500),
-        ("🏆 Centurion", 1000),
-        ("🌟 Legend", 5000),
-        ("👑 Grand Master", 10000),
-        ("🔮 Mythic Snatchers", 25000)
-    ]
-
-    unlocked_count = sum(1 for _, target in ACHIEVEMENTS if total_catches >= target)
-
-    lines = []
-    lines.append(f"🏆 <b>Achievements — {html.escape(user_db.profile_name or user_db.nickname or nickname)}</b>")
-    lines.append(f"Unlocked: {unlocked_count}/8\n")
-
-    for title, target in ACHIEVEMENTS:
-        if total_catches >= target:
-            lines.append(f"✅ {title} — Complete {target} catches")
-        else:
-            fraction = min(1.0, max(0.0, total_catches / target))
-            filled_length = int(fraction * 8)
-            empty_length = 8 - filled_length
-            bar = f"[{'█' * filled_length}{'░' * empty_length}]"
-            lines.append(f"🎁 {title} — {bar} {total_catches}/{target}")
-
-    lines.append(f"\n🎁 Total Catches: {total_catches}")
-
-    text = "\n".join(lines)
-    await message.answer(text, parse_mode="HTML")
-
-@router.message(Command("balance", "bal", "coins", "wallet", ignore_mention=True))
-async def cmd_balance(message: Message, db: AsyncSession):
-    try:
-        user = message.from_user
-        if not user:
-            user_id = message.sender_chat.id if message.sender_chat else 0
-            username = None
-            nickname = "Trainer"
-        else:
-            user_id = user.id
-            username = user.username
-            nickname = user.first_name or "Trainer"
-
-        if not user_id:
-            await message.answer("⚠️ Please send commands as a personal user account.")
-            return
-
-        u_stmt = select(User).where(User.id == user_id)
-        u_res = await db.execute(u_stmt)
-        user_db = u_res.scalar_one_or_none()
-
-        if not user_db:
-            user_db = User(
-                id=user_id,
-                username=username,
-                nickname=nickname,
-                coins=500
-            )
-            db.add(user_db)
-            await db.commit()
-
-        name = html.escape(user_db.profile_name or user_db.nickname or nickname)
-        gems = getattr(user_db, "poke_gems", 0) or 0
-        from utils.vip import is_user_vip
-        vip_str = " [👑 VIP]" if is_user_vip(user_db) else ""
-        text = (
-            f"💰 <b>TRAINER BALANCE</b> 💰\n"
-            f"───────────────\n"
-            f"👤 <b>Trainer</b>: <b>{name}</b>{vip_str}\n"
-            f"💳 <b>Coins</b>: 💰 <b>{user_db.coins:,} coins</b>\n"
-            f"💎 <b>PokeGems</b>: ⭐ <b>{gems:,} gems</b>\n"
-            f"───────────────"
-        )
-        await message.answer(text, parse_mode="HTML")
-    except Exception as e:
-        print(f"Error in cmd_balance: {e}")
-        await message.answer("❌ An error occurred while retrieving your balance.")
-
-@router.message(Command("streak", "streaks", ignore_mention=True))
-async def cmd_streak(message: Message, db: AsyncSession):
-    user = message.from_user
-    if not user:
-        user_id = message.sender_chat.id if message.sender_chat else 0
-        username = None
-        nickname = "Trainer"
-    else:
-        user_id = user.id
-        username = user.username
-        nickname = user.first_name or "Trainer"
-
-    if not user_id:
-        await message.answer("⚠️ Please send commands as a personal user account.")
-        return
-    
-    stmt = select(User).where(User.id == user_id)
-    res = await db.execute(stmt)
-    user_db = res.scalar_one_or_none()
-    if not user_db:
-        user_db = User(id=user_id, username=username, nickname=nickname, coins=500)
-        db.add(user_db)
-        await db.commit()
-        
-    from utils.streak import get_streak_data, get_streak_rank
-    from datetime import datetime, timedelta
-    
-    s_data = await get_streak_data(user_id)
-    
-    today = datetime.utcnow().date().isoformat()
-    yesterday = (datetime.utcnow() - timedelta(days=1)).date().isoformat()
-    
-    last_sec = s_data.get("last_secured_date", "")
-    if last_sec == today:
-        status_str = "Active!"
-        capped_count = 3
-    elif last_sec == yesterday:
-        status_str = "Active!"
-        capped_count = min(s_data.get("catches_today", 0), 3)
-    else:
-        status_str = "Streak broken!"
-        capped_count = min(s_data.get("catches_today", 0), 3)
-        
-    current_days = s_data.get("current_streak", 0)
-    best_days = s_data.get("best_streak", 0)
-    rank_str = get_streak_rank(current_days)
-    
-    bar_chars = "█" * (capped_count * 3) + "░" * (10 - (capped_count * 3))
-    if capped_count == 3:
-        bar_chars = "█" * 10
-        
-    text = (
-        f"🔥 <b>Daily Streak — {html.escape(user_db.profile_name or user_db.nickname or user_db.username or nickname)}</b>\n\n"
-        f"<blockquote>💧 <b>Status</b>: <code>{status_str}</code>\n"
-        f"🎁 <b>Current</b>: <code>{current_days} days</code>\n"
-        f"🏆 <b>Best</b>: <code>{best_days} days</code>\n"
-        f"🏆 <b>Rank</b>: <code>{rank_str}</code>\n"
-        f"🎁 <b>Progress</b>: <code>[{bar_chars}] {capped_count}/3</code></blockquote>\n\n"
-        f"👉 <i>Catch 3 Pokémon every day to keep your streak!</i>"
-    )
-    await message.answer(text, parse_mode="HTML")
-
-@router.message(Command("streaklb", "slb", "streakslb", "streaksleaderboard", ignore_mention=True))
-async def cmd_streak_leaderboard(message: Message, db: AsyncSession):
-    from utils.streak import get_top_streaks
-    
-    top_users = await get_top_streaks(10)
-    if not top_users:
-        await message.answer("🏆 <b>STREAK LEADERBOARD</b> 🏆\n───────────────\n\n• <i>No active streaks recorded yet.</i>", parse_mode="HTML")
-        return
-        
-    import config
-    bot_id = None
-    if config.BOT_TOKEN and ":" in config.BOT_TOKEN:
-        try:
-            bot_id = int(config.BOT_TOKEN.split(":")[0])
-        except ValueError:
-            pass
-
-    filtered_users = []
-    for uid, uinfo in top_users:
-        if bot_id and uid == bot_id:
-            continue
-        filtered_users.append((uid, uinfo))
-    filtered_users = filtered_users[:10]
-
-    if not filtered_users:
-        await message.answer("🏆 <b>STREAK LEADERBOARD</b> 🏆\n───────────────\n\n• <i>No active streaks recorded yet.</i>", parse_mode="HTML")
-        return
-
-    uids = [uid for uid, _ in filtered_users]
-    u_stmt = select(User).where(User.id.in_(uids))
-    u_res = await db.execute(u_stmt)
-    users_dict = {u.id: u for u in u_res.scalars().all()}
-
-    medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
-    rows = []
-    for idx, (uid, uinfo) in enumerate(filtered_users):
-        user = users_dict.get(uid)
-        username = user.username if user else None
-        nickname = (user.profile_name or user.nickname) if user else f"Trainer_{uid}"
-        curr = uinfo.get("current_streak", 0)
-        best = uinfo.get("best_streak", 0)
-        
-        rank_prefix = medals[idx] if idx < len(medals) else f"#{idx+1}"
-        display_name = f"@{html.escape(username)}" if username else f"{html.escape(nickname)}"
-        rows.append(f"{rank_prefix} <b>{display_name}</b>   Best: <code>{best}d</code> (Current: <code>{curr}d</code>)")
-
-    text = (
-        "🏆 <b>GLOBAL STREAK LEADERBOARD</b> 🏆\n"
-        "───────────────\n" +
-        "\n".join(rows) +
-        "\n───────────────\n"
-        "<i>Compete daily to reach the top of the streak ranks!</i>"
-    )
-    await message.answer(text, parse_mode="HTML")
-
-@router.message(Command("profile", ignore_mention=True))
-async def cmd_profile(message: Message, db: AsyncSession):
-    profile_card = None
-    builder = None
-    try:
-        user = message.from_user
-        if not user:
-            user_id = message.sender_chat.id if message.sender_chat else 0
-            username = None
-            first_name = "Trainer"
-        else:
-            user_id = user.id
-            username = user.username
-            first_name = user.first_name or "Trainer"
-
-        if not user_id:
-            await message.answer("⚠️ Please send commands as a personal user account.")
-            return
-
-        u_stmt = select(User).where(User.id == user_id)
-        u_res = await db.execute(u_stmt)
-        user_db = u_res.scalar_one_or_none()
-
-        if not user_db:
-            user_db = User(
-                id=user_id,
-                username=username,
-                nickname=first_name,
-                coins=500
-            )
-            db.add(user_db)
-            await db.commit()
-        else:
-            if user_db.username != username or user_db.nickname != first_name:
-                user_db.username = username
-                user_db.nickname = first_name
-                await db.commit()
-
-        # Batched single query for user Pokemon stats (drastically reduces DB round-trips)
-        stats_stmt = select(
-            func.count(UserPokemon.id).label("total_caught"),
-            func.count(distinct(UserPokemon.pokemon_id)).label("unique_caught"),
-            func.count(UserPokemon.id).filter(UserPokemon.is_shiny == True).label("total_shiny")
-        ).where(UserPokemon.user_id == user_id)
-        stats_res = await db.execute(stats_stmt)
-        stats_row = stats_res.mappings().one()
-        total_caught = stats_row["total_caught"] or 0
-        unique_caught = stats_row["unique_caught"] or 0
-        total_shiny = stats_row["total_shiny"] or 0
-
-        # Total species from in-memory cache to eliminate redundant remote DB query
-        from utils.pokemon_cache import get_all_cached_pokemon
-        all_cached = get_all_cached_pokemon()
-        total_species = len(all_cached) if all_cached else 30
-
-        dex_pct = (unique_caught / total_species) * 100
-        dex_bar = get_progress_bar(unique_caught, total_species, 10, fill_char="▰", empty_char="▱")
-
-        rarity_stmt = select(Pokemon.rarity, func.count(UserPokemon.id)).join(UserPokemon, UserPokemon.pokemon_id == Pokemon.id).where(UserPokemon.user_id == user_id).group_by(Pokemon.rarity)
-        rarity_res = await db.execute(rarity_stmt)
-        rarity_counts = {r: count for r, count in rarity_res.all()}
-
-        standard_breakdown = [
-            ("Common", "⚪️"),
-            ("Uncommon", "🟢"),
-            ("Medium", "🔵"),
-            ("Rare", "🟣"),
-            ("Epic", "🔮"),
-            ("Legendary", "🌟"),
-            ("Mythical", "🌌")
-        ]
-        
-        from utils.settings import get_all_custom_rarities
-        custom_rarities = await get_all_custom_rarities(db)
-
-        breakdown_lines = []
-        for r_name, r_emoji in standard_breakdown:
-            cnt = rarity_counts.get(r_name, 0)
-            breakdown_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
-            
-        rarity_breakdown_text = "\n".join(breakdown_lines)
-
-        form_counts_stmt = select(UserPokemon.form_index, func.count(distinct(UserPokemon.pokemon_id))).where(
-            UserPokemon.user_id == user_id, UserPokemon.form_index > 0
-        ).group_by(UserPokemon.form_index)
-        form_counts_res = await db.execute(form_counts_stmt)
-        form_counts = {fi: cnt for fi, cnt in form_counts_res.all()}
-        amv_count = form_counts.get(1, 0)
-        dmax_count = form_counts.get(2, 0)
-        gmax_count = form_counts.get(3, 0)
-        zmove_count = form_counts.get(4, 0)
-        terastal_count = form_counts.get(5, 0)
-
-        forms_lines = [
-            f"├─➩ 🎬 AMV / Art: {amv_count}",
-            f"├─➩ ⚡ Dmax: {dmax_count}",
-            f"├─➩ 💥 Gmax: {gmax_count}",
-            f"├─➩ 🌀 Z-Move: {zmove_count}",
-            f"├─➩ 🔮 Terastal: {terastal_count}"
-        ]
-        
-        custom_forms = await get_custom_rarity_forms(db)
-        for f_idx, (r_name, r_emoji) in custom_forms.items():
-            if f_idx in {1, 2, 3, 4, 5}:
-                continue
-            cnt = form_counts.get(f_idx, 0)
-            forms_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
-            
-        forms_breakdown_text = "\n".join(forms_lines)
-
-        formatted_coins = f"{user_db.coins:,}"
-        user_nickname = (user_db.profile_name or user_db.nickname) if (user_db and (user_db.profile_name or user_db.nickname)) else first_name
-
-        rank_stmt = (
-            select(func.count())
-            .select_from(
-                select(UserPokemon.user_id)
-                .group_by(UserPokemon.user_id)
-                .having(func.count(UserPokemon.id) > total_caught)
-                .subquery()
-            )
-        )
-        rank_res = await db.execute(rank_stmt)
-        rank_position = (rank_res.scalar() or 0) + 1
-
-        from utils.streak import get_streak_data
-        s_data = await get_streak_data(user_id)
-        current_streak = s_data.get("current_streak", 0)
-        best_streak = s_data.get("best_streak", 0)
-
-        fav_val = await get_favorite_id(user_id, db)
-        fav_name = "None (Random Bag)"
-        if fav_val:
-            pokemon_id = None
-            form_index = 0
-            if "." in fav_val:
-                pq, fq = fav_val.split(".", 1)
-                if pq.isdigit() and fq.isdigit():
-                    pokemon_id = int(pq)
-                    form_index = int(fq)
-            elif fav_val.isdigit():
-                pokemon_id = int(fav_val)
-                
-            if pokemon_id:
-                poke_stmt = select(Pokemon.name).where(Pokemon.id == pokemon_id)
-                poke_res = await db.execute(poke_stmt)
-                p_name = poke_res.scalar()
-                if p_name:
-                    form_suffix = f" (Form {form_index})" if form_index > 0 else ""
-                    fav_name = f"{p_name.title()}{form_suffix}"
-
-        from utils.trainer_level import get_trainer_title, get_xp_required_for_next_level
-        lvl = user_db.trainer_level or 1
-        xp = user_db.trainer_xp or 0
-        req_xp = get_xp_required_for_next_level(lvl)
-        xp_pct = min(100, int((xp / req_xp) * 100)) if req_xp > 0 else 0
-        xp_filled = xp_pct // 10
-        xp_bar = "█" * xp_filled + "░" * (10 - xp_filled)
-        title = get_trainer_title(lvl)
-
-        gems = getattr(user_db, "poke_gems", 0) or 0
-        from utils.vip import is_user_vip
-        vip_tag = " [👑 VIP]" if is_user_vip(user_db) else ""
-
-        profile_card = (
-            f"╭──「 🏆 Trainer Profile 」\n"
-            f"├─➩ 🏓 User: {html.escape(user_nickname)}{vip_tag}\n"
-            f"├─➩ 🆔 ID: <code>{user_db.id}</code>\n"
-            f"├─➩ 🎖️ Level: <code>Lv. {lvl} ({title})</code>\n"
-            f"├─➩ ⚡ EXP: [{xp_bar}] {xp_pct}% (<code>{xp:,}/{req_xp:,}</code>)\n"
-            f"├─➩ 💰 Balance: <code>{formatted_coins} coins</code> | 💎 <code>{gems:,} gems</code>\n"
-            f"├─➩ ⚡ Pokémon: {unique_caught} (Total Catches: {total_caught})\n"
-            f"├─➩ 🌍 Pokédex: {unique_caught}/{total_species} ({dex_pct:.3f}%)\n"
-            f"├─➩ 🎁 Progress:\n"
-            f"╰         {dex_bar}\n\n"
-            f"╭─ Cover & Streaks ─\n"
-            f"├─➩ ⭐ Favorite: <code>{html.escape(fav_name)}</code>\n"
-            f"├─➩ 🔥 Current Streak: <code>{current_streak} days</code>\n"
-            f"├─➩ 🏆 Best Streak: <code>{best_streak} days</code>\n"
-            f"╰───────────────────\n\n"
-            f"╭─ Rarity Breakdown ─\n"
-            f"{rarity_breakdown_text}\n"
-            f"╰───────────────────\n\n"
-            f"╭─ Forms Breakdown ─\n"
-            f"{forms_breakdown_text}\n"
-            f"╰───────────────────\n\n"
-            f"╭─ Global Rank ─\n"
-            f"├─➩ 🏆 Position: #{rank_position}\n"
-            f"╰───────────────────"
-        )
-        builder = InlineKeyboardBuilder()
-        builder.row(InlineKeyboardButton(text="📖 View Pokédex", callback_data=f"pd_page_{user_id}_1_All"))
-        await send_player_cover(
-            chat_id=message.chat.id,
-            user_id=user_id,
-            caption=profile_card,
-            reply_markup=builder.as_markup(),
-            bot=message.bot,
-            db=db,
-            message_to_reply=message
-        )
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        if profile_card:
-            try:
-                await message.answer(profile_card, reply_markup=builder.as_markup() if builder else None, parse_mode="HTML")
-                return
-            except Exception:
-                try:
-                    await message.answer(profile_card, reply_markup=None, parse_mode="HTML")
-                    return
-                except Exception:
-                    await message.answer(profile_card, reply_markup=None, parse_mode=None)
-                    return
-        await message.answer(f"❌ An error occurred while generating your profile: <code>{html.escape(str(e))}</code>", parse_mode="HTML")
-
-@router.message(Command("check", ignore_mention=True))
-@router.message(Command("c", ignore_mention=True))
-@router.message(Command("ch", ignore_mention=True))
-async def cmd_check_pokemon(message: Message, db: AsyncSession):
-    parts = message.text.split() if message.text else []
-    query = ""
-    if len(parts) >= 2:
-        query = " ".join(parts[1:]).strip().lower()
-    elif message.reply_to_message:
-        reply_text = message.reply_to_message.caption or message.reply_to_message.text or ""
-        import re
-        id_match = re.search(r"ID[:\s]+<code>?(\d+(?:\.\d+)?)</code>?", reply_text, re.IGNORECASE)
-        if id_match:
-            query = id_match.group(1).lower()
-        else:
-            name_match = re.search(r"(?:wild\s+|pokemon:\s*|name:\s*)<b>?([a-zA-Z0-9\-\s\.]+?)</b>?", reply_text, re.IGNORECASE)
-            if name_match:
-                query = name_match.group(1).strip().lower()
-            else:
-                from utils.pokemon_cache import get_all_cached_pokemon
-                all_p = get_all_cached_pokemon()
-                low_reply = reply_text.lower()
-                for p in all_p:
-                    if len(p.name) > 3 and p.name.lower() in low_reply:
-                        query = p.name.lower()
-                        break
-
-    if not query:
-        await message.answer(
-            "⚠️ <b>Format:</b> <code>/check &lt;pokemon_name_or_id&gt;</code>\n"
-            "(e.g., <code>/check bulbasaur</code> or <code>/check 1</code>)\n\n"
-            "💡 <i>Tip: You can also reply to any Pokémon spawn or card with /check!</i>",
-            parse_mode="HTML"
-        )
-        return
-
-    pokemon_id, pokemon_name_query, form_index = parse_check_query(query)
-
-    from utils.pokemon_cache import get_cached_pokemon_by_id, get_cached_pokemon_by_name, get_all_cached_pokemon
-    pokemon = None
-    if pokemon_id is not None:
-        pokemon = get_cached_pokemon_by_id(pokemon_id)
-    elif pokemon_name_query:
-        pokemon = get_cached_pokemon_by_name(pokemon_name_query)
-        if not pokemon:
-            clean_q = pokemon_name_query.replace("-", "").replace(" ", "").replace(".", "").lower()
-            for p in get_all_cached_pokemon():
-                clean_pname = p.name.replace("-", "").replace(" ", "").replace(".", "").lower()
-                if clean_pname == clean_q:
-                    pokemon = p
-                    break
-
-    if not pokemon:
-        if pokemon_id is not None:
-            stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
-        else:
-            stmt = select(Pokemon).where(Pokemon.name.ilike(pokemon_name_query))
-        res = await db.execute(stmt)
-        pokemon = res.scalar_one_or_none()
-    
-    if not pokemon:
-        searched_term = pokemon_name_query if pokemon_name_query else str(pokemon_id)
-        await message.answer(f"❌ Pokémon <code>{html.escape(searched_term)}</code> not found in database.", parse_mode="HTML")
-        return
-        
-    caption, reply_markup, media_type, media_value = await build_check_pokemon_payload(pokemon, form_index, db)
-    
-    if form_index > 0 and not media_value:
-        custom_forms = await get_custom_rarity_forms(db)
-        form_label = get_form_label(form_index, None, custom_forms)
-        notif_text = (
-            f"{caption}\n\n"
-            f"<blockquote>⚠️ <b>Media Not Registered</b>\n"
-            f"Media for <b>{pokemon.name.title()} ({html.escape(form_label)})</b> (Form {form_index}) is not registered yet.</blockquote>"
-        )
-        await message.answer(notif_text, reply_markup=reply_markup, parse_mode="HTML")
-        return
-    
-    await send_safe_media(
-        bot=message.bot,
-        chat_id=message.chat.id,
-        media_type=media_type,
-        media_value=media_value,
-        caption=caption,
-        reply_markup=reply_markup,
-        parse_mode="HTML",
-        message_to_reply=message,
-        message_thread_id=getattr(message, "message_thread_id", None)
-    )
-
-
-async def build_check_pokemon_payload(pokemon_or_id, form_index: int, db: AsyncSession):
-    if isinstance(pokemon_or_id, Pokemon):
-        pokemon = pokemon_or_id
-    else:
-        from utils.pokemon_cache import get_cached_pokemon_by_id
-        pokemon = get_cached_pokemon_by_id(pokemon_or_id)
-        if not pokemon:
-            stmt = select(Pokemon).where(Pokemon.id == pokemon_or_id)
-            res = await db.execute(stmt)
-            pokemon = res.scalar_one_or_none()
-
-    if not pokemon:
-        return None, None, None, None
-        
-    media_type = "photo"
-    media_value = None
-
-    form_media = None
-    if form_index > 0:
-        form_media = await get_single_form_media_value(db, pokemon.id, form_index)
-        if form_media:
-            media_type, media_value = parse_stored_media_value(form_media)
-        elif form_index == 1 and getattr(pokemon, "video_url", None):
-            media_type, media_value = parse_stored_media_value(pokemon.video_url)
-        elif form_index == 2 and getattr(pokemon, "dmax_url", None):
-            media_type, media_value = parse_stored_media_value(pokemon.dmax_url)
-        elif form_index == 3 and getattr(pokemon, "gmax_url", None):
-            media_type, media_value = parse_stored_media_value(pokemon.gmax_url)
-        elif form_index == 4 and getattr(pokemon, "zmove_url", None):
-            media_type, media_value = parse_stored_media_value(pokemon.zmove_url)
-        elif form_index == 5 and getattr(pokemon, "terastal_url", None):
-            media_type, media_value = parse_stored_media_value(pokemon.terastal_url)
-        else:
-            media_value = None
-    else:
-        if pokemon.image_url:
-            media_type, media_value = parse_stored_media_value(pokemon.image_url)
-            
-    if form_index > 0:
-        custom_forms = await get_custom_rarity_forms(db)
-        form_label = get_form_label(form_index, form_media, custom_forms)
-        if form_index == 1:
-            r_emoji = "🎨" if form_label == "Art" else "📺"
-            rarity_str = f"{r_emoji} {form_label}"
-        elif form_index == 2:
-            r_emoji = "⚡"
-            rarity_str = f"{r_emoji} Dmax"
-        elif form_index == 3:
-            r_emoji = "💥"
-            rarity_str = f"{r_emoji} Gmax"
-        elif form_index == 4:
-            r_emoji = "🌀"
-            rarity_str = f"{r_emoji} Z-Move"
-        elif form_index == 5:
-            r_emoji = "💎"
-            rarity_str = f"{r_emoji} Terastal"
-        elif form_index == 6:
-            r_emoji = "✨"
-            rarity_str = f"{r_emoji} Shiny"
-        elif custom_forms and form_index in custom_forms:
-            form_name, form_emoji = custom_forms[form_index]
-            r_emoji = form_emoji or "🔮"
-            rarity_str = f"{r_emoji} {form_name}"
-        else:
-            r_emoji = "🔮"
-            rarity_str = f"{r_emoji} {form_label}"
-
-        name_str = f"{pokemon.name.title()} ({form_label})"
-        id_str = f"{pokemon.id}.{form_index}"
-    else:
-        r_emoji = get_rarity_emoji(pokemon.rarity)
-        rarity_str = f"{r_emoji} {pokemon.rarity}"
-        name_str = pokemon.name.title()
-        id_str = f"{pokemon.id}"
-        
-    caption = (
-        f"<b>🌟 Pokemon Info</b>\n"
-        f"🆔 <b>ID</b>: <code>{id_str}</code>\n"
-        f"⛔ <b>Name</b>: {html.escape(name_str)}\n"
-        f"🎦 <b>Generation</b>: Gen {pokemon.generation}\n"
-        f"🎬 <b>Rarity</b>: {rarity_str}"
-    )
-    
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="👥 Owners", callback_data=f"show_check_owners_{pokemon.id}_{form_index}")
-    )
-    return caption, builder.as_markup(), media_type, media_value
-
-
-@router.callback_query(F.data.startswith("show_check_owners_"))
-async def cb_show_check_owners(callback: CallbackQuery, db: AsyncSession):
-    parts = callback.data.split("_")
-    pokemon_id = int(parts[3])
-    form_index = int(parts[4])
-    
-    owners_stmt = (
-        select(User.id, User.nickname, func.count(UserPokemon.id))
-        .join(UserPokemon, UserPokemon.user_id == User.id)
-        .where(UserPokemon.pokemon_id == pokemon_id)
-        .where(UserPokemon.form_index == form_index)
-        .group_by(User.id, User.nickname)
-        .order_by(func.count(UserPokemon.id).desc())
-        .limit(20)
-    )
-    owners_res = await db.execute(owners_stmt)
-    owners = owners_res.all()
-    
-    caption = f"🎦 <b>Who has this pokemon:</b>\n"
-    if owners:
-        owner_rows = []
-        for idx, (uid, nick, count) in enumerate(owners, start=1):
-            display_name = html.escape(nick or "Trainer")
-            owner_rows.append(f"{idx}. <a href=\"tg://user?id={uid}\">{display_name}</a> ×{count}")
-        caption += "\n".join(owner_rows)
-    else:
-        caption += "No trainer owns this species yet."
-        
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="🔙 Back", callback_data=f"check_back_{pokemon_id}_{form_index}")
-    )
-    
-    try:
-        await callback.message.edit_caption(caption=caption, reply_markup=builder.as_markup(), parse_mode="HTML")
-    except Exception:
-        try:
-            await callback.message.edit_text(caption, reply_markup=builder.as_markup(), parse_mode="HTML")
-        except Exception:
-            pass
-            
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("check_back_"))
-async def cb_check_back(callback: CallbackQuery, db: AsyncSession):
-    parts = callback.data.split("_")
-    pokemon_id = int(parts[2])
-    form_index = int(parts[3])
-    
-    caption, reply_markup, _, _ = await build_check_pokemon_payload(pokemon_id, form_index, db)
-    
-    try:
-        await callback.message.edit_caption(caption=caption, reply_markup=reply_markup, parse_mode="HTML")
-    except Exception:
-        try:
-            await callback.message.edit_text(caption, reply_markup=reply_markup, parse_mode="HTML")
-        except Exception:
-            pass
-            
-    await callback.answer()
-
-
-async def get_leaderboard_text(lb_type: str, db: AsyncSession) -> str:
-    import config
-    
-    bot_id = None
-    if config.BOT_TOKEN and ":" in config.BOT_TOKEN:
-        try:
-            bot_id = int(config.BOT_TOKEN.split(":")[0])
-        except ValueError:
-            pass
-
-    if lb_type == "coins":
-        if bot_id:
-            coins_stmt = select(User).where(User.id != bot_id).order_by(desc(User.coins)).limit(10)
-        else:
-            coins_stmt = select(User).order_by(desc(User.coins)).limit(10)
-        coins_res = await db.execute(coins_stmt)
-        coins_users = coins_res.scalars().all()
-        
-        text = "🏆 <b>TOP 10 — Coins</b>\n\n"
-        if coins_users:
-            text += "<blockquote>"
-            for idx, u in enumerate(coins_users):
-                rank = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx + 1}."
-                display_name = f"@{html.escape(u.username)}" if u.username else f"{html.escape(u.nickname or 'Trainer')}"
-                text += f"{rank} {display_name}  -> {u.coins}\n"
-            text += "</blockquote>"
-        else:
-            text += "• <i>No trainers registered yet.</i>"
-            
-    elif lb_type == "catches":
-        if bot_id:
-            catches_stmt = (
-                select(User.username, User.nickname, func.count(UserPokemon.id).label("total_catches"))
-                .join(UserPokemon, UserPokemon.user_id == User.id)
-                .where(User.id != bot_id)
-                .group_by(User.id, User.username, User.nickname)
-                .order_by(desc(func.count(UserPokemon.id)))
-                .limit(10)
-            )
-        else:
-            catches_stmt = (
-                select(User.username, User.nickname, func.count(UserPokemon.id).label("total_catches"))
-                .join(UserPokemon, UserPokemon.user_id == User.id)
-                .group_by(User.id, User.username, User.nickname)
-                .order_by(desc(func.count(UserPokemon.id)))
-                .limit(10)
-            )
-        catches_res = await db.execute(catches_stmt)
-        catches_data = catches_res.all()
-        
-        text = "🏆 <b>TOP 10 — Pokémon</b>\n\n"
-        if catches_data:
-            text += "<blockquote>"
-            for idx, row in enumerate(catches_data):
-                rank = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx + 1}."
-                display_name = f"@{html.escape(row.username)}" if row.username else f"{html.escape(row.nickname or 'Trainer')}"
-                text += f"{rank} {display_name}  -> {row.total_catches:,}\n"
-            text += "</blockquote>"
-        else:
-            text += "• <i>No catches registered yet.</i>"
-            
-    elif lb_type == "streak":
-        from utils.streak import get_top_streaks
-        top_users = await get_top_streaks(10, db)
-        
-        text = "🏆 <b>TOP 10 — Streaks</b>\n\n"
-        if top_users:
-            text += "<blockquote>"
-            filtered_users = []
-            for user_id, uinfo in top_users:
-                if bot_id and user_id == bot_id:
-                    continue
-                filtered_users.append((user_id, uinfo))
-            
-            filtered_users = filtered_users[:10]
-            
-            for idx, (user_id, uinfo) in enumerate(filtered_users):
-                rank = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx + 1}."
-                username = uinfo.get("username")
-                nickname = uinfo.get("nickname")
-                if username:
-                    display_name = f"@{html.escape(username)}"
-                elif nickname:
-                    display_name = f"{html.escape(nickname)}"
-                else:
-                    display_name = f"Trainer_{user_id}"
-                
-                best_streak = uinfo.get("best_streak", 0)
-                text += f"{rank} {display_name}  -> {best_streak} days\n"
-            text += "</blockquote>"
-        else:
-            text += "• <i>No active streaks recorded yet.</i>"
-            
-    return text
-
-def get_leaderboard_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        create_styled_button(text="🏆 Pokémon", key="pokedex", style="success", callback_data="lb_type_catches"),
-        create_styled_button(text="💰 Coins", key="claim", style="primary", callback_data="lb_type_coins"),
-        create_styled_button(text="🔥 Streak", key="streak", style="danger", callback_data="lb_type_streak")
-    )
-    return builder.as_markup()
-
-@router.message(Command("leaderboard", ignore_mention=True))
-@router.message(Command("lb", ignore_mention=True))
-async def cmd_leaderboard(message: Message, db: AsyncSession):
-    text = await get_leaderboard_text("catches", db)
-    
-    await send_cover_media(
-        chat_id=message.chat.id,
-        key="leaderboard",
-        caption=text,
-        reply_markup=get_leaderboard_keyboard(),
-        bot=message.bot,
-        default_url="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/493.png",
-        parse_mode="HTML",
-        message_to_reply=message
-    )
-
-@router.callback_query(F.data.startswith("lb_type_"))
-async def cb_leaderboard_type(callback: CallbackQuery, db: AsyncSession):
-    lb_type = callback.data.replace("lb_type_", "")
-    is_dm = False
-    if lb_type.endswith("_dm"):
-        is_dm = True
-        lb_type = lb_type[:-3]
-        
-    text = await get_leaderboard_text(lb_type, db)
-    
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        create_styled_button(text="🏆 Pokémon", key="pokedex", style="success", callback_data="lb_type_catches_dm" if is_dm else "lb_type_catches"),
-        create_styled_button(text="💰 Coins", key="claim", style="primary", callback_data="lb_type_coins_dm" if is_dm else "lb_type_coins"),
-        create_styled_button(text="🔥 Streak", key="streak", style="danger", callback_data="lb_type_streak_dm" if is_dm else "lb_type_streak")
-    )
-    if is_dm:
-        builder.row(create_styled_button(text="🔙 Back to Hub Menu", key="back", style="primary", callback_data="dm_home"))
-        
-    try:
-        await callback.message.edit_caption(
-            caption=text,
-            reply_markup=builder.as_markup(),
-            parse_mode="HTML"
-        )
-    except Exception:
-        try:
-            await callback.message.edit_text(
-                text=text,
-                reply_markup=builder.as_markup(),
-                parse_mode="HTML"
-            )
-        except Exception:
-            pass
-    await callback.answer()
-
-@router.message(Command("fav", ignore_mention=True))
-async def cmd_fav(message: Message, db: AsyncSession):
-    user_id = message.from_user.id
-    parts = message.text.split()
-    if len(parts) < 2:
-        await message.answer("⚠️ Format: `/fav <pokedex_id>[.form_index]`\n(e.g., `/fav 251` or `/fav 6.1` to set Charizard AMV as your favorite cover)")
-        return
-        
-    fav_str = parts[1].strip()
-    pokemon_id = None
-    form_index = 0
-    if "." in fav_str:
-        pq, fq = fav_str.split(".", 1)
-        if pq.isdigit() and fq.isdigit():
-            pokemon_id = int(pq)
-            form_index = int(fq)
-    elif fav_str.isdigit():
-        pokemon_id = int(fav_str)
-        
-    if pokemon_id is None:
-        await message.answer("⚠️ Format: `/fav <pokedex_id>[.form_index]`\n(e.g., `/fav 251` or `/fav 6.1` to set Charizard AMV as your favorite cover)")
-        return
-    
-    if form_index > 0:
-        stmt = select(UserPokemon).options(joinedload(UserPokemon.pokemon)).where(
-            UserPokemon.pokemon_id == pokemon_id,
-            UserPokemon.user_id == user_id,
-            UserPokemon.form_index == form_index
-        ).limit(1)
-    else:
-        stmt = select(UserPokemon).options(joinedload(UserPokemon.pokemon)).where(
-            UserPokemon.pokemon_id == pokemon_id,
-            UserPokemon.user_id == user_id
-        ).limit(1)
-        
-    res = await db.execute(stmt)
-    up = res.scalar()
-    
-    custom_forms = await get_custom_rarity_forms(db)
-    if not up:
-        form_lbl = get_form_label(form_index, None, custom_forms)
-        form_suffix = f" ({form_lbl})" if form_index > 0 else ""
-        await message.answer(f"❌ You don't own a Pokémon with that Pokédex ID{form_suffix} in your collection!")
-        return
-        
-    p = up.pokemon
-    await set_favorite_id(user_id, fav_str, db)
-    await db.commit()
-    
-    shiny_stmt = select(UserPokemon.is_shiny).where(
-        UserPokemon.pokemon_id == pokemon_id,
-        UserPokemon.user_id == user_id,
-        UserPokemon.is_shiny == True
-    ).limit(1)
-    shiny_res = await db.execute(shiny_stmt)
-    has_shiny = shiny_res.scalar() is not None
-    
-    shiny_tag = "✨ Shiny " if has_shiny else ""
-    form_lbl = get_form_label(form_index, None, custom_forms)
-    form_suffix = f" ({form_lbl})" if form_index > 0 else ""
-    await message.answer(f"🌟 <b>{shiny_tag}{p.name.title()}</b>{form_suffix} (Pokédex ID: {fav_str}) has been set as your Pokédex cover favorite!", parse_mode="HTML")
-
-@router.message(Command("unfav", ignore_mention=True))
-async def cmd_unfav(message: Message, db: AsyncSession):
-    user_id = message.from_user.id
-    await set_favorite_id(user_id, None, db)
-    await db.commit()
-    await message.answer("❌ Cleared your favorite cover. A random Pokémon from your bag will be shown instead.")
-
-
-async def build_rankings_payload(chat_id: int, user_id: int, period: str, db: AsyncSession):
-    from utils.group_monitor import flush_chat_activity
-    try:
-        await flush_chat_activity(chat_id)
-    except Exception:
-        pass
-
-    period_lower = period.lower()
-    from database.models import ChatMessageStat, User
-    from datetime import datetime
-
-    if period_lower == "daily":
-        order_col = ChatMessageStat.daily_count
-        period_title = "Daily"
-    elif period_lower == "weekly":
-        order_col = ChatMessageStat.weekly_count
-        period_title = "Weekly"
-    elif period_lower == "monthly":
-        order_col = ChatMessageStat.monthly_count
-        period_title = "Monthly"
-    else:
-        period_lower = "overall"
-        order_col = ChatMessageStat.overall_count
-        period_title = "Overall"
-
-    stmt = (
-        select(ChatMessageStat, User)
-        .join(User, ChatMessageStat.user_id == User.id)
-        .where(ChatMessageStat.chat_id == chat_id)
-        .order_by(order_col.desc(), ChatMessageStat.overall_count.desc())
-        .limit(10)
-    )
-    res = await db.execute(stmt)
-    records = res.all()
-
-    if not records:
-        all_u_stmt = select(User.id).limit(10)
-        all_u_res = await db.execute(all_u_stmt)
-        all_uids = [r[0] for r in all_u_res.all()]
-        if all_uids:
-            now_dt = datetime.utcnow()
-            today_str = now_dt.strftime("%Y-%m-%d")
-            week_str = now_dt.strftime("%Y-%W")
-            month_str = now_dt.strftime("%Y-%m")
-            for uid in all_uids:
-                c_stmt = select(ChatMessageStat).where(ChatMessageStat.user_id == uid, ChatMessageStat.chat_id == chat_id)
-                c_res = await db.execute(c_stmt)
-                if not c_res.scalar_one_or_none():
-                    db.add(ChatMessageStat(
-                        user_id=uid,
-                        chat_id=chat_id,
-                        daily_count=1,
-                        weekly_count=1,
-                        monthly_count=1,
-                        overall_count=1,
-                        last_daily_reset=today_str,
-                        last_weekly_reset=week_str,
-                        last_monthly_reset=month_str
-                    ))
-            await db.commit()
-            res = await db.execute(stmt)
-            records = res.all()
-
-    tot_stmt = select(func.sum(order_col)).where(ChatMessageStat.chat_id == chat_id)
-    tot_res = await db.execute(tot_stmt)
-    total_chat_messages = tot_res.scalar() or 0
-
-    from database.models import GroupSetting
-    gs_stmt = select(GroupSetting.message_counter).where(GroupSetting.chat_id == chat_id)
-    gs_res = await db.execute(gs_stmt)
-    gs_counter = gs_res.scalar() or 0
-    total_chat_messages = max(total_chat_messages, gs_counter)
-
-    formatted_total = f"{total_chat_messages:,}".replace(",", ".")
-
-    rows = []
-    for idx, (stat, u) in enumerate(records, start=1):
-        count = getattr(stat, f"{period_lower}_count", 0)
-        formatted_count = f"{count:,}".replace(",", ".")
-        
-        display_name = html.escape(u.nickname or u.username or f"Trainer {u.id}")
-        if u.username:
-            user_str = f'<a href="https://t.me/{u.username}">{display_name}</a>'
-        else:
-            user_str = display_name
-            
-        rows.append(f"✦ {idx}. 👤 {user_str} ➔ {formatted_count} msgs")
-
-    ranks_body = "\n".join(rows) if rows else "<i>No chat activity recorded yet for this period.</i>"
-
-    text = (
-        f"⚡ <b>CHAT RANKINGS</b> ⚡\n"
-        f"◈ ──────────────── ◈\n"
-        f"🏆 <b>Leaderboard ({period_title})</b>\n\n"
-        f"{ranks_body}\n\n"
-        f"◈ ──────────────── ◈\n"
-        f"✉️ <b>Total messages:</b> {formatted_total}"
-    )
-
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="📅 Daily", callback_data=f"rank_{chat_id}_{user_id}_daily"),
-        InlineKeyboardButton(text="🗓️ Weekly", callback_data=f"rank_{chat_id}_{user_id}_weekly")
-    )
-    builder.row(
-        InlineKeyboardButton(text="📆 Monthly", callback_data=f"rank_{chat_id}_{user_id}_monthly"),
-        InlineKeyboardButton(text="🏆 Overall", callback_data=f"rank_{chat_id}_{user_id}_overall")
-    )
-
-    return text, builder.as_markup()
-
-
-@router.message(Command("rankings", "chatrankings", "chattop", ignore_mention=True))
-async def cmd_rankings(message: Message, db: AsyncSession):
-    if message.chat.type not in ["group", "supergroup"]:
-        await message.answer("⚠️ Chat Rankings are for group chats! Use /rankings inside a group chat.")
-        return
-
-    text, kb = await build_rankings_payload(message.chat.id, message.from_user.id, "weekly", db)
-    await send_cover_media(
-        chat_id=message.chat.id,
-        key="pokedex",
-        caption=text,
-        reply_markup=kb,
-        bot=message.bot,
-        default_file="data/pokeempire_banner.png",
-        message_to_reply=message
-    )
-
-
-@router.callback_query(F.data.startswith("rank_"))
-async def cb_rankings_filter(callback: CallbackQuery, db: AsyncSession):
-    parts = callback.data.split("_")
-    chat_id = int(parts[1])
-    user_id = int(parts[2])
-    period = parts[3]
-
-    if callback.from_user.id != user_id:
-        await callback.answer("❌ This is not your menu! Type /rankings to view yours.", show_alert=True)
-        return
-
-    text, kb = await build_rankings_payload(chat_id, user_id, period, db)
-    try:
-        if callback.message.photo or callback.message.video or callback.message.animation:
-            await callback.message.edit_caption(caption=text, reply_markup=kb, parse_mode="HTML")
-        else:
-            await callback.message.edit_text(text=text, reply_markup=kb, parse_mode="HTML")
-    except Exception as e:
-        print(f"Error editing rankings callback: {e}")
-    await callback.answer()
-
-@router.message(Command("search", ignore_mention=True))
-@router.message(Command("s", ignore_mention=True))
-@router.message(Command("cid", ignore_mention=True))
-async def cmd_search(message: Message, db: AsyncSession):
-    parts = message.text.split()
-    if len(parts) < 2:
-        await message.answer("Format: `/search <pokemon_name_or_id>`\nExample: `/search bulbasaur` or `/search 6`", parse_mode="Markdown")
-        return
-
-    query = " ".join(parts[1:]).strip().lower()
-
-    pokemon_id = None
-    pokemon_name_query = None
-
-    if "." in query:
-        pq, fq = query.split(".", 1)
-        pq = pq.strip()
-        if pq.isdigit():
-            pokemon_id = int(pq)
-        else:
-            pokemon_name_query = pq
-    else:
-        if query.isdigit():
-            pokemon_id = int(query)
-        else:
-            pokemon_name_query = query
-
-    if pokemon_id is not None:
-        poke_stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
-    else:
-        poke_stmt = select(Pokemon).where(Pokemon.name.ilike(f"%{pokemon_name_query}%"))
-
-    poke_res = await db.execute(poke_stmt)
-    pokemons = poke_res.scalars().all()
-
-    if not pokemons:
-        searched_term = pokemon_name_query if pokemon_name_query else str(pokemon_id)
-        await message.answer(f"Pokemon '{html.escape(searched_term)}' not found in database.", parse_mode="HTML")
-        return
-
-    if pokemon_name_query:
-        pokemons.sort(key=lambda p: (abs(len(p.name) - len(pokemon_name_query)), p.name.lower() != pokemon_name_query.lower()))
-    pokemon = pokemons[0]
-
-    await send_search_result_message(message, pokemon, 1, db)
-
-
-async def build_variants_search_payload(pokemon_id: int, page: int, db: AsyncSession):
-    stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
-    res = await db.execute(stmt)
-    pokemon = res.scalar_one_or_none()
-    if not pokemon:
-        return "Character not found.", None
-        
-    from database.models import PokemonFormMedia
-    stmt = select(PokemonFormMedia.form_index, PokemonFormMedia.media_value).where(
-        PokemonFormMedia.pokemon_id == pokemon_id
-    ).order_by(PokemonFormMedia.form_index)
-    res = await db.execute(stmt)
-    form_entries = res.all()
-    
-    custom_forms = await get_custom_rarity_forms(db)
-    custom_rarities = await get_all_custom_rarities(db)
-    
-    base_emoji = get_rarity_emoji(pokemon.rarity, custom_rarities)
-    variants = [(0, pokemon.rarity, base_emoji, f"{pokemon.id}")]
-    
-    for form_index, media_value in form_entries:
-        form_label = get_form_label(form_index, media_value, custom_forms)
-        form_emoji = get_rarity_emoji(form_label, custom_rarities)
-        variants.append((form_index, form_label, form_emoji, f"{pokemon.id}.{form_index}"))
-        
-    total_variants = len(variants)
-    page_size = 5
-    total_pages = max(1, (total_variants + page_size - 1) // page_size)
-    
-    if page < 1:
-        page = 1
-    if page > total_pages:
-        page = total_pages
-        
-    start_idx = (page - 1) * page_size
-    end_idx = start_idx + page_size
-    page_variants = variants[start_idx:end_idx]
-    
-    gen_str = str(pokemon.generation)
-    if gen_str.isdigit():
-        series_str = f"Gen {gen_str}"
-    else:
-        series_str = gen_str
-        
-    caption = (
-        f"🦧 <b>{html.escape(pokemon.name.title())}</b>\n"
-        f"┣━ 🎦 {html.escape(series_str)}\n"
-        f"┣━ 📊 Total variants: <b>{total_variants}</b> — Page <b>{page}/{total_pages}</b>\n\n"
-    )
-    
-    for form_index, label, emoji, entry_id in page_variants:
-        caption += f"┣━ {emoji} {label} | ID: <code>{entry_id}</code>\n"
-        
-    builder = InlineKeyboardBuilder()
-    if total_pages > 1:
-        if page == 1:
-            builder.row(
-                InlineKeyboardButton(text=f"1/{total_pages}", callback_data="search_noop"),
-                InlineKeyboardButton(text="Next ➡️", callback_data=f"search_page_{pokemon.id}_{page + 1}")
-            )
-        elif page == total_pages:
-            builder.row(
-                InlineKeyboardButton(text="⬅️ Prev", callback_data=f"search_page_{pokemon.id}_{page - 1}"),
-                InlineKeyboardButton(text=f"{total_pages}/{total_pages}", callback_data="search_noop")
-            )
-        else:
-            builder.row(
-                InlineKeyboardButton(text="⬅️ Prev", callback_data=f"search_page_{pokemon.id}_{page - 1}"),
-                InlineKeyboardButton(text=f"{page}/{total_pages}", callback_data="search_noop"),
-                InlineKeyboardButton(text="Next ➡️", callback_data=f"search_page_{pokemon.id}_{page + 1}")
-            )
-            
-    return caption, builder.as_markup()
-
-
-async def send_search_result_message(message: Message, pokemon: Pokemon, page: int, db: AsyncSession):
-    caption, reply_markup = await build_variants_search_payload(pokemon.id, page, db)
-    
-    media_value = pokemon.image_url
-    media_type = "photo"
-    if pokemon.image_url:
-        media_type, media_value = parse_stored_media_value(pokemon.image_url)
-        
-    from aiogram.types import FSInputFile
-    if isinstance(media_value, str) and os.path.exists(media_value):
-        media_value = FSInputFile(media_value)
-        
-    try:
-        if media_type == "video":
-            await message.answer_video(video=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
-        else:
-            await message.answer_photo(photo=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
-    except Exception as e:
-        print(f"Error sending variants media: {e}")
-        await message.answer(caption, reply_markup=reply_markup, parse_mode="HTML")
-
-
-@router.callback_query(F.data.startswith("search_page_"))
-async def cb_search_page(callback: CallbackQuery, db: AsyncSession):
-    parts = callback.data.split("_")
-    pokemon_id = int(parts[2])
-    page = int(parts[3])
-    
-    caption, reply_markup = await build_variants_search_payload(pokemon_id, page, db)
-    
-    try:
-        await callback.message.edit_caption(caption=caption, reply_markup=reply_markup, parse_mode="HTML")
-    except Exception:
-        try:
-            await callback.message.edit_text(caption, reply_markup=reply_markup, parse_mode="HTML")
-        except Exception:
-            pass
-            
-    await callback.answer()
-
-
-@router.callback_query(F.data == "search_noop")
-async def cb_search_noop(callback: CallbackQuery):
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("profile_view_"))
-async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
-    try:
-        parts = callback.data.split("_")
-        user_id = int(parts[2])
-
-        if callback.from_user.id != user_id:
-            await callback.answer("❌ This is not your profile!", show_alert=True)
-            return
-
-        count_stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == user_id)
-        count_res = await db.execute(count_stmt)
-        total_caught = count_res.scalar() or 0
-
-        unique_stmt = select(func.count(distinct(UserPokemon.pokemon_id))).where(UserPokemon.user_id == user_id)
-        unique_res = await db.execute(unique_stmt)
-        unique_caught = unique_res.scalar() or 0
-
-        total_species_stmt = select(func.count(Pokemon.id))
-        total_species_res = await db.execute(total_species_stmt)
-        total_species = total_species_res.scalar() or 1
-
-        dex_pct = (unique_caught / total_species) * 100
-        dex_bar = get_progress_bar(unique_caught, total_species, 10, fill_char="▰", empty_char="▱")
-
-        rarity_stmt = select(Pokemon.rarity, func.count(UserPokemon.id)).join(UserPokemon).where(UserPokemon.user_id == user_id).group_by(Pokemon.rarity)
-        rarity_res = await db.execute(rarity_stmt)
-        rarity_counts = {r: count for r, count in rarity_res.all()}
-
-        standard_breakdown = [
-            ("Common", "⚪️"),
-            ("Uncommon", "🟢"),
-            ("Medium", "🔵"),
-            ("Rare", "🟣"),
-            ("Epic", "🔮"),
-            ("Legendary", "🌟"),
-            ("Mythical", "🌌")
-        ]
-        
-        from utils.settings import get_all_custom_rarities
-        custom_rarities = await get_all_custom_rarities(db)
-
-        breakdown_lines = []
-        for r_name, r_emoji in standard_breakdown:
-            cnt = rarity_counts.get(r_name, 0)
-            breakdown_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
-            
-        rarity_breakdown_text = "\n".join(breakdown_lines)
-
-        form_counts_stmt = select(UserPokemon.form_index, func.count(distinct(UserPokemon.pokemon_id))).where(
-            UserPokemon.user_id == user_id, UserPokemon.form_index > 0
-        ).group_by(UserPokemon.form_index)
-        form_counts_res = await db.execute(form_counts_stmt)
-        form_counts = {fi: cnt for fi, cnt in form_counts_res.all()}
-        amv_count = form_counts.get(1, 0)
-        dmax_count = form_counts.get(2, 0)
-        gmax_count = form_counts.get(3, 0)
-        zmove_count = form_counts.get(4, 0)
-        terastal_count = form_counts.get(5, 0)
-
-        forms_lines = [
-            f"├─➩ 🎬 AMV / Art: {amv_count}",
-            f"├─➩ ⚡ Dmax: {dmax_count}",
-            f"├─➩ 💥 Gmax: {gmax_count}",
-            f"├─➩ 🌀 Z-Move: {zmove_count}",
-            f"├─➩ 🔮 Terastal: {terastal_count}"
-        ]
-        
-        standard_keys = {"Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical", "Limited", "Limited Edition"}
-        for r_name, r_emoji in custom_rarities.items():
-            if r_name in standard_keys:
-                continue
-            cnt = 0
-            for r_c, count in rarity_counts.items():
-                if r_c and r_name and r_c.lower() == r_name.lower():
-                    cnt = count
-                    break
-            forms_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
-            
-        forms_breakdown_text = "\n".join(forms_lines)
-
-        u_stmt = select(User).where(User.id == user_id)
-        u_res = await db.execute(u_stmt)
-        user = u_res.scalar_one_or_none()
-        
-        formatted_coins = f"{user.coins:,}" if user else "0"
-        user_nickname = (user.profile_name or user.nickname) if (user and (user.profile_name or user.nickname)) else (callback.from_user.first_name or "Trainer")
-
-        rank_stmt = (
-            select(func.count())
-            .select_from(
-                select(UserPokemon.user_id)
-                .group_by(UserPokemon.user_id)
-                .having(func.count(UserPokemon.id) > total_caught)
-                .subquery()
-            )
-        )
-        rank_res = await db.execute(rank_stmt)
-        rank_position = (rank_res.scalar() or 0) + 1
-
-        from utils.streak import get_streak_data
-        s_data = await get_streak_data(user_id)
-        current_streak = s_data.get("current_streak", 0)
-        best_streak = s_data.get("best_streak", 0)
-
-        fav_val = await get_favorite_id(user_id, db)
-        fav_name = "None (Random Bag)"
-        if fav_val:
-            pokemon_id = None
-            form_index = 0
-            if "." in fav_val:
-                pq, fq = fav_val.split(".", 1)
-                if pq.isdigit() and fq.isdigit():
-                    pokemon_id = int(pq)
-                    form_index = int(fq)
-            elif fav_val.isdigit():
-                pokemon_id = int(fav_val)
-                
-            if pokemon_id:
-                poke_stmt = select(Pokemon.name).where(Pokemon.id == pokemon_id)
-                poke_res = await db.execute(poke_stmt)
-                p_name = poke_res.scalar()
-                if p_name:
-                    form_suffix = f" (Form {form_index})" if form_index > 0 else ""
-                    fav_name = f"{p_name.title()}{form_suffix}"
-
-        profile_card = (
-            f"╭──「 🏆 Trainer Profile 」\n"
-            f"├─➩ 🏓 User: {html.escape(user_nickname)}\n"
-            f"├─➩ 🆔 ID: <code>{user_id}</code>\n"
-            f"├─➩ 💰 Balance: <code>{formatted_coins} coins</code>\n"
-            f"├─➩ ⚡ Pokémon: {unique_caught} (Total Catches: {total_caught})\n"
-            f"├─➩ 🌍 Pokédex: {unique_caught}/{total_species} ({dex_pct:.3f}%)\n"
-            f"├─➩ 🎁 Progress:\n"
-            f"╰         {dex_bar}\n\n"
-            f"╭─ Cover & Streaks ─\n"
-            f"├─➩ ⭐ Favorite: <code>{html.escape(fav_name)}</code>\n"
-            f"├─➩ 🔥 Current Streak: <code>{current_streak} days</code>\n"
-            f"├─➩ 🏆 Best Streak: <code>{best_streak} days</code>\n"
-            f"╰───────────────────\n\n"
-            f"╭─ Rarity Breakdown ─\n"
-            f"{rarity_breakdown_text}\n"
-            f"╰───────────────────\n\n"
-            f"╭─ Forms Breakdown ─\n"
-            f"{forms_breakdown_text}\n"
-            f"╰───────────────────\n\n"
-            f"╭─ Global Rank ─\n"
-            f"├─➩ 🏆 Position: #{rank_position}\n"
-            f"╰───────────────────"
-        )
-        
-        builder = InlineKeyboardBuilder()
-        builder.row(InlineKeyboardButton(text="📖 View Pokédex", callback_data=f"pd_page_{user_id}_1_All"))
-        
-        await edit_player_cover_message(callback, user_id, profile_card, builder.as_markup(), db, parse_mode="HTML")
-        await callback.answer()
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        await callback.answer(f"❌ Error displaying profile: {e}", show_alert=True)
-
-
-@router.message(Command("dex", ignore_mention=True))
-async def cmd_dex(message: Message, db: AsyncSession):
-    parts = message.text.split()
-    if len(parts) < 2:
-        await message.answer("⚠️ Format: `/dex <pokemon_name_or_id>`")
-        return
-        
-    query = " ".join(parts[1:]).strip().lower()
-    user_id = message.from_user.id
-    
-    if query.isdigit():
-        poke_stmt = select(Pokemon).where(Pokemon.id == int(query))
-    else:
-        poke_stmt = select(Pokemon).where(Pokemon.name.ilike(query))
-        
-    poke_res = await db.execute(poke_stmt)
-    pokemon = poke_res.scalar_one_or_none()
-    
-    if not pokemon:
-        await message.answer(f"❌ Pokémon '{html.escape(query)}' not found.")
-        return
-        
-    owned_stmt = select(UserPokemon.form_index).where(
-        UserPokemon.user_id == user_id,
-        UserPokemon.pokemon_id == pokemon.id
-    )
-    owned_res = await db.execute(owned_stmt)
-    owned_forms = set(owned_res.scalars().all())
-    
-    shiny_stmt = select(UserPokemon.id).where(
-        UserPokemon.user_id == user_id,
-        UserPokemon.pokemon_id == pokemon.id,
-        UserPokemon.is_shiny == True
-    ).limit(1)
-    shiny_res = await db.execute(shiny_stmt)
-    has_shiny = shiny_res.scalar() is not None
-    
-    from database.models import PokemonFormMedia
-    media_stmt = select(PokemonFormMedia.form_index, PokemonFormMedia.media_value).where(
-        PokemonFormMedia.pokemon_id == pokemon.id
-    )
-    media_res = await db.execute(media_stmt)
-    configured_media = {row[0]: row[1] for row in media_res.all()}
-    
-    custom_forms = await get_custom_rarity_forms(db)
-    form_names = {
-        0: "Standard",
-        1: "AMV/Art",
-        2: "Dmax",
-        3: "Gmax",
-        4: "Z-Move",
-        5: "Terastal"
-    }
-    form_badges = {
-        0: "📸",
-        1: "🎬",
-        2: "⚡",
-        3: "💥",
-        4: "🌀",
-        5: "🔮"
-    }
-    for f_idx, (r_name, r_emoji) in custom_forms.items():
-        form_names[f_idx] = r_name
-        form_badges[f_idx] = r_emoji
-    
-    subtypes_text = ""
-    available_forms = sorted(list({0} | set(configured_media.keys()) | owned_forms))
-    
-    builder = InlineKeyboardBuilder()
-    
-    for f in available_forms:
-        val = configured_media.get(f, "")
-        f_name = form_names.get(f, get_form_label(f, val, custom_forms))
-        f_badge = form_badges.get(f, get_rarity_emoji(f_name))
-        is_owned = f in owned_forms
-        owned_status = "✅ Owned" if is_owned else "❌ Locked"
-        
-        if f == 0:
-            rarity_lbl = pokemon.rarity
-        else:
-            rarity_lbl = f_name
-            
-        subtypes_text += f"• {f_badge} <b>{f_name}</b> (<code>{rarity_lbl}</code>): {owned_status}\n"
-        
-        if is_owned:
-            builder.button(text=f"▶️ View {f_name}", callback_data=f"dex_play_{user_id}_{pokemon.id}_{f}")
-            
-    builder.adjust(2)
-    
-    r_emoji = get_rarity_emoji(pokemon.rarity)
-    shiny_tag = " ✨" if has_shiny else ""
-    
-    caption = (
-        f"📖 <b>DEX ENTRY: #{pokemon.id:03d} {pokemon.name.title()}</b>{shiny_tag}\n"
-        f"───────────────\n"
-        f"Rarity: {r_emoji} <b>{pokemon.rarity}</b>\n"
-        f"Generation: <b>Gen {pokemon.generation}</b>\n\n"
-        f"🧬 <b>Subtype Collection</b>:\n"
-        f"{subtypes_text}"
-        f"───────────────"
-    )
-    
-    try:
-        await message.answer_photo(
-            photo=pokemon.image_url,
-            caption=caption,
-            reply_markup=builder.as_markup(),
-            parse_mode="HTML"
-        )
-    except Exception as e:
-        print(f"Error sending dex entry: {e}")
-        await message.answer(caption, reply_markup=builder.as_markup(), parse_mode="HTML")
-
-@router.callback_query(F.data.startswith("dex_play_"))
-async def cb_dex_play(callback: CallbackQuery, db: AsyncSession):
-    parts = callback.data.split("_")
-    user_id = int(parts[2])
-    pokemon_id = int(parts[3])
-    form_index = int(parts[4])
-    
-    if callback.from_user.id != user_id:
-        await callback.answer("❌ This is not your menu!", show_alert=True)
-        return
-        
-    stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
-    res = await db.execute(stmt)
-    pokemon = res.scalar_one_or_none()
-    if not pokemon:
-        await callback.answer("❌ Pokémon not found.", show_alert=True)
-        return
-        
-    from database.models import PokemonFormMedia
-    media_value = None
-    media_type = "photo"
-    
-    if form_index == 0:
-        shiny_stmt = select(UserPokemon.id).where(
-            UserPokemon.user_id == user_id,
-            UserPokemon.pokemon_id == pokemon_id,
-            UserPokemon.is_shiny == True
-        ).limit(1)
-        shiny_res = await db.execute(shiny_stmt)
-        has_shiny = shiny_res.scalar() is not None
-        
-        form_media = None
-        if has_shiny:
-            s_media_stmt = select(PokemonFormMedia).where(
-                PokemonFormMedia.pokemon_id == pokemon_id,
-                PokemonFormMedia.form_index == 6
-            )
-            s_res = await db.execute(s_media_stmt)
-            form_media = s_res.scalar_one_or_none()
-            
-        if form_media:
-            media_value = form_media.media_value
-            if media_value.startswith("video:"):
-                media_type = "video"
-                media_value = media_value.replace("video:", "")
-            elif media_value.startswith("photo:"):
-                media_type = "photo"
-                media_value = media_value.replace("photo:", "")
-            elif media_value.startswith("animation:"):
-                media_type = "animation"
-                media_value = media_value.replace("animation:", "")
-            else:
-                if media_value.startswith("http"):
-                    media_type = "photo"
-                else:
-                    media_type = "video"
-        else:
-            media_value = pokemon.image_url
-            media_type = "photo"
-    else:
-        media_stmt = select(PokemonFormMedia).where(
-            PokemonFormMedia.pokemon_id == pokemon_id,
-            PokemonFormMedia.form_index == form_index
-        )
-        media_res = await db.execute(media_stmt)
-        form_media = media_res.scalar_one_or_none()
-        if form_media:
-            media_value = form_media.media_value
-            if media_value.startswith("video:"):
-                media_type = "video"
-                media_value = media_value.replace("video:", "")
-            elif media_value.startswith("photo:"):
-                media_type = "photo"
-                media_value = media_value.replace("photo:", "")
-            elif media_value.startswith("animation:"):
-                media_type = "animation"
-                media_value = media_value.replace("animation:", "")
-            else:
-                if media_value.startswith("http"):
-                    media_type = "photo"
-                else:
-                    media_type = "video"
-                    
-    if not media_value:
-        if form_index > 0:
-            await callback.answer(f"⚠️ Media for Form {form_index} is not registered yet.", show_alert=True)
-            return
-        media_type = "photo"
-        media_value = pokemon.image_url
-
-    custom_forms = await get_custom_rarity_forms(db)
-    form_label = get_form_label(form_index, media_value, custom_forms)
-
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 Back to Dex Info", callback_data=f"dex_back_{user_id}_{pokemon_id}")
-    
-    from aiogram.types import InputMediaPhoto, InputMediaVideo
-    try:
-        if media_type in ["video", "animation"]:
-            new_media = InputMediaVideo(media=media_value, caption=f"🎥 Playing <b>{pokemon.name.title()} ({html.escape(form_label)})</b>", parse_mode="HTML")
-        else:
-            new_media = InputMediaPhoto(media=media_value, caption=f"📸 Showing <b>{pokemon.name.title()} ({html.escape(form_label)})</b>", parse_mode="HTML")
-            
-        await callback.message.edit_media(media=new_media, reply_markup=builder.as_markup())
-    except Exception as e:
-        print(f"Error playing form media: {e}")
-        await callback.answer("❌ Could not display media on this message.", show_alert=True)
-        
-    await callback.answer()
-
-@router.callback_query(F.data.startswith("dex_back_"))
-async def cb_dex_back(callback: CallbackQuery, db: AsyncSession):
-    parts = callback.data.split("_")
-    user_id = int(parts[2])
-    pokemon_id = int(parts[3])
-    
-    if callback.from_user.id != user_id:
-        await callback.answer("❌ This is not your menu!", show_alert=True)
-        return
-        
-    stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
-    res = await db.execute(stmt)
-    pokemon = res.scalar_one_or_none()
-    if not pokemon:
-        await callback.answer("❌ Pokémon not found.", show_alert=True)
-        return
-        
-    owned_stmt = select(UserPokemon.form_index).where(
-        UserPokemon.user_id == user_id,
-        UserPokemon.pokemon_id == pokemon.id
-    )
-    owned_res = await db.execute(owned_stmt)
-    owned_forms = set(owned_res.scalars().all())
-    
-    shiny_stmt = select(UserPokemon.id).where(
-        UserPokemon.user_id == user_id,
-        UserPokemon.pokemon_id == pokemon.id,
-        UserPokemon.is_shiny == True
-    ).limit(1)
-    shiny_res = await db.execute(shiny_stmt)
-    has_shiny = shiny_res.scalar() is not None
-    
-    from database.models import PokemonFormMedia
-    media_stmt = select(PokemonFormMedia.form_index, PokemonFormMedia.media_value).where(
-        PokemonFormMedia.pokemon_id == pokemon.id
-    )
-    media_res = await db.execute(media_stmt)
-    configured_media = {row[0]: row[1] for row in media_res.all()}
-    
-    custom_forms = await get_custom_rarity_forms(db)
-    form_names = {
-        0: "Standard",
-        1: "AMV/Art",
-        2: "Dmax",
-        3: "Gmax",
-        4: "Z-Move",
-        5: "Terastal"
-    }
-    form_badges = {
-        0: "📸",
-        1: "🎬",
-        2: "⚡",
-        3: "💥",
-        4: "🌀",
-        5: "🔮"
-    }
-    for f_idx, (r_name, r_emoji) in custom_forms.items():
-        form_names[f_idx] = r_name
-        form_badges[f_idx] = r_emoji
-    
-    subtypes_text = ""
-    available_forms = [0] + sorted([f for f in configured_media.keys() if f > 0])
-    builder = InlineKeyboardBuilder()
-    
-    for f in available_forms:
-        f_name = form_names.get(f, f"Form {f}")
-        f_badge = form_badges.get(f, "🌀")
-        is_owned = f in owned_forms
-        owned_status = "✅ Owned" if is_owned else "❌ Locked"
-        
-        if f == 0:
-            rarity_lbl = pokemon.rarity
-        elif f == 1:
-            val = configured_media.get(1, "")
-            rarity_lbl = "Art" if val.startswith("photo:") else "AMV"
-        else:
-            rarity_lbl = f_name
-            
-        subtypes_text += f"• {f_badge} <b>{f_name}</b> (<code>{rarity_lbl}</code>): {owned_status}\n"
-        
-        if is_owned:
-            builder.button(text=f"▶️ View {f_name}", callback_data=f"dex_play_{user_id}_{pokemon.id}_{f}")
-            
-    builder.adjust(2)
-    
-    r_emoji = get_rarity_emoji(pokemon.rarity)
-    shiny_tag = " ✨" if has_shiny else ""
-    
-    caption = (
-        f"📖 <b>DEX ENTRY: #{pokemon.id:03d} {pokemon.name.title()}</b>{shiny_tag}\n"
-        f"───────────────\n"
-        f"Rarity: {r_emoji} <b>{pokemon.rarity}</b>\n"
-        f"Generation: <b>Gen {pokemon.generation}</b>\n\n"
-        f"🧬 <b>Subtype Collection</b>:\n"
-        f"{subtypes_text}"
-        f"───────────────"
-    )
-    
-    from aiogram.types import InputMediaPhoto
-    try:
-        await callback.message.edit_media(
-            media=InputMediaPhoto(media=pokemon.image_url, caption=caption, parse_mode="HTML"),
-            reply_markup=builder.as_markup()
-        )
-    except Exception as e:
-        print(f"Error resetting media: {e}")
-        try:
-            await callback.message.edit_caption(caption=caption, reply_markup=builder.as_markup(), parse_mode="HTML")
-        except Exception:
-            pass
-            
-    await callback.answer()
-
-@router.message(Command("gift", ignore_mention=True))
-async def cmd_gift(message: Message, db: AsyncSession):
-    parts = message.text.split()
-    target_user = None
-    gift_str = None
-    
-    if message.reply_to_message:
-        if len(parts) < 2:
-            await message.answer("⚠️ Format (replying): `/gift <pokedex_id>[.form_index]`")
-            return
-        rep_user = message.reply_to_message.from_user
-        if rep_user.is_bot:
-            await message.answer("❌ You cannot gift Pokémon to a bot!")
-            return
-            
-        stmt = select(User).where(User.id == rep_user.id)
-        res = await db.execute(stmt)
-        target_user = res.scalar_one_or_none()
-        gift_str = parts[1]
-    else:
-        if len(parts) < 3:
-            await message.answer("⚠️ Format: `/gift <@username or user_id> <pokedex_id>[.form_index]`\n(or reply to their message with `/gift <pokedex_id>[.form_index]`)")
-            return
-            
-        target_str = parts[1]
-        gift_str = parts[2]
-        
-        if target_str.isdigit():
-            stmt = select(User).where(User.id == int(target_str))
-            res = await db.execute(stmt)
-            target_user = res.scalar_one_or_none()
-        elif target_str.startswith("@"):
-            uname = target_str.replace("@", "").strip()
-            stmt = select(User).where(User.username.ilike(uname))
-            res = await db.execute(stmt)
-            target_user = res.scalar_one_or_none()
-            
-    if not target_user:
-        await message.answer("❌ Target trainer not found. They must have started the bot first.")
-        return
-        
-    if target_user.id == message.from_user.id:
-        await message.answer("❌ You cannot gift Pokémon to yourself!")
-        return
-
-    form_index = 0
-    pokedex_str = gift_str
-    if "." in gift_str:
-        pq, fq = gift_str.split(".", 1)
-        if fq.isdigit():
-            form_index = int(fq)
-        pokedex_str = pq
-        
-    if not pokedex_str.isdigit():
-        await message.answer("❌ Invalid Pokédex ID. Must be a number.")
-        return
-    pokedex_id = int(pokedex_str)
-    
-    stmt = select(UserPokemon).options(joinedload(UserPokemon.pokemon)).where(
-        UserPokemon.user_id == message.from_user.id,
-        UserPokemon.pokemon_id == pokedex_id,
-        UserPokemon.form_index == form_index
-    ).order_by(UserPokemon.is_shiny.asc())
-    res = await db.execute(stmt)
-    up = res.scalars().first()
-    
-    if not up:
-        form_names = {
-            0: "Standard",
-            1: "AMV/Art",
-            2: "Dmax",
-            3: "Gmax",
-            4: "Z-Move",
-            5: "Terastal"
-        }
-        f_name = form_names.get(form_index, f"Form {form_index}")
-        await message.answer(f"❌ You do not own a <b>{f_name}</b> form of Pokédex #{pokedex_id:03d}!", parse_mode="HTML")
-        return
-
-    # Check soulbound/exclusive status (Bot Owner & Admins bypass)
-    is_sender_admin = (
-        message.from_user.id in config.ADMIN_IDS
-        or message.from_user.id in getattr(config, "CO_OWNER_IDS", [])
-        or message.from_user.id in getattr(config, "OWNER_IDS", [])
-    )
-    if not is_sender_admin and await is_pokemon_soulbound(up.pokemon, up, db):
-        await message.answer(
-            f"🔒 <b>SOULBOUND PROTECTION!</b>\n"
-            f"───────────────\n"
-            f"<blockquote>❌ <b>{up.pokemon.name.title()}</b> belongs to the <b>Exclusive / Event Winner</b> rarity tier and is permanently bound to your account.\n\n"
-            f"It cannot be gifted or transferred.</blockquote>",
-            parse_mode="HTML"
-        )
-        return
-
-    shiny_badge = "✨ Shiny " if up.is_shiny else ""
-    form_names = {
-        0: "",
-        1: "AMV ",
-        2: "Dmax ",
-        3: "Gmax ",
-        4: "Z-Move ",
-        5: "Terastal "
-    }
-    form_badge = form_names.get(form_index, f"Form {form_index} ")
-    r_emoji = get_rarity_emoji(up.pokemon.rarity)
-    pokemon_display = f"{r_emoji} {shiny_badge}{form_badge}<b>{up.pokemon.name.title()}</b>"
-
-    sender_name = message.from_user.first_name or "Trainer"
-    receiver_name = target_user.nickname or target_user.username or "Trainer"
-
-    kb = get_gift_confirm_keyboard(message.from_user.id, target_user.id, up.id)
-
-    text = (
-        f"🎁 <b>GIFT CONFIRMATION</b>\n"
-        f"◈ ────────────────── ◈\n"
-        f"👤 <b>Sender:</b> {html.escape(sender_name)}\n"
-        f"👤 <b>Recipient:</b> {html.escape(receiver_name)}\n"
-        f"💝 <b>Pokémon:</b> {pokemon_display}\n\n"
-        f"Are you sure you want to gift this Pokémon to <b>{html.escape(receiver_name)}</b>?\n"
-        f"◈ ────────────────── ◈"
-    )
-    await message.answer(text, reply_markup=kb, parse_mode="HTML")
-
-
-@router.callback_query(F.data.startswith("gift_cnf_"))
-async def cb_gift_confirm(callback: CallbackQuery, db: AsyncSession):
-    try:
-        parts = callback.data.split("_")
-        sender_id = int(parts[2])
-        target_id = int(parts[3])
-        up_id = int(parts[4])
-
-        if callback.from_user.id != sender_id:
-            await callback.answer("❌ Only the sender can confirm this gift!", show_alert=True)
-            return
-
-        stmt = select(UserPokemon).options(joinedload(UserPokemon.pokemon)).where(
-            UserPokemon.id == up_id
-        )
-        res = await db.execute(stmt)
-        up = res.scalars().first()
-
-        if not up or up.user_id != sender_id:
-            await callback.answer("❌ Pokémon is no longer in your bag!", show_alert=True)
-            try:
-                await callback.message.edit_text("❌ <b>Gift Failed</b>: Pokémon is no longer in your bag.", parse_mode="HTML")
-            except Exception:
-                pass
-            return
-
-        # Soulbound check on confirmation (Admins & Owners bypass)
-        is_sender_admin = (
-            sender_id in config.ADMIN_IDS
-            or sender_id in getattr(config, "CO_OWNER_IDS", [])
-            or sender_id in getattr(config, "OWNER_IDS", [])
-        )
-        if not is_sender_admin and await is_pokemon_soulbound(up.pokemon, up, db):
-            await callback.answer("❌ This Pokémon is soulbound/exclusive and cannot be gifted.", show_alert=True)
-            try:
-                await callback.message.edit_text("❌ <b>Gift Failed</b>: Soulbound / Exclusive Pokémon cannot be transferred.", parse_mode="HTML")
-            except Exception:
-                pass
-            return
-
-        target_stmt = select(User).where(User.id == target_id)
-        target_res = await db.execute(target_stmt)
-        target_user = target_res.scalar_one_or_none()
-
-        if not target_user:
-            await callback.answer("❌ Recipient trainer not found.", show_alert=True)
-            return
-
-        # Transfer ownership
-        old_user_id = up.user_id
-        up.user_id = target_user.id
-
-        remain_stmt = select(UserPokemon.id).where(
-            UserPokemon.user_id == old_user_id,
-            UserPokemon.pokemon_id == up.pokemon_id
-        ).limit(1)
-        remain_res = await db.execute(remain_stmt)
-        if remain_res.scalar() is None:
-            fav_val = await get_favorite_id(old_user_id, db)
-            if fav_val and (fav_val == str(up.pokemon_id) or fav_val.startswith(f"{up.pokemon_id}.")):
-                await set_favorite_id(old_user_id, None, db)
-
-        await db.commit()
-
-        shiny_badge = "✨ Shiny " if up.is_shiny else ""
-        form_names = {
-            0: "",
-            1: "AMV ",
-            2: "Dmax ",
-            3: "Gmax ",
-            4: "Z-Move ",
-            5: "Terastal "
-        }
-        form_badge = form_names.get(up.form_index, f"Form {up.form_index} ")
-        r_emoji = get_rarity_emoji(up.pokemon.rarity)
-
-        media_type = "photo"
-        media_value = up.pokemon.image_url
-        if up.pokemon.image_url:
-            media_type, media_value = parse_stored_media_value(up.pokemon.image_url)
-
-        if up.form_index > 0:
-            form_media = await get_single_form_media_value(db, up.pokemon_id, up.form_index)
-            if form_media:
-                media_type, media_value = parse_stored_media_value(form_media)
-            elif up.form_index == 1 and up.pokemon.video_url:
-                media_type, media_value = parse_stored_media_value(up.pokemon.video_url)
-
-        pokemon_display = f"{r_emoji} {shiny_badge}{form_badge}<b>{up.pokemon.name.title()}</b>"
-
-        sender_name = callback.from_user.first_name or "Trainer"
-        receiver_name = target_user.nickname or target_user.username or "Trainer"
-
-        caption = (
-            f"🎁 <b>POKÉMON GIFTED!</b> 🎁\n"
-            f"<blockquote>👤 Sender: <b>{html.escape(sender_name)}</b>\n"
-            f"👤 Recipient: <b>{html.escape(receiver_name)}</b>\n"
-            f"💝 Pokémon: {pokemon_display}</blockquote>"
-        )
-
-        from aiogram.types import FSInputFile
-        if isinstance(media_value, str) and os.path.exists(media_value):
-            media_value = FSInputFile(media_value)
-
-        try:
-            await callback.message.delete()
-        except Exception:
-            pass
-
-        try:
-            if media_type == "video":
-                await callback.message.answer_video(video=media_value, caption=caption, parse_mode="HTML")
-            elif media_type == "animation":
-                await callback.message.answer_animation(animation=media_value, caption=caption, parse_mode="HTML")
-            else:
-                await callback.message.answer_photo(photo=media_value, caption=caption, parse_mode="HTML")
-        except Exception as e:
-            print(f"Error sending player gifted pokemon media: {e}")
-            await callback.message.answer(caption, parse_mode="HTML")
-
-        dm_text = (
-            f"📣 <b>You received a Gift!</b>\n"
-            f"<blockquote>👤 Sender: <b>{html.escape(sender_name)}</b>\n"
-            f"💝 Pokémon: {pokemon_display}</blockquote>"
-        )
-        try:
-            await callback.bot.send_message(chat_id=target_user.id, text=dm_text, parse_mode="HTML")
-        except Exception:
-            pass
-
-        await callback.answer("✅ Gift sent successfully!")
-    except Exception as e:
-        print(f"Error in cb_gift_confirm: {e}")
-        await callback.answer("❌ Error processing gift.", show_alert=True)
-
-
-@router.callback_query(F.data.startswith("gift_dec_"))
-async def cb_gift_decline(callback: CallbackQuery):
-    try:
-        parts = callback.data.split("_")
-        sender_id = int(parts[2])
-
-        if callback.from_user.id != sender_id:
-            await callback.answer("❌ Only the sender can cancel this gift!", show_alert=True)
-            return
-
-        try:
-            await callback.message.edit_text("❌ <b>Gift cancelled.</b>", parse_mode="HTML")
-        except Exception:
-            pass
-        await callback.answer("Gift cancelled.")
-    except Exception as e:
-        print(f"Error in cb_gift_decline: {e}")
-        await callback.answer()
-
-
-async def build_transactions_payload(user_id: int, page: int, db: AsyncSession, is_dm: bool = False):
-    from database.models import TransactionHistory, User
-
-    stmt_count = select(func.count(TransactionHistory.id)).where(TransactionHistory.user_id == user_id)
-    res_count = await db.execute(stmt_count)
-    total_count = res_count.scalar() or 0
-
-    if total_count == 0:
-        stmt_u = select(User).where(User.id == user_id)
-        res_u = await db.execute(stmt_u)
-        user = res_u.scalar_one_or_none()
-        if user and user.coins > 0:
-            init_tx = TransactionHistory(
-                user_id=user_id,
-                amount=user.coins,
-                category="Initial Balance",
-                description="Trainer coin balance"
-            )
-            db.add(init_tx)
-            await db.commit()
-            total_count = 1
-
-    if total_count == 0:
-        text = (
-            f"⚡ <b>TRANSACTION HISTORY</b> ⚡\n"
-            f"◈ ────────────────── ◈\n"
-            f"<i>No transaction records found yet.</i>\n"
-            f"◈ ────────────────── ◈"
-        )
-        markup = get_tx_pagination_keyboard(user_id=user_id, page=1, max_page=1, is_dm=is_dm)
-        return text, markup
-
-    PAGE_SIZE = 8
-    max_page = max(1, (total_count + PAGE_SIZE - 1) // PAGE_SIZE)
-    page = max(1, min(page, max_page))
-    offset = (page - 1) * PAGE_SIZE
-
-    stmt_tx = select(TransactionHistory).where(
-        TransactionHistory.user_id == user_id
-    ).order_by(TransactionHistory.created_at.desc()).offset(offset).limit(PAGE_SIZE)
-    res_tx = await db.execute(stmt_tx)
-    txs = res_tx.scalars().all()
-
-    rows = []
-    for tx in txs:
-        dt_str = tx.created_at.strftime("%b %d, %Y %H:%M") if tx.created_at else "Recently"
-        cat = html.escape(tx.category or "Transaction")
-        desc = html.escape(tx.description or "")
-        amt = tx.amount or 0
-        
-        if amt >= 0:
-            rows.append(
-                f"✦ 📥 <b>Received:</b> 🟢 <code>+{amt:,} coins</code> (<b>{cat}</b>)\n"
-                f"   ↳ <i>{desc}</i> • <code>{dt_str}</code>"
-            )
-        else:
-            rows.append(
-                f"✦ 📤 <b>Paid:</b> 🔴 <code>-{abs(amt):,} coins</code> (<b>{cat}</b>)\n"
-                f"   ↳ <i>{desc}</i> • <code>{dt_str}</code>"
-            )
-
-    tx_body = "\n\n".join(rows) if rows else "<i>No transaction records found.</i>"
-    text = (
-        f"⚡ <b>TRANSACTION HISTORY</b> ⚡\n"
-        f"◈ ────────────────── ◈\n"
-        f"📊 <b>Total Transactions:</b> <code>{total_count:,}</code>\n"
-        f"◈ ────────────────── ◈\n\n"
-        f"{tx_body}\n\n"
-        f"◈ ────────────────── ◈\n"
-        f"📑 <b>Page:</b> <code>{page}/{max_page}</code>"
-    )
-
-    markup = get_tx_pagination_keyboard(user_id=user_id, page=page, max_page=max_page, is_dm=is_dm)
-    return text, markup
-
-
-@router.message(Command("transactions", "tx", "history", ignore_mention=True))
-async def cmd_transactions(message: Message, db: AsyncSession):
-    user_id = message.from_user.id
-    is_dm = (message.chat.type == "private")
-    text, markup = await build_transactions_payload(user_id=user_id, page=1, db=db, is_dm=is_dm)
-    await message.answer(text, reply_markup=markup, parse_mode="HTML")
-
-
-@router.callback_query(F.data == "dm_transactions")
-async def cb_dm_transactions(callback: CallbackQuery, db: AsyncSession):
-    user_id = callback.from_user.id
-    text, markup = await build_transactions_payload(user_id=user_id, page=1, db=db, is_dm=True)
-    try:
-        await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
-    except Exception:
-        await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("tx_page_"))
-async def cb_tx_page(callback: CallbackQuery, db: AsyncSession):
-    parts = callback.data.split("_")
-    target_user_id = int(parts[2]) if len(parts) >= 4 else callback.from_user.id
-    page = int(parts[3]) if len(parts) >= 4 else int(parts[2])
-
-    if callback.from_user.id != target_user_id:
-        await callback.answer("❌ You can only navigate your own transaction history!", show_alert=True)
-        return
-
-    is_dm = (callback.message.chat.type == "private") if callback.message and callback.message.chat else True
-    text, markup = await build_transactions_payload(user_id=target_user_id, page=page, db=db, is_dm=is_dm)
-    try:
-        await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
-    except Exception:
-        await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
-    await callback.answer()
-
-
-@router.callback_query(F.data == "tx_noop")
-async def cb_tx_noop(callback: CallbackQuery):
-    await callback.answer()
-
-
-@router.message(Command("sync", "syncname", "syncprofile", "updatename", "refreshname", ignore_mention=True))
-async def cmd_sync_profile(message: Message, db: AsyncSession):
-    if not message.from_user or message.from_user.is_bot:
-        return
-
-    from utils.user_sync import sync_user_identity
-    user_db, changed = await sync_user_identity(db, message, force=True)
-
-    if not user_db:
-        user_id = message.from_user.id
-        stmt = select(User).where(User.id == user_id)
-        res = await db.execute(stmt)
-        user_db = res.scalar_one_or_none()
-
-    username_str = f"@{user_db.username}" if (user_db and user_db.username) else "<i>None</i>"
-    display_name = (user_db.profile_name or user_db.nickname) if user_db else (message.from_user.first_name or "Trainer")
-    coins_str = f"{user_db.coins:,}" if user_db else "500"
-
-    override_note = ""
-    if user_db and user_db.profile_name:
-        override_note = (
-            f"\n🏷 <i>Custom In-Game Name:</i> <b>{html.escape(user_db.profile_name)}</b>\n"
-            f"<i>(Use <code>/resetname</code> to restore your Telegram name)</i>\n"
-        )
-
-    text = (
-        f"🔄 <b>TRAINER PROFILE SYNCHRONIZED</b> 🔄\n"
-        f"◈ ────────────────────────── ◈\n"
-        f"👤 <b>Trainer Name:</b> <b>{html.escape(display_name)}</b>\n"
-        f"🏷 <b>Telegram Handle:</b> {username_str}\n"
-        f"🆔 <b>Trainer ID:</b> <code>{message.from_user.id}</code>\n"
-        f"💰 <b>Coins:</b> <code>{coins_str}</code>\n"
-        f"◈ ────────────────────────── ◈\n"
-        f"{override_note}\n"
-        f"✅ <i>Your latest Telegram username and display name are now synchronized with PokeEmpire!</i>"
-    )
-    await message.answer(text, parse_mode="HTML")
+import os
+import logging
+logger = logging.getLogger(__name__)
+import html
+import re
+from aiogram import Router, F
+from aiogram.filters import Command
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func, distinct, desc, case
+from sqlalchemy.orm import joinedload
+from database.models import User, UserPokemon, Pokemon
+from utils.formatters import get_hp_bar, get_progress_bar, get_rarity_emoji, escape_md
+from utils.favorite import get_favorite_id, set_favorite_id
+from utils.settings import send_cover_media, get_custom_cover, get_custom_rarity_forms, get_all_custom_rarities, send_safe_media, is_pokemon_soulbound
+import config
+
+from keyboards.inline import create_styled_button, get_tx_pagination_keyboard, get_gift_confirm_keyboard
+
+router = Router()
+
+FORM_INDEX_MAP = {
+    "AMV": 1,
+    "Dmax": 2,
+    "Gmax": 3,
+    "Z-Move": 4,
+    "Terastal": 5,
+    "Shiny": 6,
+}
+
+FORM_LABELS = {
+    0: "Standard",
+    1: "AMV",
+    2: "Dmax",
+    3: "Gmax",
+    4: "Z-Move",
+    5: "Terastal",
+    6: "Shiny",
+}
+
+FORM_KEYWORD_MAP = {
+    "amv": 1,
+    "art": 1,
+    "custom art": 1,
+    "custom arts": 1,
+    "custom": 1,
+    "dmax": 2,
+    "dynamax": 2,
+    "gmax": 3,
+    "gigantamax": 3,
+    "zmove": 4,
+    "z-move": 4,
+    "terastal": 5,
+    "tera": 5,
+    "shiny": 6,
+    "s": 6,
+    "galar": 7,
+    "mega": 8,
+    "exclusive": 9,
+    "halloween": 10,
+}
+
+FORM_QUERY_PATTERN = re.compile(
+    r"^(.*?)[\.\s\-_]+(\d+|amv|art|custom\s+arts?|custom|dmax|dynamax|gmax|gigantamax|zmove|z-move|terastal|tera|shiny|galar|mega|exclusive|halloween)$",
+    re.IGNORECASE
+)
+
+def parse_check_query(raw_query: str) -> tuple[int | None, str | None, int]:
+    q = raw_query.strip().lower()
+    if q.isdigit():
+        return int(q), None, 0
+
+    m = FORM_QUERY_PATTERN.match(q)
+    if m:
+        base_part = m.group(1).strip()
+        form_part = m.group(2).strip().lower()
+        if form_part.isdigit():
+            form_idx = int(form_part)
+        else:
+            norm_form = " ".join(form_part.split())
+            form_idx = FORM_KEYWORD_MAP.get(norm_form, 0)
+
+        if base_part.isdigit():
+            return int(base_part), None, form_idx
+        elif base_part:
+            return None, base_part, form_idx
+
+    return None, q, 0
+
+def parse_form_filter(form_str: str) -> int | None:
+    form_str = form_str.strip().lower()
+    if form_str.isdigit():
+        return int(form_str)
+    return FORM_KEYWORD_MAP.get(form_str)
+
+
+FORM_FILTER_LABELS = {
+    "AMV": "AMV / Art",
+}
+
+
+def get_filter_display_label(rarity_filter: str) -> str:
+    return FORM_FILTER_LABELS.get(rarity_filter, rarity_filter)
+
+
+def get_media_type_from_value(media_value: str | None) -> str | None:
+    if not media_value:
+        return None
+    if media_value.startswith("photo:"):
+        return "photo"
+    if media_value.startswith("video:"):
+        return "video"
+    if media_value.startswith("animation:"):
+        return "animation"
+    if media_value.startswith("http") or media_value.startswith("AgAC"):
+        return "photo"
+    if media_value.startswith("BAAC"):
+        return "video"
+    return "photo"
+
+
+def get_form_label(form_index: int, media_value: str | None = None, custom_forms: dict = None) -> str:
+    if form_index == 1:
+        return "Art" if get_media_type_from_value(media_value) == "photo" else "AMV"
+    if form_index == 6:
+        if custom_forms and 6 in custom_forms:
+            return custom_forms[6][0]
+        return "Shiny"
+    if form_index in FORM_LABELS:
+        return FORM_LABELS[form_index]
+    if custom_forms and form_index in custom_forms:
+        r_name, _ = custom_forms[form_index]
+        return f"{r_name} Form"
+    return f"Form {form_index}"
+
+
+def parse_stored_media_value(media_value: str | None) -> tuple[str, str | None]:
+    if not media_value:
+        return "photo", None
+    if ":" in media_value:
+        media_type, clean_value = media_value.split(":", 1)
+        if media_type in {"photo", "video", "animation"}:
+            return media_type, clean_value
+    if media_value.startswith("http") or media_value.startswith("AgAC"):
+        return "photo", media_value
+    if media_value.startswith("BAAC"):
+        return "video", media_value
+    return "photo", media_value
+
+
+async def get_form_media_lookup(db: AsyncSession, pokemon_ids: list[int]) -> dict[tuple[int, int], str]:
+    if not pokemon_ids:
+        return {}
+
+    from database.models import PokemonFormMedia
+
+    stmt = select(
+        PokemonFormMedia.pokemon_id,
+        PokemonFormMedia.form_index,
+        PokemonFormMedia.media_value,
+    ).where(PokemonFormMedia.pokemon_id.in_(pokemon_ids))
+    res = await db.execute(stmt)
+    return {(pid, form_index): media_value for pid, form_index, media_value in res.all()}
+
+
+async def get_single_form_media_value(db: AsyncSession, pokemon_id: int, form_index: int) -> str | None:
+    if form_index <= 0:
+        return None
+
+    from database.models import PokemonFormMedia
+
+    stmt = select(PokemonFormMedia.media_value).where(
+        PokemonFormMedia.pokemon_id == pokemon_id,
+        PokemonFormMedia.form_index == form_index,
+    ).limit(1)
+    res = await db.execute(stmt)
+    return res.scalar_one_or_none()
+
+async def get_player_cover_media(user_id: int, db: AsyncSession) -> tuple[str, str]:
+    fav_val = await get_favorite_id(user_id, db)
+    media_type = None
+    media_value = None
+    
+    if fav_val:
+        pokemon_id = None
+        form_index = 0
+        if "." in fav_val:
+            pq, fq = fav_val.split(".", 1)
+            if pq.isdigit() and fq.isdigit():
+                pokemon_id = int(pq)
+                form_index = int(fq)
+        elif fav_val.isdigit():
+            pokemon_id = int(fav_val)
+            
+        if pokemon_id:
+            stmt = select(UserPokemon).where(
+                UserPokemon.pokemon_id == pokemon_id,
+                UserPokemon.user_id == user_id
+            ).limit(1)
+            res = await db.execute(stmt)
+            owned = res.scalar() is not None
+            
+            if owned:
+                poke_stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
+                poke_res = await db.execute(poke_stmt)
+                pokemon = poke_res.scalar_one_or_none()
+                
+                if pokemon:
+                    if form_index == 0:
+                        media_type = "photo"
+                        media_value = pokemon.image_url
+                    else:
+                        from database.models import PokemonFormMedia
+                        media_stmt = select(PokemonFormMedia.media_value).where(
+                            PokemonFormMedia.pokemon_id == pokemon_id,
+                            PokemonFormMedia.form_index == form_index
+                        ).limit(1)
+                        media_res = await db.execute(media_stmt)
+                        media_val_db = media_res.scalar()
+                        
+                        if media_val_db:
+                            if ":" in media_val_db:
+                                mtype, mval = media_val_db.split(":", 1)
+                                if mtype in ["photo", "video", "animation"]:
+                                    media_type = mtype
+                                    media_value = mval
+                            else:
+                                media_type = "video"
+                                media_value = media_val_db
+                                
+    if not media_value:
+        rand_stmt = select(UserPokemon).where(
+            UserPokemon.user_id == user_id
+        ).order_by(func.random()).limit(1)
+        rand_res = await db.execute(rand_stmt)
+        up = rand_res.scalar_one_or_none()
+        if up:
+            if up.form_index > 0:
+                from database.models import PokemonFormMedia
+                media_stmt = select(PokemonFormMedia.media_value).where(
+                    PokemonFormMedia.pokemon_id == up.pokemon_id,
+                    PokemonFormMedia.form_index == up.form_index
+                ).limit(1)
+                media_res = await db.execute(media_stmt)
+                media_val_db = media_res.scalar()
+                
+                if media_val_db:
+                    media_type, media_value = parse_stored_media_value(media_val_db)
+            
+            if not media_value:
+                poke_stmt = select(Pokemon).where(Pokemon.id == up.pokemon_id)
+                poke_res = await db.execute(poke_stmt)
+                poke_obj = poke_res.scalar_one_or_none()
+                if poke_obj:
+                    media_type = "photo"
+                    media_value = poke_obj.image_url
+                
+    if not media_value:
+        media_type, media_value = get_custom_cover("profile")
+        if not media_value:
+            media_type, media_value = get_custom_cover("pokedex")
+        
+    if not media_value:
+        media_type = "photo"
+        media_value = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/890.png"
+        
+    return media_type, media_value
+
+async def send_player_cover(chat_id: int, user_id: int, caption: str, reply_markup, bot, db: AsyncSession, message_to_reply=None):
+    media_type, media_value = await get_player_cover_media(user_id, db)
+    return await send_safe_media(
+        bot=bot,
+        chat_id=chat_id,
+        media_type=media_type,
+        media_value=media_value,
+        caption=caption,
+        reply_markup=reply_markup,
+        parse_mode="HTML",
+        message_to_reply=message_to_reply
+    )
+
+async def edit_player_cover_message(callback: CallbackQuery, user_id: int, caption: str, reply_markup, db: AsyncSession, parse_mode="HTML"):
+    media_type, media_value = await get_player_cover_media(user_id, db)
+    from aiogram.types import InputMediaPhoto, InputMediaVideo
+    try:
+        if media_type == "video":
+            new_media = InputMediaVideo(media=media_value, caption=caption, parse_mode=parse_mode)
+        else:
+            new_media = InputMediaPhoto(media=media_value, caption=caption, parse_mode=parse_mode)
+            
+        await callback.message.edit_media(media=new_media, reply_markup=reply_markup)
+    except Exception as e:
+        print(f"Error editing player cover media: {e}")
+        try:
+            await callback.message.edit_caption(caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+        except Exception:
+            try:
+                await callback.message.edit_text(text=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+            except Exception:
+                pass
+
+@router.message(Command("pokemon", ignore_mention=True))
+async def cmd_pokemon_list(message: Message):
+    await message.answer(
+        "🎒 <b>The Pokémon Bag is now integrated!</b>\n"
+        "All collections are managed directly via your Pokédex.\n\n"
+        "👉 Use <code>/pokedex</code> to view your collection checklist and progress!\n"
+        "👉 Use <code>/fav &lt;pokedex_id&gt;</code> to set a Pokédex cover favorite.",
+        parse_mode="HTML"
+    )
+
+async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter: str, db: AsyncSession):
+    from database.models import PokemonFormMedia
+    from sqlalchemy import or_
+
+    form_idx = FORM_INDEX_MAP.get(rarity_filter)
+    filter_label = get_filter_display_label(rarity_filter)
+
+    custom_forms = await get_custom_rarity_forms(db)
+    matched_custom_form_idx = None
+    for c_fidx, (c_name, _) in custom_forms.items():
+        if c_name.lower() == rarity_filter.lower() or f"form_{c_fidx}" == rarity_filter.lower():
+            matched_custom_form_idx = c_fidx
+            break
+
+    if form_idx is not None:
+        view_mode = "form"
+    elif matched_custom_form_idx is not None:
+        view_mode = "custom_form_or_rarity"
+    elif rarity_filter and rarity_filter != "All":
+        view_mode = "rarity"
+    else:
+        view_mode = "all"
+
+    # 1. Total Species in Database (read from in-memory cache if available)
+    from utils.pokemon_cache import get_all_cached_pokemon, get_cached_pokemon_by_id
+    cached_all = get_all_cached_pokemon()
+    if cached_all:
+        total_species = len(cached_all)
+    else:
+        total_species_stmt = select(func.count(Pokemon.id))
+        total_species_res = await db.execute(total_species_stmt)
+        total_species = total_species_res.scalar() or 0
+
+    # Resolve display name: custom admin pokedex_name takes priority, then user nickname/passed nickname
+    u_stmt = select(User).where(User.id == user_id)
+    u_res = await db.execute(u_stmt)
+    u_obj = u_res.scalar_one_or_none()
+    display_name = (u_obj.pokedex_name or u_obj.nickname or nickname) if u_obj else nickname
+
+    # 2. Get distinct entries caught by this user: (pokemon_id, form_index, total_caught, has_shiny)
+    if view_mode == "all":
+        stmt = (
+            select(
+                UserPokemon.pokemon_id,
+                UserPokemon.form_index,
+                func.count(UserPokemon.id).label("total_caught"),
+                func.max(case((UserPokemon.is_shiny == True, 1), else_=0)).label("has_shiny")
+            )
+            .where(UserPokemon.user_id == user_id)
+            .group_by(UserPokemon.pokemon_id, UserPokemon.form_index)
+            .order_by(UserPokemon.pokemon_id.asc(), UserPokemon.form_index.asc())
+        )
+        res = await db.execute(stmt)
+        all_raw_entries = res.all()
+    elif view_mode == "form":
+        stmt = (
+            select(
+                UserPokemon.pokemon_id,
+                UserPokemon.form_index,
+                func.count(UserPokemon.id).label("total_caught"),
+                func.max(case((UserPokemon.is_shiny == True, 1), else_=0)).label("has_shiny")
+            )
+            .where(UserPokemon.user_id == user_id, UserPokemon.form_index == form_idx)
+            .group_by(UserPokemon.pokemon_id, UserPokemon.form_index)
+            .order_by(UserPokemon.pokemon_id.asc(), UserPokemon.form_index.asc())
+        )
+        res = await db.execute(stmt)
+        all_raw_entries = res.all()
+    elif view_mode == "custom_form_or_rarity":
+        stmt = (
+            select(
+                UserPokemon.pokemon_id,
+                UserPokemon.form_index,
+                func.count(UserPokemon.id).label("total_caught"),
+                func.max(case((UserPokemon.is_shiny == True, 1), else_=0)).label("has_shiny")
+            )
+            .join(Pokemon, UserPokemon.pokemon_id == Pokemon.id)
+            .where(
+                UserPokemon.user_id == user_id,
+                or_(
+                    func.lower(Pokemon.rarity) == rarity_filter.lower(),
+                    UserPokemon.form_index == matched_custom_form_idx
+                )
+            )
+            .group_by(UserPokemon.pokemon_id, UserPokemon.form_index)
+            .order_by(UserPokemon.pokemon_id.asc(), UserPokemon.form_index.asc())
+        )
+        res = await db.execute(stmt)
+        all_raw_entries = res.all()
+    else:
+        stmt = (
+            select(
+                UserPokemon.pokemon_id,
+                UserPokemon.form_index,
+                func.count(UserPokemon.id).label("total_caught"),
+                func.max(case((UserPokemon.is_shiny == True, 1), else_=0)).label("has_shiny")
+            )
+            .join(Pokemon, UserPokemon.pokemon_id == Pokemon.id)
+            .where(UserPokemon.user_id == user_id, func.lower(Pokemon.rarity) == rarity_filter.lower())
+            .group_by(UserPokemon.pokemon_id, UserPokemon.form_index)
+            .order_by(UserPokemon.pokemon_id.asc(), UserPokemon.form_index.asc())
+        )
+        res = await db.execute(stmt)
+        all_raw_entries = res.all()
+
+    total_caught_distinct = len(all_raw_entries)
+
+    if total_caught_distinct == 0:
+        filter_str = f" ({html.escape(filter_label)})" if rarity_filter and rarity_filter != "All" else ""
+        text = (
+            f"📖 <b>{html.escape(display_name)}'s Pokédex</b>{filter_str}\n"
+            f"◈ ────────────────── ◈\n\n"
+            f"⚠️ <b>Your Pokédex is empty!</b>\n"
+            f"Catch wild Pokémon in group chats to register them in your Pokédex."
+        )
+        return text, 0, 0
+
+    per_page = 8
+    max_page = max(1, (total_caught_distinct + per_page - 1) // per_page)
+    page = max(1, min(page, max_page))
+    offset = (page - 1) * per_page
+    page_raw_entries = all_raw_entries[offset:offset + per_page]
+
+    # Fetch Pokemon metadata for current page from cache first
+    page_pokemon_ids = list({row[0] for row in page_raw_entries})
+    pokemon_dict = {}
+    missing_pids = []
+    for pid in page_pokemon_ids:
+        cached_p = get_cached_pokemon_by_id(pid)
+        if cached_p:
+            pokemon_dict[pid] = cached_p
+        else:
+            missing_pids.append(pid)
+    if missing_pids:
+        p_stmt = select(Pokemon).where(Pokemon.id.in_(missing_pids))
+        p_res = await db.execute(p_stmt)
+        for p in p_res.scalars().all():
+            pokemon_dict[p.id] = p
+
+    form_media_lookup = await get_form_media_lookup(db, page_pokemon_ids)
+
+    # Unique species caught for overall completion percentage
+    unique_species_caught = len({row[0] for row in all_raw_entries})
+    percent = int((unique_species_caught / total_species * 100)) if total_species > 0 else 0
+    bar = get_progress_bar(unique_species_caught, total_species, length=10)
+
+    filter_str = f" ({html.escape(filter_label)})" if rarity_filter and rarity_filter != "All" else ""
+    text = (
+        f"📖 <b>{html.escape(display_name)}'s Pokédex</b>{filter_str}\n"
+        f"◈ ────────────────── ◈\n"
+        f"📊 <b>Completion:</b> <code>{unique_species_caught}/{total_species}</code> species (<b>{percent}%</b>)\n"
+        f"<code>[{bar}]</code>\n"
+        f"📑 <b>Page:</b> <code>{page}/{max_page}</code> | <b>Entries:</b> <code>{total_caught_distinct}</code>\n"
+        f"◈ ────────────────── ◈\n\n"
+    )
+
+    current_gen = None
+    for pid, f_idx, caught_cnt, has_shiny in page_raw_entries:
+        pokemon = pokemon_dict.get(pid)
+        if not pokemon:
+            continue
+
+        if pokemon.generation != current_gen:
+            current_gen = pokemon.generation
+            text += f"🌟 <b>Generation {current_gen}</b>\n"
+
+        shiny_tag = " ✨" if has_shiny else ""
+        poke_name = html.escape(pokemon.name.title())
+
+        if f_idx == 0:
+            rarity_emoji = get_rarity_emoji(pokemon.rarity)
+            entry_label = html.escape(pokemon.rarity)
+            entry_id = f"#{pokemon.id:03d}"
+            text += f"✦ {rarity_emoji} <b>{entry_id} {poke_name}</b>{shiny_tag} [<code>{entry_label}</code>] ×{caught_cnt}\n"
+        else:
+            media_value = form_media_lookup.get((pokemon.id, f_idx))
+            form_label = get_form_label(f_idx, media_value, custom_forms)
+            rarity_emoji = get_rarity_emoji(pokemon.rarity)
+            entry_label = html.escape(form_label)
+            entry_id = f"#{pokemon.id:03d}.{f_idx}"
+            text += f"✦ 🔮 <b>{entry_id} {entry_label} {poke_name}</b>{shiny_tag} ×{caught_cnt}\n"
+
+    text += f"\n◈ ────────────────── ◈"
+    return text, page, max_page
+
+def get_pokedex_keyboard(user_id: int, page: int, max_page: int, rarity_filter: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    
+    # Row 1: Tab Switches
+    builder.row(
+        InlineKeyboardButton(text="📖 Collection", callback_data=f"pd_tab_{user_id}_col"),
+        InlineKeyboardButton(text="💟 AMV", callback_data=f"pd_tab_{user_id}_cov")
+    )
+    
+    # Row 2: Dynamic Pagination Buttons
+    if max_page > 1:
+        nav_row = []
+        if page > 1:
+            nav_row.append(InlineKeyboardButton(text="⬅️", callback_data=f"pd_page_{user_id}_{page-1}_{rarity_filter}"))
+        
+        nav_row.append(InlineKeyboardButton(text=f"{page}/{max_page}", callback_data="pd_page_info_noop"))
+        
+        if page < max_page:
+            nav_row.append(InlineKeyboardButton(text="➡️", callback_data=f"pd_page_{user_id}_{page+1}_{rarity_filter}"))
+            
+        builder.row(*nav_row)
+        
+    # Row 3: Filter by Rarity Button
+    builder.row(
+        InlineKeyboardButton(text="🔍 Filter by Rarity", callback_data=f"pd_rarity_{user_id}_{page}_{rarity_filter}")
+    )
+    
+    # Row 4: View Profile Button
+    builder.row(
+        InlineKeyboardButton(text="👤 View Profile", callback_data=f"profile_view_{user_id}")
+    )
+    
+    return builder.as_markup()
+
+async def get_rarity_filter_keyboard(user_id: int, current_page: int, current_filter: str, db: AsyncSession) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    
+    # 1. Standard Base Rarities
+    standard_rarities = [
+        ("Common", "⚪ Common"),
+        ("Uncommon", "🟢 Uncommon"),
+        ("Medium", "🔵 Medium"),
+        ("Rare", "🟣 Rare"),
+        ("Epic", "🔮 Epic"),
+        ("Legendary", "🌟 Legendary"),
+        ("Mythical", "🌌 Mythical"),
+    ]
+    
+    # 2. Standard Forms
+    standard_forms = [
+        ("AMV", "🎬 AMV / Art"),
+        ("Dmax", "⚡ Dmax"),
+        ("Gmax", "💥 Gmax"),
+        ("Z-Move", "🌀 Z-Move"),
+        ("Terastal", "🔮 Terastal"),
+    ]
+    
+    # Add standard base rarities (2 per row)
+    for i in range(0, len(standard_rarities), 2):
+        chunk = standard_rarities[i:i+2]
+        row = [InlineKeyboardButton(text=lbl, callback_data=f"pd_setfilter_{user_id}_{code}") for code, lbl in chunk]
+        builder.row(*row)
+        
+    # Add standard forms (2 per row)
+    for i in range(0, len(standard_forms), 2):
+        chunk = standard_forms[i:i+2]
+        row = [InlineKeyboardButton(text=lbl, callback_data=f"pd_setfilter_{user_id}_{code}") for code, lbl in chunk]
+        builder.row(*row)
+
+    # 3. Dynamic Custom Rarities from DB and GlobalSetting
+    known_codes = {c.lower() for c, _ in standard_rarities} | {c.lower() for c, _ in standard_forms}
+    custom_buttons = []
+    
+    # From custom_rarities setting in DB
+    try:
+        custom_rarities = await get_all_custom_rarities(db)
+        for r_name, r_emoji in custom_rarities.items():
+            if r_name and r_name.lower() not in known_codes:
+                known_codes.add(r_name.lower())
+                custom_buttons.append((r_name, f"{r_emoji} {r_name}"))
+    except Exception as e:
+        print(f"Error fetching custom rarities for pokedex filter: {e}")
+
+    # Also discover any distinct Pokemon.rarity in DB not already covered
+    try:
+        stmt = select(distinct(Pokemon.rarity)).where(Pokemon.rarity.isnot(None))
+        res = await db.execute(stmt)
+        db_rarities = res.scalars().all()
+        for r_name in db_rarities:
+            if r_name and r_name.lower() not in known_codes:
+                known_codes.add(r_name.lower())
+                emoji = get_rarity_emoji(r_name)
+                custom_buttons.append((r_name, f"{emoji} {r_name}"))
+    except Exception as e:
+        print(f"Error fetching distinct rarities for pokedex filter: {e}")
+
+    # Add custom rarity buttons (2 per row)
+    for i in range(0, len(custom_buttons), 2):
+        chunk = custom_buttons[i:i+2]
+        row = [InlineKeyboardButton(text=lbl, callback_data=f"pd_setfilter_{user_id}_{code}") for code, lbl in chunk]
+        builder.row(*row)
+
+    # Control row: All + Back
+    builder.row(
+        InlineKeyboardButton(text="🌍 All", callback_data=f"pd_setfilter_{user_id}_All"),
+        InlineKeyboardButton(text="🔙 Back", callback_data=f"pd_page_{user_id}_{current_page}_{current_filter}")
+    )
+    
+    return builder.as_markup()
+
+@router.message(Command("pokedex", "dexlist", ignore_mention=True))
+async def cmd_pokedex(message: Message, db: AsyncSession):
+    text = None
+    kb = None
+    try:
+        user = message.from_user
+        if not user:
+            user_id = message.sender_chat.id if message.sender_chat else 0
+            nickname = "Trainer"
+        else:
+            user_id = user.id
+            nickname = user.first_name or "Trainer"
+
+        if not user_id:
+            await message.answer("⚠️ Please send commands as a personal user account.")
+            return
+
+        parts = (message.text or "").split()
+        page = 1
+        if len(parts) > 1 and parts[1].isdigit():
+            page = int(parts[1])
+
+        u_stmt = select(User).where(User.id == user_id)
+        u_res = await db.execute(u_stmt)
+        user_db = u_res.scalar_one_or_none()
+        if not user_db:
+            user_db = User(
+                id=user_id,
+                username=user.username if user else None,
+                nickname=nickname,
+                coins=500
+            )
+            db.add(user_db)
+            await db.commit()
+
+        display_nickname = (user_db.pokedex_name or user_db.nickname) if (user_db and (user_db.pokedex_name or user_db.nickname)) else nickname
+
+        text, final_page, max_page = await get_pokedex_data(user_id, display_nickname, page, "All", db)
+        
+        if max_page == 0:
+            await message.answer(text, parse_mode="HTML")
+            return
+
+        kb = get_pokedex_keyboard(user_id, final_page, max_page, "All")
+        await send_player_cover(
+            chat_id=message.chat.id,
+            user_id=user_id,
+            caption=text,
+            reply_markup=kb,
+            bot=message.bot,
+            db=db,
+            message_to_reply=message
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        if text:
+            try:
+                await message.answer(text, reply_markup=kb, parse_mode="HTML")
+                return
+            except Exception:
+                try:
+                    await message.answer(text, reply_markup=None, parse_mode="HTML")
+                    return
+                except Exception:
+                    await message.answer(text, reply_markup=None, parse_mode=None)
+                    return
+        await message.answer("⚠️ Unable to load Pokédex at this moment. Please try again.")
+
+@router.callback_query(F.data == "pd_page_info_noop")
+async def cb_pd_page_info_noop(callback: CallbackQuery):
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("pd_tab_"))
+async def cb_pokedex_tab(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_")
+    user_id = int(parts[2])
+    tab = parts[3]
+    
+    if callback.from_user.id != user_id:
+        await callback.answer("❌ This is not your Pokédex! Use /pokedex to view yours.", show_alert=True)
+        return
+        
+    if tab == "cov":
+        text = (
+            f"💟 <b>AMV Cover Favorite</b>\n"
+            f"───────────────\n\n"
+            f"Set your favorite Pokémon AMV / Art as the Pokédex cover illustration!\n\n"
+            f"👉 <b>How to set</b>: Type <code>/fav &lt;pokedex_id&gt;.&lt;form_index&gt;</code> in chat.\n"
+            f"<i>(e.g., <code>/fav 6.1</code> to set Charizard AMV as cover)</i>"
+        )
+        builder = InlineKeyboardBuilder()
+        builder.row(InlineKeyboardButton(text="🔙 Back to Collection", callback_data=f"pd_page_{user_id}_1_All"))
+        
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=builder.as_markup(), parse_mode="HTML")
+        except Exception:
+            try:
+                await callback.message.edit_text(text=text, reply_markup=builder.as_markup(), parse_mode="HTML")
+            except Exception:
+                pass
+        await callback.answer()
+    else:
+        u_stmt = select(User).where(User.id == user_id)
+        u_res = await db.execute(u_stmt)
+        user = u_res.scalar_one_or_none()
+        nickname = user.nickname if (user and user.nickname) else (callback.from_user.first_name or "Trainer")
+        
+        text, final_page, max_page = await get_pokedex_data(user_id, nickname, 1, "All", db)
+        kb = get_pokedex_keyboard(user_id, final_page, max_page, "All")
+        
+        await edit_player_cover_message(callback, user_id, text, kb, db, parse_mode="HTML")
+        await callback.answer()
+
+@router.callback_query(F.data.startswith("pd_page_"))
+async def cb_pokedex_page(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_", 4)
+    user_id = int(parts[2])
+    page = int(parts[3])
+    rarity_filter = parts[4] if len(parts) > 4 else "All"
+    
+    if callback.from_user.id != user_id:
+        await callback.answer("❌ This is not your Pokédex! Use /pokedex to view yours.", show_alert=True)
+        return
+        
+    u_stmt = select(User).where(User.id == user_id)
+    u_res = await db.execute(u_stmt)
+    user = u_res.scalar_one_or_none()
+    nickname = user.nickname if (user and user.nickname) else (callback.from_user.first_name or "Trainer")
+    
+    text, final_page, max_page = await get_pokedex_data(user_id, nickname, page, rarity_filter, db)
+    kb = get_pokedex_keyboard(user_id, final_page, max_page, rarity_filter)
+    
+    await edit_player_cover_message(callback, user_id, text, kb, db, parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("pd_rarity_"))
+async def cb_pokedex_rarity_menu(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_", 4)
+    user_id = int(parts[2])
+    page = int(parts[3])
+    rarity_filter = parts[4] if len(parts) > 4 else "All"
+    
+    if callback.from_user.id != user_id:
+        await callback.answer("❌ This is not your Pokédex! Use /pokedex to view yours.", show_alert=True)
+        return
+        
+    text = (
+        f"🔍 <b>Filter Pokédex by Rarity</b>\n"
+        f"───────────────\n\n"
+        f"Choose a rarity tier below to filter your species list:"
+    )
+    kb = await get_rarity_filter_keyboard(user_id, page, rarity_filter, db)
+    
+    try:
+        await callback.message.edit_caption(caption=text, reply_markup=kb, parse_mode="HTML")
+    except Exception:
+        try:
+            await callback.message.edit_text(text=text, reply_markup=kb, parse_mode="HTML")
+        except Exception:
+            pass
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("pd_setfilter_"))
+async def cb_pokedex_set_filter(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_", 3)
+    user_id = int(parts[2])
+    rarity_filter = parts[3]
+    
+    if callback.from_user.id != user_id:
+        await callback.answer("❌ This is not your Pokédex! Use /pokedex to view yours.", show_alert=True)
+        return
+        
+    u_stmt = select(User).where(User.id == user_id)
+    u_res = await db.execute(u_stmt)
+    user = u_res.scalar_one_or_none()
+    nickname = user.nickname if (user and user.nickname) else (callback.from_user.first_name or "Trainer")
+    
+    text, final_page, max_page = await get_pokedex_data(user_id, nickname, 1, rarity_filter, db)
+    kb = get_pokedex_keyboard(user_id, final_page, max_page, rarity_filter)
+    
+    await edit_player_cover_message(callback, user_id, text, kb, db, parse_mode="HTML")
+    await callback.answer(f"Filtered by: {rarity_filter}")
+
+@router.message(Command("achievements", "achievement", ignore_mention=True))
+async def cmd_achievements(message: Message, db: AsyncSession):
+    user = message.from_user
+    if not user:
+        user_id = message.sender_chat.id if message.sender_chat else 0
+        nickname = "Trainer"
+    else:
+        user_id = user.id
+        nickname = user.first_name or "Trainer"
+
+    if not user_id:
+        await message.answer("⚠️ Please send commands as a personal user account.")
+        return
+
+    u_stmt = select(User).where(User.id == user_id)
+    u_res = await db.execute(u_stmt)
+    user_db = u_res.scalar_one_or_none()
+
+    if not user_db:
+        user_db = User(id=user_id, username=user.username if user else None, nickname=nickname, coins=500)
+        db.add(user_db)
+        await db.commit()
+
+    stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == user_id)
+    res = await db.execute(stmt)
+    total_catches = res.scalar() or 0
+
+    ACHIEVEMENTS = [
+        ("🥉 First Blood", 100),
+        ("🥈 Getting Started", 200),
+        ("🥇 Collector", 350),
+        ("💎 Elite Collector", 500),
+        ("🏆 Centurion", 1000),
+        ("🌟 Legend", 5000),
+        ("👑 Grand Master", 10000),
+        ("🔮 Mythic Snatchers", 25000)
+    ]
+
+    unlocked_count = sum(1 for _, target in ACHIEVEMENTS if total_catches >= target)
+
+    lines = []
+    lines.append(f"🏆 <b>Achievements — {html.escape(user_db.profile_name or user_db.nickname or nickname)}</b>")
+    lines.append(f"Unlocked: {unlocked_count}/8\n")
+
+    for title, target in ACHIEVEMENTS:
+        if total_catches >= target:
+            lines.append(f"✅ {title} — Complete {target} catches")
+        else:
+            fraction = min(1.0, max(0.0, total_catches / target))
+            filled_length = int(fraction * 8)
+            empty_length = 8 - filled_length
+            bar = f"[{'█' * filled_length}{'░' * empty_length}]"
+            lines.append(f"🎁 {title} — {bar} {total_catches}/{target}")
+
+    lines.append(f"\n🎁 Total Catches: {total_catches}")
+
+    text = "\n".join(lines)
+    await message.answer(text, parse_mode="HTML")
+
+@router.message(Command("balance", "bal", "coins", "wallet", ignore_mention=True))
+async def cmd_balance(message: Message, db: AsyncSession):
+    try:
+        user = message.from_user
+        if not user:
+            user_id = message.sender_chat.id if message.sender_chat else 0
+            username = None
+            nickname = "Trainer"
+        else:
+            user_id = user.id
+            username = user.username
+            nickname = user.first_name or "Trainer"
+
+        if not user_id:
+            await message.answer("⚠️ Please send commands as a personal user account.")
+            return
+
+        u_stmt = select(User).where(User.id == user_id)
+        u_res = await db.execute(u_stmt)
+        user_db = u_res.scalar_one_or_none()
+
+        if not user_db:
+            user_db = User(
+                id=user_id,
+                username=username,
+                nickname=nickname,
+                coins=500
+            )
+            db.add(user_db)
+            await db.commit()
+
+        name = html.escape(user_db.profile_name or user_db.nickname or nickname)
+        gems = getattr(user_db, "poke_gems", 0) or 0
+        from utils.vip import is_user_vip
+        vip_str = " [👑 VIP]" if is_user_vip(user_db) else ""
+        text = (
+            f"💰 <b>TRAINER BALANCE</b> 💰\n"
+            f"───────────────\n"
+            f"👤 <b>Trainer</b>: <b>{name}</b>{vip_str}\n"
+            f"💳 <b>Coins</b>: 💰 <b>{user_db.coins:,} coins</b>\n"
+            f"💎 <b>PokeGems</b>: ⭐ <b>{gems:,} gems</b>\n"
+            f"───────────────"
+        )
+        await message.answer(text, parse_mode="HTML")
+    except Exception as e:
+        print(f"Error in cmd_balance: {e}")
+        await message.answer("❌ An error occurred while retrieving your balance.")
+
+@router.message(Command("streak", "streaks", ignore_mention=True))
+async def cmd_streak(message: Message, db: AsyncSession):
+    user = message.from_user
+    if not user:
+        user_id = message.sender_chat.id if message.sender_chat else 0
+        username = None
+        nickname = "Trainer"
+    else:
+        user_id = user.id
+        username = user.username
+        nickname = user.first_name or "Trainer"
+
+    if not user_id:
+        await message.answer("⚠️ Please send commands as a personal user account.")
+        return
+    
+    stmt = select(User).where(User.id == user_id)
+    res = await db.execute(stmt)
+    user_db = res.scalar_one_or_none()
+    if not user_db:
+        user_db = User(id=user_id, username=username, nickname=nickname, coins=500)
+        db.add(user_db)
+        await db.commit()
+        
+    from utils.streak import get_streak_data, get_streak_rank
+    from datetime import datetime, timedelta
+    
+    s_data = await get_streak_data(user_id)
+    
+    today = datetime.utcnow().date().isoformat()
+    yesterday = (datetime.utcnow() - timedelta(days=1)).date().isoformat()
+    
+    last_sec = s_data.get("last_secured_date", "")
+    if last_sec == today:
+        status_str = "Active!"
+        capped_count = 3
+    elif last_sec == yesterday:
+        status_str = "Active!"
+        capped_count = min(s_data.get("catches_today", 0), 3)
+    else:
+        status_str = "Streak broken!"
+        capped_count = min(s_data.get("catches_today", 0), 3)
+        
+    current_days = s_data.get("current_streak", 0)
+    best_days = s_data.get("best_streak", 0)
+    rank_str = get_streak_rank(current_days)
+    
+    bar_chars = "█" * (capped_count * 3) + "░" * (10 - (capped_count * 3))
+    if capped_count == 3:
+        bar_chars = "█" * 10
+        
+    text = (
+        f"🔥 <b>Daily Streak — {html.escape(user_db.profile_name or user_db.nickname or user_db.username or nickname)}</b>\n\n"
+        f"<blockquote>💧 <b>Status</b>: <code>{status_str}</code>\n"
+        f"🎁 <b>Current</b>: <code>{current_days} days</code>\n"
+        f"🏆 <b>Best</b>: <code>{best_days} days</code>\n"
+        f"🏆 <b>Rank</b>: <code>{rank_str}</code>\n"
+        f"🎁 <b>Progress</b>: <code>[{bar_chars}] {capped_count}/3</code></blockquote>\n\n"
+        f"👉 <i>Catch 3 Pokémon every day to keep your streak!</i>"
+    )
+    await message.answer(text, parse_mode="HTML")
+
+@router.message(Command("streaklb", "slb", "streakslb", "streaksleaderboard", ignore_mention=True))
+async def cmd_streak_leaderboard(message: Message, db: AsyncSession):
+    from utils.streak import get_top_streaks
+    
+    top_users = await get_top_streaks(10)
+    if not top_users:
+        await message.answer("🏆 <b>STREAK LEADERBOARD</b> 🏆\n───────────────\n\n• <i>No active streaks recorded yet.</i>", parse_mode="HTML")
+        return
+        
+    import config
+    bot_id = None
+    if config.BOT_TOKEN and ":" in config.BOT_TOKEN:
+        try:
+            bot_id = int(config.BOT_TOKEN.split(":")[0])
+        except ValueError:
+            pass
+
+    filtered_users = []
+    for uid, uinfo in top_users:
+        if bot_id and uid == bot_id:
+            continue
+        filtered_users.append((uid, uinfo))
+    filtered_users = filtered_users[:10]
+
+    if not filtered_users:
+        await message.answer("🏆 <b>STREAK LEADERBOARD</b> 🏆\n───────────────\n\n• <i>No active streaks recorded yet.</i>", parse_mode="HTML")
+        return
+
+    uids = [uid for uid, _ in filtered_users]
+    u_stmt = select(User).where(User.id.in_(uids))
+    u_res = await db.execute(u_stmt)
+    users_dict = {u.id: u for u in u_res.scalars().all()}
+
+    medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+    rows = []
+    for idx, (uid, uinfo) in enumerate(filtered_users):
+        user = users_dict.get(uid)
+        username = user.username if user else None
+        nickname = (user.profile_name or user.nickname) if user else f"Trainer_{uid}"
+        curr = uinfo.get("current_streak", 0)
+        best = uinfo.get("best_streak", 0)
+        
+        rank_prefix = medals[idx] if idx < len(medals) else f"#{idx+1}"
+        display_name = f"@{html.escape(username)}" if username else f"{html.escape(nickname)}"
+        rows.append(f"{rank_prefix} <b>{display_name}</b>   Best: <code>{best}d</code> (Current: <code>{curr}d</code>)")
+
+    text = (
+        "🏆 <b>GLOBAL STREAK LEADERBOARD</b> 🏆\n"
+        "───────────────\n" +
+        "\n".join(rows) +
+        "\n───────────────\n"
+        "<i>Compete daily to reach the top of the streak ranks!</i>"
+    )
+    await message.answer(text, parse_mode="HTML")
+
+@router.message(Command("profile", ignore_mention=True))
+async def cmd_profile(message: Message, db: AsyncSession):
+    profile_card = None
+    builder = None
+    try:
+        user = message.from_user
+        if not user:
+            user_id = message.sender_chat.id if message.sender_chat else 0
+            username = None
+            first_name = "Trainer"
+        else:
+            user_id = user.id
+            username = user.username
+            first_name = user.first_name or "Trainer"
+
+        if not user_id:
+            await message.answer("⚠️ Please send commands as a personal user account.")
+            return
+
+        u_stmt = select(User).where(User.id == user_id)
+        u_res = await db.execute(u_stmt)
+        user_db = u_res.scalar_one_or_none()
+
+        if not user_db:
+            user_db = User(
+                id=user_id,
+                username=username,
+                nickname=first_name,
+                coins=500
+            )
+            db.add(user_db)
+            await db.commit()
+        else:
+            if user_db.username != username or user_db.nickname != first_name:
+                user_db.username = username
+                user_db.nickname = first_name
+                await db.commit()
+
+        # Batched single query for user Pokemon stats (drastically reduces DB round-trips)
+        stats_stmt = select(
+            func.count(UserPokemon.id).label("total_caught"),
+            func.count(distinct(UserPokemon.pokemon_id)).label("unique_caught"),
+            func.count(UserPokemon.id).filter(UserPokemon.is_shiny == True).label("total_shiny")
+        ).where(UserPokemon.user_id == user_id)
+        stats_res = await db.execute(stats_stmt)
+        stats_row = stats_res.mappings().one()
+        total_caught = stats_row["total_caught"] or 0
+        unique_caught = stats_row["unique_caught"] or 0
+        total_shiny = stats_row["total_shiny"] or 0
+
+        # Total species from in-memory cache to eliminate redundant remote DB query
+        from utils.pokemon_cache import get_all_cached_pokemon
+        all_cached = get_all_cached_pokemon()
+        total_species = len(all_cached) if all_cached else 30
+
+        dex_pct = (unique_caught / total_species) * 100
+        dex_bar = get_progress_bar(unique_caught, total_species, 10, fill_char="▰", empty_char="▱")
+
+        rarity_stmt = select(Pokemon.rarity, func.count(UserPokemon.id)).join(UserPokemon, UserPokemon.pokemon_id == Pokemon.id).where(UserPokemon.user_id == user_id).group_by(Pokemon.rarity)
+        rarity_res = await db.execute(rarity_stmt)
+        rarity_counts = {r: count for r, count in rarity_res.all()}
+
+        standard_breakdown = [
+            ("Common", "⚪️"),
+            ("Uncommon", "🟢"),
+            ("Medium", "🔵"),
+            ("Rare", "🟣"),
+            ("Epic", "🔮"),
+            ("Legendary", "🌟"),
+            ("Mythical", "🌌")
+        ]
+        
+        from utils.settings import get_all_custom_rarities
+        custom_rarities = await get_all_custom_rarities(db)
+
+        breakdown_lines = []
+        for r_name, r_emoji in standard_breakdown:
+            cnt = rarity_counts.get(r_name, 0)
+            breakdown_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
+            
+        rarity_breakdown_text = "\n".join(breakdown_lines)
+
+        form_counts_stmt = select(UserPokemon.form_index, func.count(distinct(UserPokemon.pokemon_id))).where(
+            UserPokemon.user_id == user_id, UserPokemon.form_index > 0
+        ).group_by(UserPokemon.form_index)
+        form_counts_res = await db.execute(form_counts_stmt)
+        form_counts = {fi: cnt for fi, cnt in form_counts_res.all()}
+        amv_count = form_counts.get(1, 0)
+        dmax_count = form_counts.get(2, 0)
+        gmax_count = form_counts.get(3, 0)
+        zmove_count = form_counts.get(4, 0)
+        terastal_count = form_counts.get(5, 0)
+
+        forms_lines = [
+            f"├─➩ 🎬 AMV / Art: {amv_count}",
+            f"├─➩ ⚡ Dmax: {dmax_count}",
+            f"├─➩ 💥 Gmax: {gmax_count}",
+            f"├─➩ 🌀 Z-Move: {zmove_count}",
+            f"├─➩ 🔮 Terastal: {terastal_count}"
+        ]
+        
+        custom_forms = await get_custom_rarity_forms(db)
+        for f_idx, (r_name, r_emoji) in custom_forms.items():
+            if f_idx in {1, 2, 3, 4, 5}:
+                continue
+            cnt = form_counts.get(f_idx, 0)
+            forms_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
+            
+        forms_breakdown_text = "\n".join(forms_lines)
+
+        formatted_coins = f"{user_db.coins:,}"
+        user_nickname = (user_db.profile_name or user_db.nickname) if (user_db and (user_db.profile_name or user_db.nickname)) else first_name
+
+        rank_stmt = (
+            select(func.count())
+            .select_from(
+                select(UserPokemon.user_id)
+                .group_by(UserPokemon.user_id)
+                .having(func.count(UserPokemon.id) > total_caught)
+                .subquery()
+            )
+        )
+        rank_res = await db.execute(rank_stmt)
+        rank_position = (rank_res.scalar() or 0) + 1
+
+        from utils.streak import get_streak_data
+        s_data = await get_streak_data(user_id)
+        current_streak = s_data.get("current_streak", 0)
+        best_streak = s_data.get("best_streak", 0)
+
+        fav_val = await get_favorite_id(user_id, db)
+        fav_name = "None (Random Bag)"
+        if fav_val:
+            pokemon_id = None
+            form_index = 0
+            if "." in fav_val:
+                pq, fq = fav_val.split(".", 1)
+                if pq.isdigit() and fq.isdigit():
+                    pokemon_id = int(pq)
+                    form_index = int(fq)
+            elif fav_val.isdigit():
+                pokemon_id = int(fav_val)
+                
+            if pokemon_id:
+                poke_stmt = select(Pokemon.name).where(Pokemon.id == pokemon_id)
+                poke_res = await db.execute(poke_stmt)
+                p_name = poke_res.scalar()
+                if p_name:
+                    form_suffix = f" (Form {form_index})" if form_index > 0 else ""
+                    fav_name = f"{p_name.title()}{form_suffix}"
+
+        from utils.trainer_level import get_trainer_title, get_xp_required_for_next_level
+        lvl = user_db.trainer_level or 1
+        xp = user_db.trainer_xp or 0
+        req_xp = get_xp_required_for_next_level(lvl)
+        xp_pct = min(100, int((xp / req_xp) * 100)) if req_xp > 0 else 0
+        xp_filled = xp_pct // 10
+        xp_bar = "█" * xp_filled + "░" * (10 - xp_filled)
+        title = get_trainer_title(lvl)
+
+        gems = getattr(user_db, "poke_gems", 0) or 0
+        from utils.vip import is_user_vip
+        vip_tag = " [👑 VIP]" if is_user_vip(user_db) else ""
+
+        profile_card = (
+            f"╭──「 🏆 Trainer Profile 」\n"
+            f"├─➩ 🏓 User: {html.escape(user_nickname)}{vip_tag}\n"
+            f"├─➩ 🆔 ID: <code>{user_db.id}</code>\n"
+            f"├─➩ 🎖️ Level: <code>Lv. {lvl} ({title})</code>\n"
+            f"├─➩ ⚡ EXP: [{xp_bar}] {xp_pct}% (<code>{xp:,}/{req_xp:,}</code>)\n"
+            f"├─➩ 💰 Balance: <code>{formatted_coins} coins</code> | 💎 <code>{gems:,} gems</code>\n"
+            f"├─➩ ⚡ Pokémon: {unique_caught} (Total Catches: {total_caught})\n"
+            f"├─➩ 🌍 Pokédex: {unique_caught}/{total_species} ({dex_pct:.3f}%)\n"
+            f"├─➩ 🎁 Progress:\n"
+            f"╰         {dex_bar}\n\n"
+            f"╭─ Cover & Streaks ─\n"
+            f"├─➩ ⭐ Favorite: <code>{html.escape(fav_name)}</code>\n"
+            f"├─➩ 🔥 Current Streak: <code>{current_streak} days</code>\n"
+            f"├─➩ 🏆 Best Streak: <code>{best_streak} days</code>\n"
+            f"╰───────────────────\n\n"
+            f"╭─ Rarity Breakdown ─\n"
+            f"{rarity_breakdown_text}\n"
+            f"╰───────────────────\n\n"
+            f"╭─ Forms Breakdown ─\n"
+            f"{forms_breakdown_text}\n"
+            f"╰───────────────────\n\n"
+            f"╭─ Global Rank ─\n"
+            f"├─➩ 🏆 Position: #{rank_position}\n"
+            f"╰───────────────────"
+        )
+        builder = InlineKeyboardBuilder()
+        builder.row(InlineKeyboardButton(text="📖 View Pokédex", callback_data=f"pd_page_{user_id}_1_All"))
+        await send_player_cover(
+            chat_id=message.chat.id,
+            user_id=user_id,
+            caption=profile_card,
+            reply_markup=builder.as_markup(),
+            bot=message.bot,
+            db=db,
+            message_to_reply=message
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        if profile_card:
+            try:
+                await message.answer(profile_card, reply_markup=builder.as_markup() if builder else None, parse_mode="HTML")
+                return
+            except Exception:
+                try:
+                    await message.answer(profile_card, reply_markup=None, parse_mode="HTML")
+                    return
+                except Exception:
+                    await message.answer(profile_card, reply_markup=None, parse_mode=None)
+                    return
+        await message.answer(f"❌ An error occurred while generating your profile: <code>{html.escape(str(e))}</code>", parse_mode="HTML")
+
+@router.message(Command("check", ignore_mention=True))
+@router.message(Command("c", ignore_mention=True))
+@router.message(Command("ch", ignore_mention=True))
+async def cmd_check_pokemon(message: Message, db: AsyncSession):
+    try:
+        parts = message.text.split() if message.text else []
+        query = ""
+        if len(parts) >= 2:
+            query = " ".join(parts[1:]).strip().lower()
+        elif message.reply_to_message:
+            reply_text = message.reply_to_message.caption or message.reply_to_message.text or ""
+            import re
+            id_match = re.search(r"ID[:\s]+<code>?(\d+(?:\.\d+)?)</code>?", reply_text, re.IGNORECASE)
+            if id_match:
+                query = id_match.group(1).lower()
+            else:
+                name_match = re.search(r"(?:wild\s+|pokemon:\s*|name:\s*)<b>?([a-zA-Z0-9\-\s\.]+?)</b>?", reply_text, re.IGNORECASE)
+                if name_match:
+                    query = name_match.group(1).strip().lower()
+                else:
+                    from utils.pokemon_cache import get_all_cached_pokemon
+                    all_p = get_all_cached_pokemon()
+                    low_reply = reply_text.lower()
+                    for p in all_p:
+                        if p.name and len(p.name) > 3 and p.name.lower() in low_reply:
+                            query = p.name.lower()
+                            break
+
+        if not query:
+            await send_safe_media(
+                bot=message.bot,
+                chat_id=message.chat.id,
+                media_type="photo",
+                media_value=None,
+                caption=(
+                    "⚠️ <b>Format:</b> <code>/check &lt;pokemon_name_or_id&gt;</code>\n"
+                    "(e.g., <code>/check bulbasaur</code> or <code>/check 1</code>)\n\n"
+                    "💡 <i>Tip: You can also reply to any Pokémon spawn or card with /check!</i>"
+                ),
+                reply_markup=None,
+                parse_mode="HTML",
+                message_to_reply=message,
+                message_thread_id=getattr(message, "message_thread_id", None)
+            )
+            return
+
+        pokemon_id, pokemon_name_query, form_index = parse_check_query(query)
+
+        from utils.pokemon_cache import get_cached_pokemon_by_id, get_cached_pokemon_by_name, get_all_cached_pokemon
+        pokemon = None
+        if pokemon_id is not None:
+            pokemon = get_cached_pokemon_by_id(pokemon_id)
+        elif pokemon_name_query:
+            pokemon = get_cached_pokemon_by_name(pokemon_name_query)
+            if not pokemon:
+                clean_q = pokemon_name_query.replace("-", "").replace(" ", "").replace(".", "").lower()
+                for p in get_all_cached_pokemon():
+                    if not p.name:
+                        continue
+                    clean_pname = p.name.replace("-", "").replace(" ", "").replace(".", "").lower()
+                    if clean_pname == clean_q:
+                        pokemon = p
+                        break
+
+        if not pokemon:
+            if pokemon_id is not None:
+                stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
+            else:
+                stmt = select(Pokemon).where(Pokemon.name.ilike(pokemon_name_query))
+            res = await db.execute(stmt)
+            pokemon = res.scalar_one_or_none()
+        
+        if not pokemon:
+            searched_term = pokemon_name_query if pokemon_name_query else str(pokemon_id)
+            await send_safe_media(
+                bot=message.bot,
+                chat_id=message.chat.id,
+                media_type="photo",
+                media_value=None,
+                caption=f"❌ Pokémon <code>{html.escape(str(searched_term))}</code> not found in database.",
+                reply_markup=None,
+                parse_mode="HTML",
+                message_to_reply=message,
+                message_thread_id=getattr(message, "message_thread_id", None)
+            )
+            return
+            
+        caption, reply_markup, media_type, media_value = await build_check_pokemon_payload(pokemon, form_index, db)
+        
+        if form_index > 0 and not media_value:
+            custom_forms = await get_custom_rarity_forms(db)
+            form_label = get_form_label(form_index, None, custom_forms)
+            notif_text = (
+                f"{caption}\n\n"
+                f"<blockquote>⚠️ <b>Media Not Registered</b>\n"
+                f"Media for <b>{pokemon.name.title()} ({html.escape(form_label)})</b> (Form {form_index}) is not registered yet.</blockquote>"
+            )
+            await send_safe_media(
+                bot=message.bot,
+                chat_id=message.chat.id,
+                media_type="photo",
+                media_value=None,
+                caption=notif_text,
+                reply_markup=reply_markup,
+                parse_mode="HTML",
+                message_to_reply=message,
+                message_thread_id=getattr(message, "message_thread_id", None)
+            )
+            return
+        
+        await send_safe_media(
+            bot=message.bot,
+            chat_id=message.chat.id,
+            media_type=media_type,
+            media_value=media_value,
+            caption=caption,
+            reply_markup=reply_markup,
+            parse_mode="HTML",
+            message_to_reply=message,
+            message_thread_id=getattr(message, "message_thread_id", None)
+        )
+    except Exception as e:
+        logger.error(f"Error in cmd_check_pokemon: {e}", exc_info=True)
+        try:
+            await send_safe_media(
+                bot=message.bot,
+                chat_id=message.chat.id,
+                media_type="photo",
+                media_value=None,
+                caption="⚠️ <i>Unable to load Pokémon details right now. Please try again in a moment.</i>",
+                reply_markup=None,
+                parse_mode="HTML",
+                message_to_reply=message,
+                message_thread_id=getattr(message, "message_thread_id", None)
+            )
+        except Exception:
+            pass
+
+
+async def build_check_pokemon_payload(pokemon_or_id, form_index: int, db: AsyncSession):
+    if isinstance(pokemon_or_id, Pokemon):
+        pokemon = pokemon_or_id
+    else:
+        from utils.pokemon_cache import get_cached_pokemon_by_id
+        pokemon = get_cached_pokemon_by_id(pokemon_or_id)
+        if not pokemon:
+            stmt = select(Pokemon).where(Pokemon.id == pokemon_or_id)
+            res = await db.execute(stmt)
+            pokemon = res.scalar_one_or_none()
+
+    if not pokemon:
+        return None, None, None, None
+        
+    media_type = "photo"
+    media_value = None
+
+    form_media = None
+    if form_index > 0:
+        form_media = await get_single_form_media_value(db, pokemon.id, form_index)
+        if form_media:
+            media_type, media_value = parse_stored_media_value(form_media)
+        elif form_index == 1 and getattr(pokemon, "video_url", None):
+            media_type, media_value = parse_stored_media_value(pokemon.video_url)
+        elif form_index == 2 and getattr(pokemon, "dmax_url", None):
+            media_type, media_value = parse_stored_media_value(pokemon.dmax_url)
+        elif form_index == 3 and getattr(pokemon, "gmax_url", None):
+            media_type, media_value = parse_stored_media_value(pokemon.gmax_url)
+        elif form_index == 4 and getattr(pokemon, "zmove_url", None):
+            media_type, media_value = parse_stored_media_value(pokemon.zmove_url)
+        elif form_index == 5 and getattr(pokemon, "terastal_url", None):
+            media_type, media_value = parse_stored_media_value(pokemon.terastal_url)
+        else:
+            media_value = None
+    else:
+        if pokemon.image_url:
+            media_type, media_value = parse_stored_media_value(pokemon.image_url)
+            
+    if form_index > 0:
+        custom_forms = await get_custom_rarity_forms(db)
+        form_label = get_form_label(form_index, form_media, custom_forms)
+        if form_index == 1:
+            r_emoji = "🎨" if form_label == "Art" else "📺"
+            rarity_str = f"{r_emoji} {form_label}"
+        elif form_index == 2:
+            r_emoji = "⚡"
+            rarity_str = f"{r_emoji} Dmax"
+        elif form_index == 3:
+            r_emoji = "💥"
+            rarity_str = f"{r_emoji} Gmax"
+        elif form_index == 4:
+            r_emoji = "🌀"
+            rarity_str = f"{r_emoji} Z-Move"
+        elif form_index == 5:
+            r_emoji = "💎"
+            rarity_str = f"{r_emoji} Terastal"
+        elif form_index == 6:
+            r_emoji = "✨"
+            rarity_str = f"{r_emoji} Shiny"
+        elif custom_forms and form_index in custom_forms:
+            form_name, form_emoji = custom_forms[form_index]
+            r_emoji = form_emoji or "🔮"
+            rarity_str = f"{r_emoji} {form_name}"
+        else:
+            r_emoji = "🔮"
+            rarity_str = f"{r_emoji} {form_label}"
+
+        name_str = f"{pokemon.name.title()} ({form_label})"
+        id_str = f"{pokemon.id}.{form_index}"
+    else:
+        r_emoji = get_rarity_emoji(pokemon.rarity)
+        rarity_str = f"{r_emoji} {pokemon.rarity}"
+        name_str = pokemon.name.title()
+        id_str = f"{pokemon.id}"
+        
+    caption = (
+        f"<b>🌟 Pokemon Info</b>\n"
+        f"🆔 <b>ID</b>: <code>{id_str}</code>\n"
+        f"⛔ <b>Name</b>: {html.escape(name_str)}\n"
+        f"🎦 <b>Generation</b>: Gen {pokemon.generation}\n"
+        f"🎬 <b>Rarity</b>: {html.escape(rarity_str)}"
+    )
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="👥 Owners", callback_data=f"show_check_owners_{pokemon.id}_{form_index}")
+    )
+    return caption, builder.as_markup(), media_type, media_value
+
+
+@router.callback_query(F.data.startswith("show_check_owners_"))
+async def cb_show_check_owners(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_")
+    pokemon_id = int(parts[3])
+    form_index = int(parts[4])
+    
+    owners_stmt = (
+        select(User.id, User.nickname, func.count(UserPokemon.id))
+        .join(UserPokemon, UserPokemon.user_id == User.id)
+        .where(UserPokemon.pokemon_id == pokemon_id)
+        .where(UserPokemon.form_index == form_index)
+        .group_by(User.id, User.nickname)
+        .order_by(func.count(UserPokemon.id).desc())
+        .limit(20)
+    )
+    owners_res = await db.execute(owners_stmt)
+    owners = owners_res.all()
+    
+    caption = f"🎦 <b>Who has this pokemon:</b>\n"
+    if owners:
+        owner_rows = []
+        for idx, (uid, nick, count) in enumerate(owners, start=1):
+            display_name = html.escape(nick or "Trainer")
+            owner_rows.append(f"{idx}. <a href=\"tg://user?id={uid}\">{display_name}</a> ×{count}")
+        caption += "\n".join(owner_rows)
+    else:
+        caption += "No trainer owns this species yet."
+        
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🔙 Back", callback_data=f"check_back_{pokemon_id}_{form_index}")
+    )
+    
+    try:
+        await callback.message.edit_caption(caption=caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+    except Exception:
+        try:
+            await callback.message.edit_text(caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+        except Exception:
+            pass
+            
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("check_back_"))
+async def cb_check_back(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_")
+    pokemon_id = int(parts[2])
+    form_index = int(parts[3])
+    
+    caption, reply_markup, _, _ = await build_check_pokemon_payload(pokemon_id, form_index, db)
+    
+    try:
+        await callback.message.edit_caption(caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+    except Exception:
+        try:
+            await callback.message.edit_text(caption, reply_markup=reply_markup, parse_mode="HTML")
+        except Exception:
+            pass
+            
+    await callback.answer()
+
+
+async def get_leaderboard_text(lb_type: str, db: AsyncSession) -> str:
+    import config
+    
+    bot_id = None
+    if config.BOT_TOKEN and ":" in config.BOT_TOKEN:
+        try:
+            bot_id = int(config.BOT_TOKEN.split(":")[0])
+        except ValueError:
+            pass
+
+    if lb_type == "coins":
+        if bot_id:
+            coins_stmt = select(User).where(User.id != bot_id).order_by(desc(User.coins)).limit(10)
+        else:
+            coins_stmt = select(User).order_by(desc(User.coins)).limit(10)
+        coins_res = await db.execute(coins_stmt)
+        coins_users = coins_res.scalars().all()
+        
+        text = "🏆 <b>TOP 10 — Coins</b>\n\n"
+        if coins_users:
+            text += "<blockquote>"
+            for idx, u in enumerate(coins_users):
+                rank = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx + 1}."
+                display_name = f"@{html.escape(u.username)}" if u.username else f"{html.escape(u.nickname or 'Trainer')}"
+                text += f"{rank} {display_name}  -> {u.coins}\n"
+            text += "</blockquote>"
+        else:
+            text += "• <i>No trainers registered yet.</i>"
+            
+    elif lb_type == "catches":
+        if bot_id:
+            catches_stmt = (
+                select(User.username, User.nickname, func.count(UserPokemon.id).label("total_catches"))
+                .join(UserPokemon, UserPokemon.user_id == User.id)
+                .where(User.id != bot_id)
+                .group_by(User.id, User.username, User.nickname)
+                .order_by(desc(func.count(UserPokemon.id)))
+                .limit(10)
+            )
+        else:
+            catches_stmt = (
+                select(User.username, User.nickname, func.count(UserPokemon.id).label("total_catches"))
+                .join(UserPokemon, UserPokemon.user_id == User.id)
+                .group_by(User.id, User.username, User.nickname)
+                .order_by(desc(func.count(UserPokemon.id)))
+                .limit(10)
+            )
+        catches_res = await db.execute(catches_stmt)
+        catches_data = catches_res.all()
+        
+        text = "🏆 <b>TOP 10 — Pokémon</b>\n\n"
+        if catches_data:
+            text += "<blockquote>"
+            for idx, row in enumerate(catches_data):
+                rank = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx + 1}."
+                display_name = f"@{html.escape(row.username)}" if row.username else f"{html.escape(row.nickname or 'Trainer')}"
+                text += f"{rank} {display_name}  -> {row.total_catches:,}\n"
+            text += "</blockquote>"
+        else:
+            text += "• <i>No catches registered yet.</i>"
+            
+    elif lb_type == "streak":
+        from utils.streak import get_top_streaks
+        top_users = await get_top_streaks(10, db)
+        
+        text = "🏆 <b>TOP 10 — Streaks</b>\n\n"
+        if top_users:
+            text += "<blockquote>"
+            filtered_users = []
+            for user_id, uinfo in top_users:
+                if bot_id and user_id == bot_id:
+                    continue
+                filtered_users.append((user_id, uinfo))
+            
+            filtered_users = filtered_users[:10]
+            
+            for idx, (user_id, uinfo) in enumerate(filtered_users):
+                rank = "🥇" if idx == 0 else "🥈" if idx == 1 else "🥉" if idx == 2 else f"{idx + 1}."
+                username = uinfo.get("username")
+                nickname = uinfo.get("nickname")
+                if username:
+                    display_name = f"@{html.escape(username)}"
+                elif nickname:
+                    display_name = f"{html.escape(nickname)}"
+                else:
+                    display_name = f"Trainer_{user_id}"
+                
+                best_streak = uinfo.get("best_streak", 0)
+                text += f"{rank} {display_name}  -> {best_streak} days\n"
+            text += "</blockquote>"
+        else:
+            text += "• <i>No active streaks recorded yet.</i>"
+            
+    return text
+
+def get_leaderboard_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        create_styled_button(text="🏆 Pokémon", key="pokedex", style="success", callback_data="lb_type_catches"),
+        create_styled_button(text="💰 Coins", key="claim", style="primary", callback_data="lb_type_coins"),
+        create_styled_button(text="🔥 Streak", key="streak", style="danger", callback_data="lb_type_streak")
+    )
+    return builder.as_markup()
+
+@router.message(Command("leaderboard", ignore_mention=True))
+@router.message(Command("lb", ignore_mention=True))
+async def cmd_leaderboard(message: Message, db: AsyncSession):
+    text = await get_leaderboard_text("catches", db)
+    
+    await send_cover_media(
+        chat_id=message.chat.id,
+        key="leaderboard",
+        caption=text,
+        reply_markup=get_leaderboard_keyboard(),
+        bot=message.bot,
+        default_url="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/493.png",
+        parse_mode="HTML",
+        message_to_reply=message
+    )
+
+@router.callback_query(F.data.startswith("lb_type_"))
+async def cb_leaderboard_type(callback: CallbackQuery, db: AsyncSession):
+    lb_type = callback.data.replace("lb_type_", "")
+    is_dm = False
+    if lb_type.endswith("_dm"):
+        is_dm = True
+        lb_type = lb_type[:-3]
+        
+    text = await get_leaderboard_text(lb_type, db)
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        create_styled_button(text="🏆 Pokémon", key="pokedex", style="success", callback_data="lb_type_catches_dm" if is_dm else "lb_type_catches"),
+        create_styled_button(text="💰 Coins", key="claim", style="primary", callback_data="lb_type_coins_dm" if is_dm else "lb_type_coins"),
+        create_styled_button(text="🔥 Streak", key="streak", style="danger", callback_data="lb_type_streak_dm" if is_dm else "lb_type_streak")
+    )
+    if is_dm:
+        builder.row(create_styled_button(text="🔙 Back to Hub Menu", key="back", style="primary", callback_data="dm_home"))
+        
+    try:
+        await callback.message.edit_caption(
+            caption=text,
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
+    except Exception:
+        try:
+            await callback.message.edit_text(
+                text=text,
+                reply_markup=builder.as_markup(),
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+    await callback.answer()
+
+@router.message(Command("fav", ignore_mention=True))
+async def cmd_fav(message: Message, db: AsyncSession):
+    user_id = message.from_user.id
+    parts = message.text.split()
+    if len(parts) < 2:
+        await message.answer("⚠️ Format: `/fav <pokedex_id>[.form_index]`\n(e.g., `/fav 251` or `/fav 6.1` to set Charizard AMV as your favorite cover)")
+        return
+        
+    fav_str = parts[1].strip()
+    pokemon_id = None
+    form_index = 0
+    if "." in fav_str:
+        pq, fq = fav_str.split(".", 1)
+        if pq.isdigit() and fq.isdigit():
+            pokemon_id = int(pq)
+            form_index = int(fq)
+    elif fav_str.isdigit():
+        pokemon_id = int(fav_str)
+        
+    if pokemon_id is None:
+        await message.answer("⚠️ Format: `/fav <pokedex_id>[.form_index]`\n(e.g., `/fav 251` or `/fav 6.1` to set Charizard AMV as your favorite cover)")
+        return
+    
+    if form_index > 0:
+        stmt = select(UserPokemon).options(joinedload(UserPokemon.pokemon)).where(
+            UserPokemon.pokemon_id == pokemon_id,
+            UserPokemon.user_id == user_id,
+            UserPokemon.form_index == form_index
+        ).limit(1)
+    else:
+        stmt = select(UserPokemon).options(joinedload(UserPokemon.pokemon)).where(
+            UserPokemon.pokemon_id == pokemon_id,
+            UserPokemon.user_id == user_id
+        ).limit(1)
+        
+    res = await db.execute(stmt)
+    up = res.scalar()
+    
+    custom_forms = await get_custom_rarity_forms(db)
+    if not up:
+        form_lbl = get_form_label(form_index, None, custom_forms)
+        form_suffix = f" ({form_lbl})" if form_index > 0 else ""
+        await message.answer(f"❌ You don't own a Pokémon with that Pokédex ID{form_suffix} in your collection!")
+        return
+        
+    p = up.pokemon
+    await set_favorite_id(user_id, fav_str, db)
+    await db.commit()
+    
+    shiny_stmt = select(UserPokemon.is_shiny).where(
+        UserPokemon.pokemon_id == pokemon_id,
+        UserPokemon.user_id == user_id,
+        UserPokemon.is_shiny == True
+    ).limit(1)
+    shiny_res = await db.execute(shiny_stmt)
+    has_shiny = shiny_res.scalar() is not None
+    
+    shiny_tag = "✨ Shiny " if has_shiny else ""
+    form_lbl = get_form_label(form_index, None, custom_forms)
+    form_suffix = f" ({form_lbl})" if form_index > 0 else ""
+    await message.answer(f"🌟 <b>{shiny_tag}{p.name.title()}</b>{form_suffix} (Pokédex ID: {fav_str}) has been set as your Pokédex cover favorite!", parse_mode="HTML")
+
+@router.message(Command("unfav", ignore_mention=True))
+async def cmd_unfav(message: Message, db: AsyncSession):
+    user_id = message.from_user.id
+    await set_favorite_id(user_id, None, db)
+    await db.commit()
+    await message.answer("❌ Cleared your favorite cover. A random Pokémon from your bag will be shown instead.")
+
+
+async def build_rankings_payload(chat_id: int, user_id: int, period: str, db: AsyncSession):
+    from utils.group_monitor import flush_chat_activity
+    try:
+        await flush_chat_activity(chat_id)
+    except Exception:
+        pass
+
+    period_lower = period.lower()
+    from database.models import ChatMessageStat, User
+    from datetime import datetime
+
+    if period_lower == "daily":
+        order_col = ChatMessageStat.daily_count
+        period_title = "Daily"
+    elif period_lower == "weekly":
+        order_col = ChatMessageStat.weekly_count
+        period_title = "Weekly"
+    elif period_lower == "monthly":
+        order_col = ChatMessageStat.monthly_count
+        period_title = "Monthly"
+    else:
+        period_lower = "overall"
+        order_col = ChatMessageStat.overall_count
+        period_title = "Overall"
+
+    stmt = (
+        select(ChatMessageStat, User)
+        .join(User, ChatMessageStat.user_id == User.id)
+        .where(ChatMessageStat.chat_id == chat_id)
+        .order_by(order_col.desc(), ChatMessageStat.overall_count.desc())
+        .limit(10)
+    )
+    res = await db.execute(stmt)
+    records = res.all()
+
+    if not records:
+        all_u_stmt = select(User.id).limit(10)
+        all_u_res = await db.execute(all_u_stmt)
+        all_uids = [r[0] for r in all_u_res.all()]
+        if all_uids:
+            now_dt = datetime.utcnow()
+            today_str = now_dt.strftime("%Y-%m-%d")
+            week_str = now_dt.strftime("%Y-%W")
+            month_str = now_dt.strftime("%Y-%m")
+            for uid in all_uids:
+                c_stmt = select(ChatMessageStat).where(ChatMessageStat.user_id == uid, ChatMessageStat.chat_id == chat_id)
+                c_res = await db.execute(c_stmt)
+                if not c_res.scalar_one_or_none():
+                    db.add(ChatMessageStat(
+                        user_id=uid,
+                        chat_id=chat_id,
+                        daily_count=1,
+                        weekly_count=1,
+                        monthly_count=1,
+                        overall_count=1,
+                        last_daily_reset=today_str,
+                        last_weekly_reset=week_str,
+                        last_monthly_reset=month_str
+                    ))
+            await db.commit()
+            res = await db.execute(stmt)
+            records = res.all()
+
+    tot_stmt = select(func.sum(order_col)).where(ChatMessageStat.chat_id == chat_id)
+    tot_res = await db.execute(tot_stmt)
+    total_chat_messages = tot_res.scalar() or 0
+
+    from database.models import GroupSetting
+    gs_stmt = select(GroupSetting.message_counter).where(GroupSetting.chat_id == chat_id)
+    gs_res = await db.execute(gs_stmt)
+    gs_counter = gs_res.scalar() or 0
+    total_chat_messages = max(total_chat_messages, gs_counter)
+
+    formatted_total = f"{total_chat_messages:,}".replace(",", ".")
+
+    rows = []
+    for idx, (stat, u) in enumerate(records, start=1):
+        count = getattr(stat, f"{period_lower}_count", 0)
+        formatted_count = f"{count:,}".replace(",", ".")
+        
+        display_name = html.escape(u.nickname or u.username or f"Trainer {u.id}")
+        if u.username:
+            user_str = f'<a href="https://t.me/{u.username}">{display_name}</a>'
+        else:
+            user_str = display_name
+            
+        rows.append(f"✦ {idx}. 👤 {user_str} ➔ {formatted_count} msgs")
+
+    ranks_body = "\n".join(rows) if rows else "<i>No chat activity recorded yet for this period.</i>"
+
+    text = (
+        f"⚡ <b>CHAT RANKINGS</b> ⚡\n"
+        f"◈ ──────────────── ◈\n"
+        f"🏆 <b>Leaderboard ({period_title})</b>\n\n"
+        f"{ranks_body}\n\n"
+        f"◈ ──────────────── ◈\n"
+        f"✉️ <b>Total messages:</b> {formatted_total}"
+    )
+
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="📅 Daily", callback_data=f"rank_{chat_id}_{user_id}_daily"),
+        InlineKeyboardButton(text="🗓️ Weekly", callback_data=f"rank_{chat_id}_{user_id}_weekly")
+    )
+    builder.row(
+        InlineKeyboardButton(text="📆 Monthly", callback_data=f"rank_{chat_id}_{user_id}_monthly"),
+        InlineKeyboardButton(text="🏆 Overall", callback_data=f"rank_{chat_id}_{user_id}_overall")
+    )
+
+    return text, builder.as_markup()
+
+
+@router.message(Command("rankings", "chatrankings", "chattop", ignore_mention=True))
+async def cmd_rankings(message: Message, db: AsyncSession):
+    if message.chat.type not in ["group", "supergroup"]:
+        await message.answer("⚠️ Chat Rankings are for group chats! Use /rankings inside a group chat.")
+        return
+
+    text, kb = await build_rankings_payload(message.chat.id, message.from_user.id, "weekly", db)
+    await send_cover_media(
+        chat_id=message.chat.id,
+        key="pokedex",
+        caption=text,
+        reply_markup=kb,
+        bot=message.bot,
+        default_file="data/pokeempire_banner.png",
+        message_to_reply=message
+    )
+
+
+@router.callback_query(F.data.startswith("rank_"))
+async def cb_rankings_filter(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_")
+    chat_id = int(parts[1])
+    user_id = int(parts[2])
+    period = parts[3]
+
+    if callback.from_user.id != user_id:
+        await callback.answer("❌ This is not your menu! Type /rankings to view yours.", show_alert=True)
+        return
+
+    text, kb = await build_rankings_payload(chat_id, user_id, period, db)
+    try:
+        if callback.message.photo or callback.message.video or callback.message.animation:
+            await callback.message.edit_caption(caption=text, reply_markup=kb, parse_mode="HTML")
+        else:
+            await callback.message.edit_text(text=text, reply_markup=kb, parse_mode="HTML")
+    except Exception as e:
+        print(f"Error editing rankings callback: {e}")
+    await callback.answer()
+
+@router.message(Command("search", ignore_mention=True))
+@router.message(Command("s", ignore_mention=True))
+@router.message(Command("cid", ignore_mention=True))
+async def cmd_search(message: Message, db: AsyncSession):
+    parts = message.text.split()
+    if len(parts) < 2:
+        await message.answer("Format: `/search <pokemon_name_or_id>`\nExample: `/search bulbasaur` or `/search 6`", parse_mode="Markdown")
+        return
+
+    query = " ".join(parts[1:]).strip().lower()
+
+    pokemon_id = None
+    pokemon_name_query = None
+
+    if "." in query:
+        pq, fq = query.split(".", 1)
+        pq = pq.strip()
+        if pq.isdigit():
+            pokemon_id = int(pq)
+        else:
+            pokemon_name_query = pq
+    else:
+        if query.isdigit():
+            pokemon_id = int(query)
+        else:
+            pokemon_name_query = query
+
+    if pokemon_id is not None:
+        poke_stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
+    else:
+        poke_stmt = select(Pokemon).where(Pokemon.name.ilike(f"%{pokemon_name_query}%"))
+
+    poke_res = await db.execute(poke_stmt)
+    pokemons = poke_res.scalars().all()
+
+    if not pokemons:
+        searched_term = pokemon_name_query if pokemon_name_query else str(pokemon_id)
+        await message.answer(f"Pokemon '{html.escape(searched_term)}' not found in database.", parse_mode="HTML")
+        return
+
+    if pokemon_name_query:
+        pokemons.sort(key=lambda p: (abs(len(p.name) - len(pokemon_name_query)), p.name.lower() != pokemon_name_query.lower()))
+    pokemon = pokemons[0]
+
+    await send_search_result_message(message, pokemon, 1, db)
+
+
+async def build_variants_search_payload(pokemon_id: int, page: int, db: AsyncSession):
+    stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
+    res = await db.execute(stmt)
+    pokemon = res.scalar_one_or_none()
+    if not pokemon:
+        return "Character not found.", None
+        
+    from database.models import PokemonFormMedia
+    stmt = select(PokemonFormMedia.form_index, PokemonFormMedia.media_value).where(
+        PokemonFormMedia.pokemon_id == pokemon_id
+    ).order_by(PokemonFormMedia.form_index)
+    res = await db.execute(stmt)
+    form_entries = res.all()
+    
+    custom_forms = await get_custom_rarity_forms(db)
+    custom_rarities = await get_all_custom_rarities(db)
+    
+    base_emoji = get_rarity_emoji(pokemon.rarity, custom_rarities)
+    variants = [(0, pokemon.rarity, base_emoji, f"{pokemon.id}")]
+    
+    for form_index, media_value in form_entries:
+        form_label = get_form_label(form_index, media_value, custom_forms)
+        form_emoji = get_rarity_emoji(form_label, custom_rarities)
+        variants.append((form_index, form_label, form_emoji, f"{pokemon.id}.{form_index}"))
+        
+    total_variants = len(variants)
+    page_size = 5
+    total_pages = max(1, (total_variants + page_size - 1) // page_size)
+    
+    if page < 1:
+        page = 1
+    if page > total_pages:
+        page = total_pages
+        
+    start_idx = (page - 1) * page_size
+    end_idx = start_idx + page_size
+    page_variants = variants[start_idx:end_idx]
+    
+    gen_str = str(pokemon.generation)
+    if gen_str.isdigit():
+        series_str = f"Gen {gen_str}"
+    else:
+        series_str = gen_str
+        
+    caption = (
+        f"🦧 <b>{html.escape(pokemon.name.title())}</b>\n"
+        f"┣━ 🎦 {html.escape(series_str)}\n"
+        f"┣━ 📊 Total variants: <b>{total_variants}</b> — Page <b>{page}/{total_pages}</b>\n\n"
+    )
+    
+    for form_index, label, emoji, entry_id in page_variants:
+        caption += f"┣━ {emoji} {label} | ID: <code>{entry_id}</code>\n"
+        
+    builder = InlineKeyboardBuilder()
+    if total_pages > 1:
+        if page == 1:
+            builder.row(
+                InlineKeyboardButton(text=f"1/{total_pages}", callback_data="search_noop"),
+                InlineKeyboardButton(text="Next ➡️", callback_data=f"search_page_{pokemon.id}_{page + 1}")
+            )
+        elif page == total_pages:
+            builder.row(
+                InlineKeyboardButton(text="⬅️ Prev", callback_data=f"search_page_{pokemon.id}_{page - 1}"),
+                InlineKeyboardButton(text=f"{total_pages}/{total_pages}", callback_data="search_noop")
+            )
+        else:
+            builder.row(
+                InlineKeyboardButton(text="⬅️ Prev", callback_data=f"search_page_{pokemon.id}_{page - 1}"),
+                InlineKeyboardButton(text=f"{page}/{total_pages}", callback_data="search_noop"),
+                InlineKeyboardButton(text="Next ➡️", callback_data=f"search_page_{pokemon.id}_{page + 1}")
+            )
+            
+    return caption, builder.as_markup()
+
+
+async def send_search_result_message(message: Message, pokemon: Pokemon, page: int, db: AsyncSession):
+    caption, reply_markup = await build_variants_search_payload(pokemon.id, page, db)
+    
+    media_value = pokemon.image_url
+    media_type = "photo"
+    if pokemon.image_url:
+        media_type, media_value = parse_stored_media_value(pokemon.image_url)
+        
+    from aiogram.types import FSInputFile
+    if isinstance(media_value, str) and os.path.exists(media_value):
+        media_value = FSInputFile(media_value)
+        
+    try:
+        if media_type == "video":
+            await message.answer_video(video=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+        else:
+            await message.answer_photo(photo=media_value, caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+    except Exception as e:
+        print(f"Error sending variants media: {e}")
+        await message.answer(caption, reply_markup=reply_markup, parse_mode="HTML")
+
+
+@router.callback_query(F.data.startswith("search_page_"))
+async def cb_search_page(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_")
+    pokemon_id = int(parts[2])
+    page = int(parts[3])
+    
+    caption, reply_markup = await build_variants_search_payload(pokemon_id, page, db)
+    
+    try:
+        await callback.message.edit_caption(caption=caption, reply_markup=reply_markup, parse_mode="HTML")
+    except Exception:
+        try:
+            await callback.message.edit_text(caption, reply_markup=reply_markup, parse_mode="HTML")
+        except Exception:
+            pass
+            
+    await callback.answer()
+
+
+@router.callback_query(F.data == "search_noop")
+async def cb_search_noop(callback: CallbackQuery):
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("profile_view_"))
+async def cb_profile_view(callback: CallbackQuery, db: AsyncSession):
+    try:
+        parts = callback.data.split("_")
+        user_id = int(parts[2])
+
+        if callback.from_user.id != user_id:
+            await callback.answer("❌ This is not your profile!", show_alert=True)
+            return
+
+        count_stmt = select(func.count(UserPokemon.id)).where(UserPokemon.user_id == user_id)
+        count_res = await db.execute(count_stmt)
+        total_caught = count_res.scalar() or 0
+
+        unique_stmt = select(func.count(distinct(UserPokemon.pokemon_id))).where(UserPokemon.user_id == user_id)
+        unique_res = await db.execute(unique_stmt)
+        unique_caught = unique_res.scalar() or 0
+
+        total_species_stmt = select(func.count(Pokemon.id))
+        total_species_res = await db.execute(total_species_stmt)
+        total_species = total_species_res.scalar() or 1
+
+        dex_pct = (unique_caught / total_species) * 100
+        dex_bar = get_progress_bar(unique_caught, total_species, 10, fill_char="▰", empty_char="▱")
+
+        rarity_stmt = select(Pokemon.rarity, func.count(UserPokemon.id)).join(UserPokemon).where(UserPokemon.user_id == user_id).group_by(Pokemon.rarity)
+        rarity_res = await db.execute(rarity_stmt)
+        rarity_counts = {r: count for r, count in rarity_res.all()}
+
+        standard_breakdown = [
+            ("Common", "⚪️"),
+            ("Uncommon", "🟢"),
+            ("Medium", "🔵"),
+            ("Rare", "🟣"),
+            ("Epic", "🔮"),
+            ("Legendary", "🌟"),
+            ("Mythical", "🌌")
+        ]
+        
+        from utils.settings import get_all_custom_rarities
+        custom_rarities = await get_all_custom_rarities(db)
+
+        breakdown_lines = []
+        for r_name, r_emoji in standard_breakdown:
+            cnt = rarity_counts.get(r_name, 0)
+            breakdown_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
+            
+        rarity_breakdown_text = "\n".join(breakdown_lines)
+
+        form_counts_stmt = select(UserPokemon.form_index, func.count(distinct(UserPokemon.pokemon_id))).where(
+            UserPokemon.user_id == user_id, UserPokemon.form_index > 0
+        ).group_by(UserPokemon.form_index)
+        form_counts_res = await db.execute(form_counts_stmt)
+        form_counts = {fi: cnt for fi, cnt in form_counts_res.all()}
+        amv_count = form_counts.get(1, 0)
+        dmax_count = form_counts.get(2, 0)
+        gmax_count = form_counts.get(3, 0)
+        zmove_count = form_counts.get(4, 0)
+        terastal_count = form_counts.get(5, 0)
+
+        forms_lines = [
+            f"├─➩ 🎬 AMV / Art: {amv_count}",
+            f"├─➩ ⚡ Dmax: {dmax_count}",
+            f"├─➩ 💥 Gmax: {gmax_count}",
+            f"├─➩ 🌀 Z-Move: {zmove_count}",
+            f"├─➩ 🔮 Terastal: {terastal_count}"
+        ]
+        
+        standard_keys = {"Common", "Uncommon", "Medium", "Rare", "Epic", "Legendary", "Mythical", "Limited", "Limited Edition"}
+        for r_name, r_emoji in custom_rarities.items():
+            if r_name in standard_keys:
+                continue
+            cnt = 0
+            for r_c, count in rarity_counts.items():
+                if r_c and r_name and r_c.lower() == r_name.lower():
+                    cnt = count
+                    break
+            forms_lines.append(f"├─➩ {r_emoji} {r_name}: {cnt}")
+            
+        forms_breakdown_text = "\n".join(forms_lines)
+
+        u_stmt = select(User).where(User.id == user_id)
+        u_res = await db.execute(u_stmt)
+        user = u_res.scalar_one_or_none()
+        
+        formatted_coins = f"{user.coins:,}" if user else "0"
+        user_nickname = (user.profile_name or user.nickname) if (user and (user.profile_name or user.nickname)) else (callback.from_user.first_name or "Trainer")
+
+        rank_stmt = (
+            select(func.count())
+            .select_from(
+                select(UserPokemon.user_id)
+                .group_by(UserPokemon.user_id)
+                .having(func.count(UserPokemon.id) > total_caught)
+                .subquery()
+            )
+        )
+        rank_res = await db.execute(rank_stmt)
+        rank_position = (rank_res.scalar() or 0) + 1
+
+        from utils.streak import get_streak_data
+        s_data = await get_streak_data(user_id)
+        current_streak = s_data.get("current_streak", 0)
+        best_streak = s_data.get("best_streak", 0)
+
+        fav_val = await get_favorite_id(user_id, db)
+        fav_name = "None (Random Bag)"
+        if fav_val:
+            pokemon_id = None
+            form_index = 0
+            if "." in fav_val:
+                pq, fq = fav_val.split(".", 1)
+                if pq.isdigit() and fq.isdigit():
+                    pokemon_id = int(pq)
+                    form_index = int(fq)
+            elif fav_val.isdigit():
+                pokemon_id = int(fav_val)
+                
+            if pokemon_id:
+                poke_stmt = select(Pokemon.name).where(Pokemon.id == pokemon_id)
+                poke_res = await db.execute(poke_stmt)
+                p_name = poke_res.scalar()
+                if p_name:
+                    form_suffix = f" (Form {form_index})" if form_index > 0 else ""
+                    fav_name = f"{p_name.title()}{form_suffix}"
+
+        profile_card = (
+            f"╭──「 🏆 Trainer Profile 」\n"
+            f"├─➩ 🏓 User: {html.escape(user_nickname)}\n"
+            f"├─➩ 🆔 ID: <code>{user_id}</code>\n"
+            f"├─➩ 💰 Balance: <code>{formatted_coins} coins</code>\n"
+            f"├─➩ ⚡ Pokémon: {unique_caught} (Total Catches: {total_caught})\n"
+            f"├─➩ 🌍 Pokédex: {unique_caught}/{total_species} ({dex_pct:.3f}%)\n"
+            f"├─➩ 🎁 Progress:\n"
+            f"╰         {dex_bar}\n\n"
+            f"╭─ Cover & Streaks ─\n"
+            f"├─➩ ⭐ Favorite: <code>{html.escape(fav_name)}</code>\n"
+            f"├─➩ 🔥 Current Streak: <code>{current_streak} days</code>\n"
+            f"├─➩ 🏆 Best Streak: <code>{best_streak} days</code>\n"
+            f"╰───────────────────\n\n"
+            f"╭─ Rarity Breakdown ─\n"
+            f"{rarity_breakdown_text}\n"
+            f"╰───────────────────\n\n"
+            f"╭─ Forms Breakdown ─\n"
+            f"{forms_breakdown_text}\n"
+            f"╰───────────────────\n\n"
+            f"╭─ Global Rank ─\n"
+            f"├─➩ 🏆 Position: #{rank_position}\n"
+            f"╰───────────────────"
+        )
+        
+        builder = InlineKeyboardBuilder()
+        builder.row(InlineKeyboardButton(text="📖 View Pokédex", callback_data=f"pd_page_{user_id}_1_All"))
+        
+        await edit_player_cover_message(callback, user_id, profile_card, builder.as_markup(), db, parse_mode="HTML")
+        await callback.answer()
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        await callback.answer(f"❌ Error displaying profile: {e}", show_alert=True)
+
+
+@router.message(Command("dex", ignore_mention=True))
+async def cmd_dex(message: Message, db: AsyncSession):
+    parts = message.text.split()
+    if len(parts) < 2:
+        await message.answer("⚠️ Format: `/dex <pokemon_name_or_id>`")
+        return
+        
+    query = " ".join(parts[1:]).strip().lower()
+    user_id = message.from_user.id
+    
+    if query.isdigit():
+        poke_stmt = select(Pokemon).where(Pokemon.id == int(query))
+    else:
+        poke_stmt = select(Pokemon).where(Pokemon.name.ilike(query))
+        
+    poke_res = await db.execute(poke_stmt)
+    pokemon = poke_res.scalar_one_or_none()
+    
+    if not pokemon:
+        await message.answer(f"❌ Pokémon '{html.escape(query)}' not found.")
+        return
+        
+    owned_stmt = select(UserPokemon.form_index).where(
+        UserPokemon.user_id == user_id,
+        UserPokemon.pokemon_id == pokemon.id
+    )
+    owned_res = await db.execute(owned_stmt)
+    owned_forms = set(owned_res.scalars().all())
+    
+    shiny_stmt = select(UserPokemon.id).where(
+        UserPokemon.user_id == user_id,
+        UserPokemon.pokemon_id == pokemon.id,
+        UserPokemon.is_shiny == True
+    ).limit(1)
+    shiny_res = await db.execute(shiny_stmt)
+    has_shiny = shiny_res.scalar() is not None
+    
+    from database.models import PokemonFormMedia
+    media_stmt = select(PokemonFormMedia.form_index, PokemonFormMedia.media_value).where(
+        PokemonFormMedia.pokemon_id == pokemon.id
+    )
+    media_res = await db.execute(media_stmt)
+    configured_media = {row[0]: row[1] for row in media_res.all()}
+    
+    custom_forms = await get_custom_rarity_forms(db)
+    form_names = {
+        0: "Standard",
+        1: "AMV/Art",
+        2: "Dmax",
+        3: "Gmax",
+        4: "Z-Move",
+        5: "Terastal"
+    }
+    form_badges = {
+        0: "📸",
+        1: "🎬",
+        2: "⚡",
+        3: "💥",
+        4: "🌀",
+        5: "🔮"
+    }
+    for f_idx, (r_name, r_emoji) in custom_forms.items():
+        form_names[f_idx] = r_name
+        form_badges[f_idx] = r_emoji
+    
+    subtypes_text = ""
+    available_forms = sorted(list({0} | set(configured_media.keys()) | owned_forms))
+    
+    builder = InlineKeyboardBuilder()
+    
+    for f in available_forms:
+        val = configured_media.get(f, "")
+        f_name = form_names.get(f, get_form_label(f, val, custom_forms))
+        f_badge = form_badges.get(f, get_rarity_emoji(f_name))
+        is_owned = f in owned_forms
+        owned_status = "✅ Owned" if is_owned else "❌ Locked"
+        
+        if f == 0:
+            rarity_lbl = pokemon.rarity
+        else:
+            rarity_lbl = f_name
+            
+        subtypes_text += f"• {f_badge} <b>{f_name}</b> (<code>{rarity_lbl}</code>): {owned_status}\n"
+        
+        if is_owned:
+            builder.button(text=f"▶️ View {f_name}", callback_data=f"dex_play_{user_id}_{pokemon.id}_{f}")
+            
+    builder.adjust(2)
+    
+    r_emoji = get_rarity_emoji(pokemon.rarity)
+    shiny_tag = " ✨" if has_shiny else ""
+    
+    caption = (
+        f"📖 <b>DEX ENTRY: #{pokemon.id:03d} {pokemon.name.title()}</b>{shiny_tag}\n"
+        f"───────────────\n"
+        f"Rarity: {r_emoji} <b>{pokemon.rarity}</b>\n"
+        f"Generation: <b>Gen {pokemon.generation}</b>\n\n"
+        f"🧬 <b>Subtype Collection</b>:\n"
+        f"{subtypes_text}"
+        f"───────────────"
+    )
+    
+    try:
+        await message.answer_photo(
+            photo=pokemon.image_url,
+            caption=caption,
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        print(f"Error sending dex entry: {e}")
+        await message.answer(caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+
+@router.callback_query(F.data.startswith("dex_play_"))
+async def cb_dex_play(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_")
+    user_id = int(parts[2])
+    pokemon_id = int(parts[3])
+    form_index = int(parts[4])
+    
+    if callback.from_user.id != user_id:
+        await callback.answer("❌ This is not your menu!", show_alert=True)
+        return
+        
+    stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
+    res = await db.execute(stmt)
+    pokemon = res.scalar_one_or_none()
+    if not pokemon:
+        await callback.answer("❌ Pokémon not found.", show_alert=True)
+        return
+        
+    from database.models import PokemonFormMedia
+    media_value = None
+    media_type = "photo"
+    
+    if form_index == 0:
+        shiny_stmt = select(UserPokemon.id).where(
+            UserPokemon.user_id == user_id,
+            UserPokemon.pokemon_id == pokemon_id,
+            UserPokemon.is_shiny == True
+        ).limit(1)
+        shiny_res = await db.execute(shiny_stmt)
+        has_shiny = shiny_res.scalar() is not None
+        
+        form_media = None
+        if has_shiny:
+            s_media_stmt = select(PokemonFormMedia).where(
+                PokemonFormMedia.pokemon_id == pokemon_id,
+                PokemonFormMedia.form_index == 6
+            )
+            s_res = await db.execute(s_media_stmt)
+            form_media = s_res.scalar_one_or_none()
+            
+        if form_media:
+            media_value = form_media.media_value
+            if media_value.startswith("video:"):
+                media_type = "video"
+                media_value = media_value.replace("video:", "")
+            elif media_value.startswith("photo:"):
+                media_type = "photo"
+                media_value = media_value.replace("photo:", "")
+            elif media_value.startswith("animation:"):
+                media_type = "animation"
+                media_value = media_value.replace("animation:", "")
+            else:
+                if media_value.startswith("http"):
+                    media_type = "photo"
+                else:
+                    media_type = "video"
+        else:
+            media_value = pokemon.image_url
+            media_type = "photo"
+    else:
+        media_stmt = select(PokemonFormMedia).where(
+            PokemonFormMedia.pokemon_id == pokemon_id,
+            PokemonFormMedia.form_index == form_index
+        )
+        media_res = await db.execute(media_stmt)
+        form_media = media_res.scalar_one_or_none()
+        if form_media:
+            media_value = form_media.media_value
+            if media_value.startswith("video:"):
+                media_type = "video"
+                media_value = media_value.replace("video:", "")
+            elif media_value.startswith("photo:"):
+                media_type = "photo"
+                media_value = media_value.replace("photo:", "")
+            elif media_value.startswith("animation:"):
+                media_type = "animation"
+                media_value = media_value.replace("animation:", "")
+            else:
+                if media_value.startswith("http"):
+                    media_type = "photo"
+                else:
+                    media_type = "video"
+                    
+    if not media_value:
+        if form_index > 0:
+            await callback.answer(f"⚠️ Media for Form {form_index} is not registered yet.", show_alert=True)
+            return
+        media_type = "photo"
+        media_value = pokemon.image_url
+
+    custom_forms = await get_custom_rarity_forms(db)
+    form_label = get_form_label(form_index, media_value, custom_forms)
+
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 Back to Dex Info", callback_data=f"dex_back_{user_id}_{pokemon_id}")
+    
+    from aiogram.types import InputMediaPhoto, InputMediaVideo
+    try:
+        if media_type in ["video", "animation"]:
+            new_media = InputMediaVideo(media=media_value, caption=f"🎥 Playing <b>{pokemon.name.title()} ({html.escape(form_label)})</b>", parse_mode="HTML")
+        else:
+            new_media = InputMediaPhoto(media=media_value, caption=f"📸 Showing <b>{pokemon.name.title()} ({html.escape(form_label)})</b>", parse_mode="HTML")
+            
+        await callback.message.edit_media(media=new_media, reply_markup=builder.as_markup())
+    except Exception as e:
+        print(f"Error playing form media: {e}")
+        await callback.answer("❌ Could not display media on this message.", show_alert=True)
+        
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("dex_back_"))
+async def cb_dex_back(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_")
+    user_id = int(parts[2])
+    pokemon_id = int(parts[3])
+    
+    if callback.from_user.id != user_id:
+        await callback.answer("❌ This is not your menu!", show_alert=True)
+        return
+        
+    stmt = select(Pokemon).where(Pokemon.id == pokemon_id)
+    res = await db.execute(stmt)
+    pokemon = res.scalar_one_or_none()
+    if not pokemon:
+        await callback.answer("❌ Pokémon not found.", show_alert=True)
+        return
+        
+    owned_stmt = select(UserPokemon.form_index).where(
+        UserPokemon.user_id == user_id,
+        UserPokemon.pokemon_id == pokemon.id
+    )
+    owned_res = await db.execute(owned_stmt)
+    owned_forms = set(owned_res.scalars().all())
+    
+    shiny_stmt = select(UserPokemon.id).where(
+        UserPokemon.user_id == user_id,
+        UserPokemon.pokemon_id == pokemon.id,
+        UserPokemon.is_shiny == True
+    ).limit(1)
+    shiny_res = await db.execute(shiny_stmt)
+    has_shiny = shiny_res.scalar() is not None
+    
+    from database.models import PokemonFormMedia
+    media_stmt = select(PokemonFormMedia.form_index, PokemonFormMedia.media_value).where(
+        PokemonFormMedia.pokemon_id == pokemon.id
+    )
+    media_res = await db.execute(media_stmt)
+    configured_media = {row[0]: row[1] for row in media_res.all()}
+    
+    custom_forms = await get_custom_rarity_forms(db)
+    form_names = {
+        0: "Standard",
+        1: "AMV/Art",
+        2: "Dmax",
+        3: "Gmax",
+        4: "Z-Move",
+        5: "Terastal"
+    }
+    form_badges = {
+        0: "📸",
+        1: "🎬",
+        2: "⚡",
+        3: "💥",
+        4: "🌀",
+        5: "🔮"
+    }
+    for f_idx, (r_name, r_emoji) in custom_forms.items():
+        form_names[f_idx] = r_name
+        form_badges[f_idx] = r_emoji
+    
+    subtypes_text = ""
+    available_forms = [0] + sorted([f for f in configured_media.keys() if f > 0])
+    builder = InlineKeyboardBuilder()
+    
+    for f in available_forms:
+        f_name = form_names.get(f, f"Form {f}")
+        f_badge = form_badges.get(f, "🌀")
+        is_owned = f in owned_forms
+        owned_status = "✅ Owned" if is_owned else "❌ Locked"
+        
+        if f == 0:
+            rarity_lbl = pokemon.rarity
+        elif f == 1:
+            val = configured_media.get(1, "")
+            rarity_lbl = "Art" if val.startswith("photo:") else "AMV"
+        else:
+            rarity_lbl = f_name
+            
+        subtypes_text += f"• {f_badge} <b>{f_name}</b> (<code>{rarity_lbl}</code>): {owned_status}\n"
+        
+        if is_owned:
+            builder.button(text=f"▶️ View {f_name}", callback_data=f"dex_play_{user_id}_{pokemon.id}_{f}")
+            
+    builder.adjust(2)
+    
+    r_emoji = get_rarity_emoji(pokemon.rarity)
+    shiny_tag = " ✨" if has_shiny else ""
+    
+    caption = (
+        f"📖 <b>DEX ENTRY: #{pokemon.id:03d} {pokemon.name.title()}</b>{shiny_tag}\n"
+        f"───────────────\n"
+        f"Rarity: {r_emoji} <b>{pokemon.rarity}</b>\n"
+        f"Generation: <b>Gen {pokemon.generation}</b>\n\n"
+        f"🧬 <b>Subtype Collection</b>:\n"
+        f"{subtypes_text}"
+        f"───────────────"
+    )
+    
+    from aiogram.types import InputMediaPhoto
+    try:
+        await callback.message.edit_media(
+            media=InputMediaPhoto(media=pokemon.image_url, caption=caption, parse_mode="HTML"),
+            reply_markup=builder.as_markup()
+        )
+    except Exception as e:
+        print(f"Error resetting media: {e}")
+        try:
+            await callback.message.edit_caption(caption=caption, reply_markup=builder.as_markup(), parse_mode="HTML")
+        except Exception:
+            pass
+            
+    await callback.answer()
+
+@router.message(Command("gift", ignore_mention=True))
+async def cmd_gift(message: Message, db: AsyncSession):
+    parts = message.text.split()
+    target_user = None
+    gift_str = None
+    
+    if message.reply_to_message:
+        if len(parts) < 2:
+            await message.answer("⚠️ Format (replying): `/gift <pokedex_id>[.form_index]`")
+            return
+        rep_user = message.reply_to_message.from_user
+        if rep_user.is_bot:
+            await message.answer("❌ You cannot gift Pokémon to a bot!")
+            return
+            
+        stmt = select(User).where(User.id == rep_user.id)
+        res = await db.execute(stmt)
+        target_user = res.scalar_one_or_none()
+        gift_str = parts[1]
+    else:
+        if len(parts) < 3:
+            await message.answer("⚠️ Format: `/gift <@username or user_id> <pokedex_id>[.form_index]`\n(or reply to their message with `/gift <pokedex_id>[.form_index]`)")
+            return
+            
+        target_str = parts[1]
+        gift_str = parts[2]
+        
+        if target_str.isdigit():
+            stmt = select(User).where(User.id == int(target_str))
+            res = await db.execute(stmt)
+            target_user = res.scalar_one_or_none()
+        elif target_str.startswith("@"):
+            uname = target_str.replace("@", "").strip()
+            stmt = select(User).where(User.username.ilike(uname))
+            res = await db.execute(stmt)
+            target_user = res.scalar_one_or_none()
+            
+    if not target_user:
+        await message.answer("❌ Target trainer not found. They must have started the bot first.")
+        return
+        
+    if target_user.id == message.from_user.id:
+        await message.answer("❌ You cannot gift Pokémon to yourself!")
+        return
+
+    form_index = 0
+    pokedex_str = gift_str
+    if "." in gift_str:
+        pq, fq = gift_str.split(".", 1)
+        if fq.isdigit():
+            form_index = int(fq)
+        pokedex_str = pq
+        
+    if not pokedex_str.isdigit():
+        await message.answer("❌ Invalid Pokédex ID. Must be a number.")
+        return
+    pokedex_id = int(pokedex_str)
+    
+    stmt = select(UserPokemon).options(joinedload(UserPokemon.pokemon)).where(
+        UserPokemon.user_id == message.from_user.id,
+        UserPokemon.pokemon_id == pokedex_id,
+        UserPokemon.form_index == form_index
+    ).order_by(UserPokemon.is_shiny.asc())
+    res = await db.execute(stmt)
+    up = res.scalars().first()
+    
+    if not up:
+        form_names = {
+            0: "Standard",
+            1: "AMV/Art",
+            2: "Dmax",
+            3: "Gmax",
+            4: "Z-Move",
+            5: "Terastal"
+        }
+        f_name = form_names.get(form_index, f"Form {form_index}")
+        await message.answer(f"❌ You do not own a <b>{f_name}</b> form of Pokédex #{pokedex_id:03d}!", parse_mode="HTML")
+        return
+
+    # Check soulbound/exclusive status (Bot Owner & Admins bypass)
+    is_sender_admin = (
+        message.from_user.id in config.ADMIN_IDS
+        or message.from_user.id in getattr(config, "CO_OWNER_IDS", [])
+        or message.from_user.id in getattr(config, "OWNER_IDS", [])
+    )
+    if not is_sender_admin and await is_pokemon_soulbound(up.pokemon, up, db):
+        await message.answer(
+            f"🔒 <b>SOULBOUND PROTECTION!</b>\n"
+            f"───────────────\n"
+            f"<blockquote>❌ <b>{up.pokemon.name.title()}</b> belongs to the <b>Exclusive / Event Winner</b> rarity tier and is permanently bound to your account.\n\n"
+            f"It cannot be gifted or transferred.</blockquote>",
+            parse_mode="HTML"
+        )
+        return
+
+    shiny_badge = "✨ Shiny " if up.is_shiny else ""
+    form_names = {
+        0: "",
+        1: "AMV ",
+        2: "Dmax ",
+        3: "Gmax ",
+        4: "Z-Move ",
+        5: "Terastal "
+    }
+    form_badge = form_names.get(form_index, f"Form {form_index} ")
+    r_emoji = get_rarity_emoji(up.pokemon.rarity)
+    pokemon_display = f"{r_emoji} {shiny_badge}{form_badge}<b>{up.pokemon.name.title()}</b>"
+
+    sender_name = message.from_user.first_name or "Trainer"
+    receiver_name = target_user.nickname or target_user.username or "Trainer"
+
+    kb = get_gift_confirm_keyboard(message.from_user.id, target_user.id, up.id)
+
+    text = (
+        f"🎁 <b>GIFT CONFIRMATION</b>\n"
+        f"◈ ────────────────── ◈\n"
+        f"👤 <b>Sender:</b> {html.escape(sender_name)}\n"
+        f"👤 <b>Recipient:</b> {html.escape(receiver_name)}\n"
+        f"💝 <b>Pokémon:</b> {pokemon_display}\n\n"
+        f"Are you sure you want to gift this Pokémon to <b>{html.escape(receiver_name)}</b>?\n"
+        f"◈ ────────────────── ◈"
+    )
+    await message.answer(text, reply_markup=kb, parse_mode="HTML")
+
+
+@router.callback_query(F.data.startswith("gift_cnf_"))
+async def cb_gift_confirm(callback: CallbackQuery, db: AsyncSession):
+    try:
+        parts = callback.data.split("_")
+        sender_id = int(parts[2])
+        target_id = int(parts[3])
+        up_id = int(parts[4])
+
+        if callback.from_user.id != sender_id:
+            await callback.answer("❌ Only the sender can confirm this gift!", show_alert=True)
+            return
+
+        stmt = select(UserPokemon).options(joinedload(UserPokemon.pokemon)).where(
+            UserPokemon.id == up_id
+        )
+        res = await db.execute(stmt)
+        up = res.scalars().first()
+
+        if not up or up.user_id != sender_id:
+            await callback.answer("❌ Pokémon is no longer in your bag!", show_alert=True)
+            try:
+                await callback.message.edit_text("❌ <b>Gift Failed</b>: Pokémon is no longer in your bag.", parse_mode="HTML")
+            except Exception:
+                pass
+            return
+
+        # Soulbound check on confirmation (Admins & Owners bypass)
+        is_sender_admin = (
+            sender_id in config.ADMIN_IDS
+            or sender_id in getattr(config, "CO_OWNER_IDS", [])
+            or sender_id in getattr(config, "OWNER_IDS", [])
+        )
+        if not is_sender_admin and await is_pokemon_soulbound(up.pokemon, up, db):
+            await callback.answer("❌ This Pokémon is soulbound/exclusive and cannot be gifted.", show_alert=True)
+            try:
+                await callback.message.edit_text("❌ <b>Gift Failed</b>: Soulbound / Exclusive Pokémon cannot be transferred.", parse_mode="HTML")
+            except Exception:
+                pass
+            return
+
+        target_stmt = select(User).where(User.id == target_id)
+        target_res = await db.execute(target_stmt)
+        target_user = target_res.scalar_one_or_none()
+
+        if not target_user:
+            await callback.answer("❌ Recipient trainer not found.", show_alert=True)
+            return
+
+        # Transfer ownership
+        old_user_id = up.user_id
+        up.user_id = target_user.id
+
+        remain_stmt = select(UserPokemon.id).where(
+            UserPokemon.user_id == old_user_id,
+            UserPokemon.pokemon_id == up.pokemon_id
+        ).limit(1)
+        remain_res = await db.execute(remain_stmt)
+        if remain_res.scalar() is None:
+            fav_val = await get_favorite_id(old_user_id, db)
+            if fav_val and (fav_val == str(up.pokemon_id) or fav_val.startswith(f"{up.pokemon_id}.")):
+                await set_favorite_id(old_user_id, None, db)
+
+        await db.commit()
+
+        shiny_badge = "✨ Shiny " if up.is_shiny else ""
+        form_names = {
+            0: "",
+            1: "AMV ",
+            2: "Dmax ",
+            3: "Gmax ",
+            4: "Z-Move ",
+            5: "Terastal "
+        }
+        form_badge = form_names.get(up.form_index, f"Form {up.form_index} ")
+        r_emoji = get_rarity_emoji(up.pokemon.rarity)
+
+        media_type = "photo"
+        media_value = up.pokemon.image_url
+        if up.pokemon.image_url:
+            media_type, media_value = parse_stored_media_value(up.pokemon.image_url)
+
+        if up.form_index > 0:
+            form_media = await get_single_form_media_value(db, up.pokemon_id, up.form_index)
+            if form_media:
+                media_type, media_value = parse_stored_media_value(form_media)
+            elif up.form_index == 1 and up.pokemon.video_url:
+                media_type, media_value = parse_stored_media_value(up.pokemon.video_url)
+
+        pokemon_display = f"{r_emoji} {shiny_badge}{form_badge}<b>{up.pokemon.name.title()}</b>"
+
+        sender_name = callback.from_user.first_name or "Trainer"
+        receiver_name = target_user.nickname or target_user.username or "Trainer"
+
+        caption = (
+            f"🎁 <b>POKÉMON GIFTED!</b> 🎁\n"
+            f"<blockquote>👤 Sender: <b>{html.escape(sender_name)}</b>\n"
+            f"👤 Recipient: <b>{html.escape(receiver_name)}</b>\n"
+            f"💝 Pokémon: {pokemon_display}</blockquote>"
+        )
+
+        from aiogram.types import FSInputFile
+        if isinstance(media_value, str) and os.path.exists(media_value):
+            media_value = FSInputFile(media_value)
+
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+
+        try:
+            if media_type == "video":
+                await callback.message.answer_video(video=media_value, caption=caption, parse_mode="HTML")
+            elif media_type == "animation":
+                await callback.message.answer_animation(animation=media_value, caption=caption, parse_mode="HTML")
+            else:
+                await callback.message.answer_photo(photo=media_value, caption=caption, parse_mode="HTML")
+        except Exception as e:
+            print(f"Error sending player gifted pokemon media: {e}")
+            await callback.message.answer(caption, parse_mode="HTML")
+
+        dm_text = (
+            f"📣 <b>You received a Gift!</b>\n"
+            f"<blockquote>👤 Sender: <b>{html.escape(sender_name)}</b>\n"
+            f"💝 Pokémon: {pokemon_display}</blockquote>"
+        )
+        try:
+            await callback.bot.send_message(chat_id=target_user.id, text=dm_text, parse_mode="HTML")
+        except Exception:
+            pass
+
+        await callback.answer("✅ Gift sent successfully!")
+    except Exception as e:
+        print(f"Error in cb_gift_confirm: {e}")
+        await callback.answer("❌ Error processing gift.", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("gift_dec_"))
+async def cb_gift_decline(callback: CallbackQuery):
+    try:
+        parts = callback.data.split("_")
+        sender_id = int(parts[2])
+
+        if callback.from_user.id != sender_id:
+            await callback.answer("❌ Only the sender can cancel this gift!", show_alert=True)
+            return
+
+        try:
+            await callback.message.edit_text("❌ <b>Gift cancelled.</b>", parse_mode="HTML")
+        except Exception:
+            pass
+        await callback.answer("Gift cancelled.")
+    except Exception as e:
+        print(f"Error in cb_gift_decline: {e}")
+        await callback.answer()
+
+
+async def build_transactions_payload(user_id: int, page: int, db: AsyncSession, is_dm: bool = False):
+    from database.models import TransactionHistory, User
+
+    stmt_count = select(func.count(TransactionHistory.id)).where(TransactionHistory.user_id == user_id)
+    res_count = await db.execute(stmt_count)
+    total_count = res_count.scalar() or 0
+
+    if total_count == 0:
+        stmt_u = select(User).where(User.id == user_id)
+        res_u = await db.execute(stmt_u)
+        user = res_u.scalar_one_or_none()
+        if user and user.coins > 0:
+            init_tx = TransactionHistory(
+                user_id=user_id,
+                amount=user.coins,
+                category="Initial Balance",
+                description="Trainer coin balance"
+            )
+            db.add(init_tx)
+            await db.commit()
+            total_count = 1
+
+    if total_count == 0:
+        text = (
+            f"⚡ <b>TRANSACTION HISTORY</b> ⚡\n"
+            f"◈ ────────────────── ◈\n"
+            f"<i>No transaction records found yet.</i>\n"
+            f"◈ ────────────────── ◈"
+        )
+        markup = get_tx_pagination_keyboard(user_id=user_id, page=1, max_page=1, is_dm=is_dm)
+        return text, markup
+
+    PAGE_SIZE = 8
+    max_page = max(1, (total_count + PAGE_SIZE - 1) // PAGE_SIZE)
+    page = max(1, min(page, max_page))
+    offset = (page - 1) * PAGE_SIZE
+
+    stmt_tx = select(TransactionHistory).where(
+        TransactionHistory.user_id == user_id
+    ).order_by(TransactionHistory.created_at.desc()).offset(offset).limit(PAGE_SIZE)
+    res_tx = await db.execute(stmt_tx)
+    txs = res_tx.scalars().all()
+
+    rows = []
+    for tx in txs:
+        dt_str = tx.created_at.strftime("%b %d, %Y %H:%M") if tx.created_at else "Recently"
+        cat = html.escape(tx.category or "Transaction")
+        desc = html.escape(tx.description or "")
+        amt = tx.amount or 0
+        
+        if amt >= 0:
+            rows.append(
+                f"✦ 📥 <b>Received:</b> 🟢 <code>+{amt:,} coins</code> (<b>{cat}</b>)\n"
+                f"   ↳ <i>{desc}</i> • <code>{dt_str}</code>"
+            )
+        else:
+            rows.append(
+                f"✦ 📤 <b>Paid:</b> 🔴 <code>-{abs(amt):,} coins</code> (<b>{cat}</b>)\n"
+                f"   ↳ <i>{desc}</i> • <code>{dt_str}</code>"
+            )
+
+    tx_body = "\n\n".join(rows) if rows else "<i>No transaction records found.</i>"
+    text = (
+        f"⚡ <b>TRANSACTION HISTORY</b> ⚡\n"
+        f"◈ ────────────────── ◈\n"
+        f"📊 <b>Total Transactions:</b> <code>{total_count:,}</code>\n"
+        f"◈ ────────────────── ◈\n\n"
+        f"{tx_body}\n\n"
+        f"◈ ────────────────── ◈\n"
+        f"📑 <b>Page:</b> <code>{page}/{max_page}</code>"
+    )
+
+    markup = get_tx_pagination_keyboard(user_id=user_id, page=page, max_page=max_page, is_dm=is_dm)
+    return text, markup
+
+
+@router.message(Command("transactions", "tx", "history", ignore_mention=True))
+async def cmd_transactions(message: Message, db: AsyncSession):
+    user_id = message.from_user.id
+    is_dm = (message.chat.type == "private")
+    text, markup = await build_transactions_payload(user_id=user_id, page=1, db=db, is_dm=is_dm)
+    await message.answer(text, reply_markup=markup, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "dm_transactions")
+async def cb_dm_transactions(callback: CallbackQuery, db: AsyncSession):
+    user_id = callback.from_user.id
+    text, markup = await build_transactions_payload(user_id=user_id, page=1, db=db, is_dm=True)
+    try:
+        await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("tx_page_"))
+async def cb_tx_page(callback: CallbackQuery, db: AsyncSession):
+    parts = callback.data.split("_")
+    target_user_id = int(parts[2]) if len(parts) >= 4 else callback.from_user.id
+    page = int(parts[3]) if len(parts) >= 4 else int(parts[2])
+
+    if callback.from_user.id != target_user_id:
+        await callback.answer("❌ You can only navigate your own transaction history!", show_alert=True)
+        return
+
+    is_dm = (callback.message.chat.type == "private") if callback.message and callback.message.chat else True
+    text, markup = await build_transactions_payload(user_id=target_user_id, page=page, db=db, is_dm=is_dm)
+    try:
+        await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "tx_noop")
+async def cb_tx_noop(callback: CallbackQuery):
+    await callback.answer()
+
+
+@router.message(Command("sync", "syncname", "syncprofile", "updatename", "refreshname", ignore_mention=True))
+async def cmd_sync_profile(message: Message, db: AsyncSession):
+    if not message.from_user or message.from_user.is_bot:
+        return
+
+    from utils.user_sync import sync_user_identity
+    user_db, changed = await sync_user_identity(db, message, force=True)
+
+    if not user_db:
+        user_id = message.from_user.id
+        stmt = select(User).where(User.id == user_id)
+        res = await db.execute(stmt)
+        user_db = res.scalar_one_or_none()
+
+    username_str = f"@{user_db.username}" if (user_db and user_db.username) else "<i>None</i>"
+    display_name = (user_db.profile_name or user_db.nickname) if user_db else (message.from_user.first_name or "Trainer")
+    coins_str = f"{user_db.coins:,}" if user_db else "500"
+
+    override_note = ""
+    if user_db and user_db.profile_name:
+        override_note = (
+            f"\n🏷 <i>Custom In-Game Name:</i> <b>{html.escape(user_db.profile_name)}</b>\n"
+            f"<i>(Use <code>/resetname</code> to restore your Telegram name)</i>\n"
+        )
+
+    text = (
+        f"🔄 <b>TRAINER PROFILE SYNCHRONIZED</b> 🔄\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"👤 <b>Trainer Name:</b> <b>{html.escape(display_name)}</b>\n"
+        f"🏷 <b>Telegram Handle:</b> {username_str}\n"
+        f"🆔 <b>Trainer ID:</b> <code>{message.from_user.id}</code>\n"
+        f"💰 <b>Coins:</b> <code>{coins_str}</code>\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"{override_note}\n"
+        f"✅ <i>Your latest Telegram username and display name are now synchronized with PokeEmpire!</i>"
+    )
+    await message.answer(text, parse_mode="HTML")

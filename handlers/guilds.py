@@ -82,9 +82,41 @@ def extract_custom_emoji_or_flag(message: Message, param: str = "") -> Tuple[Opt
     # 6. Plain emoji/text
     return param[:30], None, "Custom Guild Flag"
 
+async def find_guild_holding_flag(flag_val: str, exclude_guild_id: Optional[int], db: AsyncSession) -> Optional[Guild]:
+    """
+    Checks if any other Guild is already flying or claimed this exact flag.
+    Returns the Guild object or None.
+    """
+    if not flag_val or flag_val == "🛡️":
+        return None
+
+    norm_flag = format_guild_flag(flag_val)
+    stmt = select(Guild).where(Guild.flag.is_not(None), Guild.flag != "🛡️")
+    if exclude_guild_id:
+        stmt = stmt.where(Guild.id != exclude_guild_id)
+    res = await db.execute(stmt)
+    guilds = res.scalars().all()
+
+    for g in guilds:
+        if g.flag == flag_val or format_guild_flag(g.flag) == norm_flag:
+            return g
+    return None
+
+
+async def get_all_claimed_flags_map(db: AsyncSession) -> dict:
+    """Returns a dict mapping flag variations to (guild_name, guild_tag, guild_id)."""
+    stmt = select(Guild.flag, Guild.name, Guild.tag, Guild.id).where(Guild.flag.is_not(None), Guild.flag != "🛡️")
+    res = await db.execute(stmt)
+    claimed = {}
+    for g_flag, g_name, g_tag, g_id in res.all():
+        claimed[g_flag] = (g_name, g_tag, g_id)
+        norm = format_guild_flag(g_flag)
+        claimed[norm] = (g_name, g_tag, g_id)
+    return claimed
+
 
 async def build_flag_store_payload(user_id: int, page: int, db: AsyncSession):
-    """Generates text and pagination keyboard for the Guild Flag Store."""
+    """Generates text and pagination keyboard for the Guild Flag Store with exclusivity."""
     all_flags = await get_all_guild_flags(db)
     flag_keys = list(all_flags.keys())
     total_items = len(flag_keys)
@@ -105,6 +137,9 @@ async def build_flag_store_payload(user_id: int, page: int, db: AsyncSession):
     is_locked = getattr(guild, "flag_locked", False) if guild else False
     curr_flag = format_guild_flag(getattr(guild, "flag", "🛡️")) if guild else "None"
 
+    # Get claimed flags map: flag -> (guild_name, guild_tag, guild_id)
+    claimed_map = await get_all_claimed_flags_map(db)
+
     status_str = "🔒 <b>Flag Locked</b> (Already chosen)" if is_locked else ("🔓 <b>Ready to Choose</b> (💰 100k)" if is_leader else "👥 Member (Leader only)")
 
     # Format items
@@ -112,22 +147,33 @@ async def build_flag_store_payload(user_id: int, page: int, db: AsyncSession):
     for idx, k in enumerate(page_keys, start=start_idx + 1):
         v = all_flags[k]
         display_tag = v.get("tag", v.get("fallback", "🛡️"))
+        norm_tag = format_guild_flag(display_tag)
         name = v.get("name", k.title())
-        item_lines.append(f"✦ {idx}. {display_tag} <b>{html.escape(name)}</b> • 💰 100k")
+
+        claimed_info = claimed_map.get(k) or claimed_map.get(display_tag) or claimed_map.get(norm_tag)
+        if claimed_info:
+            c_name, c_tag, c_id = claimed_info
+            if guild and c_id == guild.id:
+                item_lines.append(f"✦ {idx}. {display_tag} <b>{html.escape(name)}</b> • 👑 <i>YOUR GUILD FLAG</i>")
+            else:
+                item_lines.append(f"✦ {idx}. {display_tag} <b>{html.escape(name)}</b> • 🔴 <b>SOLD OUT</b> <i>([{html.escape(c_tag)}])</i>")
+        else:
+            item_lines.append(f"✦ {idx}. {display_tag} <b>{html.escape(name)}</b> • 🟢 <i>Available (💰 100k)</i>")
 
     body_text = "\n".join(item_lines) if item_lines else "<i>No flags found in store.</i>"
 
     text = (
-        f"🏰 <b>GUILD FLAG STORE</b> 🏰\n"
+        f"🏰 <b>GUILD FLAG STORE (EXCLUSIVE)</b> 🏰\n"
         f"◈ ────────────────────────── ◈\n"
         f"💰 <b>Price:</b> <code>{GUILD_FLAG_COST:,} coins</code> per flag\n"
         f"👛 <b>Your Balance:</b> <code>💰 {user_coins:,} coins</code>\n"
         f"🚩 <b>Current Flag:</b> {curr_flag} ({status_str})\n"
+        f"👑 <b>Exclusivity:</b> <i>1 Flag = 1 Guild Only (No duplicate flags across guilds!)</i>\n"
         f"◈ ────────────────────────── ◈\n"
-        f"✨ <i>No Telegram Premium required! Tap any flag button below to buy and equip it as your Guild's official animated flag!</i>\n\n"
+        f"✨ <i>No Telegram Premium required! Tap any flag button below to buy and claim it exclusively for your Guild!</i>\n\n"
         f"{body_text}\n\n"
         f"◈ ────────────────────────── ◈\n"
-        f"⚠️ <b>Note:</b> You can choose your Guild Flag <b>ONLY ONCE</b>!"
+        f"⚠️ <b>Note:</b> Once claimed by a Guild, that flag is <b>SOLD OUT</b> and cannot be bought by anyone else!"
     )
 
     builder = InlineKeyboardBuilder()
@@ -137,14 +183,28 @@ async def build_flag_store_payload(user_id: int, page: int, db: AsyncSession):
     for k in page_keys:
         v = all_flags[k]
         icon = v.get("fallback", "🛡️")
+        display_tag = v.get("tag", v.get("fallback", "🛡️"))
+        norm_tag = format_guild_flag(display_tag)
         name = v.get("name", k.title())
         short_name = name[:10]
-        if is_locked and user_id not in getattr(config, "ADMIN_IDS", []):
-            btn_text = f"{icon} {short_name}"
-            row.append(InlineKeyboardButton(text=btn_text, callback_data="gflag_noop"))
+
+        claimed_info = claimed_map.get(k) or claimed_map.get(display_tag) or claimed_map.get(norm_tag)
+        if claimed_info:
+            c_name, c_tag, c_id = claimed_info
+            if guild and c_id == guild.id:
+                btn_text = f"👑 {icon} Owned"
+                row.append(InlineKeyboardButton(text=btn_text, callback_data="gflag_owned"))
+            else:
+                btn_text = f"🔴 {icon} Taken"
+                row.append(InlineKeyboardButton(text=btn_text, callback_data=f"gflag_taken:{c_tag}"))
         else:
-            btn_text = f"Buy {icon} {short_name}"
-            row.append(InlineKeyboardButton(text=btn_text, callback_data=f"gflag_buy:{k}:{page}"))
+            if is_locked and user_id not in getattr(config, "ADMIN_IDS", []):
+                btn_text = f"{icon} {short_name}"
+                row.append(InlineKeyboardButton(text=btn_text, callback_data="gflag_noop"))
+            else:
+                btn_text = f"Buy {icon} {short_name}"
+                row.append(InlineKeyboardButton(text=btn_text, callback_data=f"gflag_buy:{k}:{page}"))
+
         if len(row) == 2:
             builder.row(*row)
             row = []
@@ -197,6 +257,17 @@ async def cb_flag_store_page(callback: CallbackQuery, db: AsyncSession):
 async def cb_gflag_noop(callback: CallbackQuery):
     await callback.answer()
 
+@router.callback_query(F.data.startswith("gflag_taken:"))
+async def cb_gflag_taken(callback: CallbackQuery):
+    tag = callback.data.split(":", 1)[1]
+    await callback.answer(f"❌ SOLD OUT! This flag is already claimed by Guild [{tag}] and cannot be bought by any other guild.", show_alert=True)
+
+
+@router.callback_query(F.data == "gflag_owned")
+async def cb_gflag_owned(callback: CallbackQuery):
+    await callback.answer("👑 This is your Guild's exclusive official flag!", show_alert=True)
+
+
 
 @router.callback_query(F.data.startswith("gflag_buy:"))
 async def cb_guild_flag_buy(callback: CallbackQuery, db: AsyncSession):
@@ -235,6 +306,14 @@ async def cb_guild_flag_buy(callback: CallbackQuery, db: AsyncSession):
 
     preset = all_flags[flag_key]
     flag_val = preset.get("tag", preset.get("fallback", "🛡️"))
+
+    # Exclusivity check: Ensure no other guild already has this flag
+    existing_owner = await find_guild_holding_flag(flag_val, guild.id, db)
+    if not existing_owner:
+        existing_owner = await find_guild_holding_flag(flag_key, guild.id, db)
+    if existing_owner:
+        await callback.answer(f"❌ SOLD OUT! Already claimed by Guild [{existing_owner.tag}] {existing_owner.name}!", show_alert=True)
+        return
 
     # Deduct 100k coins
     user.coins -= GUILD_FLAG_COST
@@ -496,6 +575,18 @@ async def cmd_guild(message: Message, db: AsyncSession):
         u_stmt = select(User).where(User.id == user_id)
         u_res = await db.execute(u_stmt)
         user = u_res.scalar_one_or_none()
+
+        # Exclusivity check: Ensure no other guild has this flag
+        existing_owner = await find_guild_holding_flag(flag_val, guild.id, db)
+        if existing_owner:
+            await message.answer(
+                f"❌ <b>Flag Already Claimed!</b>\n\n"
+                f"This flag is exclusively owned by <b>{html.escape(existing_owner.name)}</b> [{existing_owner.tag}]!\n"
+                f"Each Guild Flag is <b>one-of-a-kind</b> and can only belong to ONE Guild.\n\n"
+                f"👉 <i>Browse available flags in <code>/flagstore</code>!</i>",
+                parse_mode="HTML"
+            )
+            return
 
         if not user or user.coins < GUILD_FLAG_COST:
             user_coins = user.coins if user else 0

@@ -227,3 +227,24 @@ async def auto_save_custom_flag_to_db(emoji_id: str, fallback: str, db, name: st
     except Exception as e:
         print(f"Error autosaving flag to db: {e}")
         return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
+
+async def delete_guild_flag(key: str, db) -> bool:
+    """Deletes a custom flag from GlobalSetting."""
+    import json
+    try:
+        stmt = select(GlobalSetting).where(GlobalSetting.key == "guild_custom_flags")
+        res = await db.execute(stmt)
+        record = res.scalar_one_or_none()
+        if not record or not record.value:
+            return False
+        current_data = json.loads(record.value)
+        k_low = key.lower()
+        if k_low in current_data:
+            del current_data[k_low]
+            record.value = json.dumps(current_data)
+            await db.commit()
+            return True
+        return False
+    except Exception as e:
+        print(f"Error deleting flag: {e}")
+        return False

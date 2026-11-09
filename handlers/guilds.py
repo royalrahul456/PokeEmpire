@@ -1,5 +1,6 @@
 import html
 import re
+import math
 from typing import Optional, Tuple
 from aiogram import Router, F
 from aiogram.filters import Command
@@ -14,6 +15,7 @@ from utils.guild_flags import (
     format_guild_flag,
     get_all_guild_flags,
     register_guild_flag,
+    delete_guild_flag,
     auto_save_custom_flag_to_db,
     PRESET_GUILD_FLAGS
 )
@@ -23,6 +25,7 @@ router = Router()
 
 GUILD_CREATION_FEE = 500000  # 500k coins
 GUILD_FLAG_COST = 100000     # 100k coins (one-time choice)
+FLAGS_PER_PAGE = 6
 
 
 async def get_user_guild_data(user_id: int, db: AsyncSession):
@@ -80,25 +83,245 @@ def extract_custom_emoji_or_flag(message: Message, param: str = "") -> Tuple[Opt
     return param[:30], None, "Custom Guild Flag"
 
 
-async def build_flag_picker_keyboard(db: AsyncSession, is_leader: bool = True, is_locked: bool = False):
-    """Builds an interactive keyboard of available flags."""
-    builder = InlineKeyboardBuilder()
-    if not is_locked:
-        flags = await get_all_guild_flags(db)
-        row = []
-        for k, v in flags.items():
-            icon = v.get("fallback", "🛡️")
-            name = v.get("name", k)
-            btn_text = f"{icon} {name[:12]}"
-            row.append(InlineKeyboardButton(text=btn_text, callback_data=f"gflag_set:{k}"))
-            if len(row) == 2:
-                builder.row(*row)
-                row = []
-        if row:
-            builder.row(*row)
+async def build_flag_store_payload(user_id: int, page: int, db: AsyncSession):
+    """Generates text and pagination keyboard for the Guild Flag Store."""
+    all_flags = await get_all_guild_flags(db)
+    flag_keys = list(all_flags.keys())
+    total_items = len(flag_keys)
+    total_pages = max(1, math.ceil(total_items / FLAGS_PER_PAGE))
+    page = max(1, min(page, total_pages))
 
-    builder.row(InlineKeyboardButton(text="🔙 Back to Guild Profile", callback_data="gflag_back"))
-    return builder.as_markup()
+    start_idx = (page - 1) * FLAGS_PER_PAGE
+    end_idx = start_idx + FLAGS_PER_PAGE
+    page_keys = flag_keys[start_idx:end_idx]
+
+    member, guild = await get_user_guild_data(user_id, db)
+    u_stmt = select(User).where(User.id == user_id)
+    u_res = await db.execute(u_stmt)
+    user = u_res.scalar_one_or_none()
+    user_coins = user.coins if user else 0
+
+    is_leader = (guild and guild.owner_id == user_id) or (user_id in getattr(config, "ADMIN_IDS", []))
+    is_locked = getattr(guild, "flag_locked", False) if guild else False
+    curr_flag = format_guild_flag(getattr(guild, "flag", "🛡️")) if guild else "None"
+
+    status_str = "🔒 <b>Flag Locked</b> (Already chosen)" if is_locked else ("🔓 <b>Ready to Choose</b> (💰 100k)" if is_leader else "👥 Member (Leader only)")
+
+    # Format items
+    item_lines = []
+    for idx, k in enumerate(page_keys, start=start_idx + 1):
+        v = all_flags[k]
+        display_tag = v.get("tag", v.get("fallback", "🛡️"))
+        name = v.get("name", k.title())
+        item_lines.append(f"✦ {idx}. {display_tag} <b>{html.escape(name)}</b> • 💰 100k")
+
+    body_text = "\n".join(item_lines) if item_lines else "<i>No flags found in store.</i>"
+
+    text = (
+        f"🏰 <b>GUILD FLAG STORE</b> 🏰\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"💰 <b>Price:</b> <code>{GUILD_FLAG_COST:,} coins</code> per flag\n"
+        f"👛 <b>Your Balance:</b> <code>💰 {user_coins:,} coins</code>\n"
+        f"🚩 <b>Current Flag:</b> {curr_flag} ({status_str})\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"✨ <i>No Telegram Premium required! Tap any flag button below to buy and equip it as your Guild's official animated flag!</i>\n\n"
+        f"{body_text}\n\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"⚠️ <b>Note:</b> You can choose your Guild Flag <b>ONLY ONCE</b>!"
+    )
+
+    builder = InlineKeyboardBuilder()
+
+    # Buy / Select Buttons
+    row = []
+    for k in page_keys:
+        v = all_flags[k]
+        icon = v.get("fallback", "🛡️")
+        name = v.get("name", k.title())
+        short_name = name[:10]
+        if is_locked and user_id not in getattr(config, "ADMIN_IDS", []):
+            btn_text = f"{icon} {short_name}"
+            row.append(InlineKeyboardButton(text=btn_text, callback_data="gflag_noop"))
+        else:
+            btn_text = f"Buy {icon} {short_name}"
+            row.append(InlineKeyboardButton(text=btn_text, callback_data=f"gflag_buy:{k}:{page}"))
+        if len(row) == 2:
+            builder.row(*row)
+            row = []
+    if row:
+        builder.row(*row)
+
+    # Navigation buttons
+    nav_row = []
+    if page > 1:
+        nav_row.append(InlineKeyboardButton(text="◀️ Prev", callback_data=f"gflag_store_page_{page - 1}"))
+    nav_row.append(InlineKeyboardButton(text=f"📑 {page}/{total_pages}", callback_data="gflag_noop"))
+    if page < total_pages:
+        nav_row.append(InlineKeyboardButton(text="Next ▶️", callback_data=f"gflag_store_page_{page + 1}"))
+    builder.row(*nav_row)
+
+    # Bottom shortcut
+    builder.row(
+        InlineKeyboardButton(text="🏰 Guild Center", callback_data="gflag_back"),
+        InlineKeyboardButton(text="🛒 Main Shop", callback_data="dm_shop")
+    )
+
+    return text, builder.as_markup()
+
+
+@router.message(Command("flagstore", "flags", "flagshop", "guildstore", "guildflags", ignore_mention=True))
+async def cmd_flag_store(message: Message, db: AsyncSession):
+    """Direct command to open the Guild Flag Store."""
+    user_id = message.from_user.id
+    text, markup = await build_flag_store_payload(user_id=user_id, page=1, db=db)
+    await message.answer(text, reply_markup=markup, parse_mode="HTML")
+
+
+@router.callback_query(F.data.startswith("gflag_store_page_"))
+async def cb_flag_store_page(callback: CallbackQuery, db: AsyncSession):
+    """Handles Flag Store page navigation."""
+    user_id = callback.from_user.id
+    page = int(callback.data.split("_")[-1])
+    text, markup = await build_flag_store_payload(user_id=user_id, page=page, db=db)
+    try:
+        await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+    except Exception:
+        try:
+            await callback.message.edit_caption(caption=text, reply_markup=markup, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "gflag_noop")
+async def cb_gflag_noop(callback: CallbackQuery):
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("gflag_buy:"))
+async def cb_guild_flag_buy(callback: CallbackQuery, db: AsyncSession):
+    """Purchases selected flag from Store for 100k coins."""
+    parts = callback.data.split(":")
+    flag_key = parts[1]
+    page = int(parts[2]) if len(parts) >= 3 else 1
+    user_id = callback.from_user.id
+
+    member, guild = await get_user_guild_data(user_id, db)
+    if not guild:
+        await callback.answer("❌ You are not in any Guild! Join or create one first.", show_alert=True)
+        return
+
+    if guild.owner_id != user_id and user_id not in getattr(config, "ADMIN_IDS", []):
+        await callback.answer("❌ Only the Guild Leader can purchase and set the Guild Flag!", show_alert=True)
+        return
+
+    if getattr(guild, "flag_locked", False) and user_id not in getattr(config, "ADMIN_IDS", []):
+        await callback.answer("❌ Guild Flag is already chosen and permanently locked!", show_alert=True)
+        return
+
+    u_stmt = select(User).where(User.id == user_id)
+    u_res = await db.execute(u_stmt)
+    user = u_res.scalar_one_or_none()
+
+    if not user or user.coins < GUILD_FLAG_COST:
+        user_coins = user.coins if user else 0
+        await callback.answer(f"❌ Flag costs 100,000 coins! Your balance: {user_coins:,}.", show_alert=True)
+        return
+
+    all_flags = await get_all_guild_flags(db)
+    if flag_key not in all_flags:
+        await callback.answer("Flag not found in store!", show_alert=True)
+        return
+
+    preset = all_flags[flag_key]
+    flag_val = preset.get("tag", preset.get("fallback", "🛡️"))
+
+    # Deduct 100k coins
+    user.coins -= GUILD_FLAG_COST
+    await log_transaction(user_id, -GUILD_FLAG_COST, "GUILD_FLAG", f"Bought Flag {preset.get('name')} for {guild.name}", db)
+
+    guild.flag = flag_val
+    guild.flag_locked = True
+    await db.commit()
+
+    display_flag = format_guild_flag(flag_val)
+    await callback.answer(f"🎉 Purchased {preset.get('name')}! Flag permanently set.", show_alert=True)
+
+    # Refresh store view with locked status
+    text, markup = await build_flag_store_payload(user_id=user_id, page=page, db=db)
+    try:
+        await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
+
+
+@router.message(Command("addflag", ignore_mention=True))
+async def cmd_addflag_standalone(message: Message, db: AsyncSession):
+    """Admin command: /addflag <name> (reply to an animated custom emoji)."""
+    user_id = message.from_user.id
+    if user_id not in getattr(config, "ADMIN_IDS", []):
+        await message.answer("❌ Owner/Admin only command.")
+        return
+
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer(
+            "⚠️ <b>How to add a flag to the Store:</b>\n"
+            "Reply to any Telegram custom animated emoji with:\n"
+            "<code>/addflag &lt;Flag Name&gt;</code>\n\n"
+            "Example: Reply to One Piece skull with <code>/addflag Straw Hat Pirate Flag</code>",
+            parse_mode="HTML"
+        )
+        return
+
+    flag_name = parts[1].strip()
+    flag_val, emoji_id, _ = extract_custom_emoji_or_flag(message, "")
+    if not emoji_id:
+        await message.answer("❌ Please reply to a message containing a Telegram custom animated emoji.")
+        return
+
+    # Auto-generate a clean slug key
+    slug = re.sub(r'[^a-zA-Z0-9]+', '_', flag_name.lower()).strip('_')
+    if not slug:
+        slug = f"flag_{emoji_id}"
+
+    success = await register_guild_flag(slug, flag_name, emoji_id, "🛡️", db)
+    if success:
+        tag = f'<tg-emoji emoji-id="{emoji_id}">🛡️</tg-emoji>'
+        await message.answer(
+            f"✅ <b>Flag Added to Store Successfully!</b>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"• <b>Name:</b> {html.escape(flag_name)}\n"
+            f"• <b>Preview:</b> {tag}\n"
+            f"• <b>Key:</b> <code>{slug}</code>\n"
+            f"• <b>Price:</b> <code>100,000 coins</code>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"All Guild Leaders can now view and purchase this flag in <code>/flagstore</code> without needing Telegram Premium!",
+            parse_mode="HTML"
+        )
+    else:
+        await message.answer("❌ Failed to save new flag to database.")
+
+
+@router.message(Command("delflag", ignore_mention=True))
+async def cmd_delflag_standalone(message: Message, db: AsyncSession):
+    """Admin command: /delflag <key> to remove a flag from the store."""
+    user_id = message.from_user.id
+    if user_id not in getattr(config, "ADMIN_IDS", []):
+        await message.answer("❌ Owner/Admin only command.")
+        return
+
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer("⚠️ Format: <code>/delflag &lt;key&gt;</code>", parse_mode="HTML")
+        return
+
+    flag_key = parts[1].strip().lower()
+    success = await delete_guild_flag(flag_key, db)
+    if success:
+        await message.answer(f"✅ Flag <code>{flag_key}</code> was removed from the Store.")
+    else:
+        await message.answer(f"❌ Flag <code>{flag_key}</code> not found in custom database flags.")
 
 
 @router.message(Command("guild", "clan", ignore_mention=True))
@@ -107,7 +330,6 @@ async def cmd_guild(message: Message, db: AsyncSession):
     user_id = message.from_user.id
     
     if len(parts) < 2:
-        # Show user's guild info or instructions
         member, guild = await get_user_guild_data(user_id, db)
         if not guild:
             text = (
@@ -117,8 +339,7 @@ async def cmd_guild(message: Message, db: AsyncSession):
                 f"💡 <b>Guild Commands</b>:\n"
                 f"👉 <code>/guild create &lt;name&gt;</code> — Found a new Guild (500k coins)\n"
                 f"👉 <code>/guild join &lt;name&gt;</code> — Join an existing Guild\n"
-                f"👉 <code>/guild flag</code> — Choose Guild Flag (💰 100k, One-Time Choice)\n"
-                f"👉 <code>/guild setflag &lt;emoji&gt;</code> — Set custom/animated flag\n"
+                f"👉 <code>/flagstore</code> — Browse & buy animated flags (100k coins)\n"
                 f"👉 <code>/guild deposit &lt;amount&gt;</code> — Donate coins to Treasury\n"
                 f"👉 <code>/guild withdraw &lt;amount&gt;</code> — Withdraw coins from Treasury (Leader only)\n"
                 f"👉 <code>/guild delete</code> — Disband/Delete your Guild (Owner only)\n"
@@ -130,7 +351,6 @@ async def cmd_guild(message: Message, db: AsyncSession):
             await message.answer(text, parse_mode="HTML")
             return
             
-        # Count members
         mem_stmt = select(func.count(GuildMember.id)).where(GuildMember.guild_id == guild.id)
         mem_res = await db.execute(mem_stmt)
         total_members = mem_res.scalar() or 0
@@ -142,11 +362,11 @@ async def cmd_guild(message: Message, db: AsyncSession):
 
         flag = format_guild_flag(getattr(guild, "flag", "🛡️"))
         is_locked = getattr(guild, "flag_locked", False)
-        lock_status_text = "🔒 <i>Official Flag (Locked)</i>" if is_locked else "🔓 <i>Not Set (100k coins to choose)</i>"
+        lock_status_text = "🔒 <i>Official Flag (Locked)</i>" if is_locked else "🔓 <i>Not Set (100k coins to buy)</i>"
 
         leader_tip = (
             f"👉 <i>Use <code>/guild withdraw &lt;amount&gt;</code> to withdraw from Treasury!</i>\n"
-            f"👉 <i>Use <code>/guild flag</code> to choose your official Flag (💰 100k, one-time)!</i>"
+            f"👉 <i>Use <code>/flagstore</code> to buy your official Guild Flag (💰 100k, one-time)!</i>"
             if (guild.owner_id == user_id and not is_locked)
             else (
                 f"👉 <i>Use <code>/guild withdraw &lt;amount&gt;</code> to withdraw from Treasury!</i>"
@@ -168,12 +388,9 @@ async def cmd_guild(message: Message, db: AsyncSession):
             f"{leader_tip}"
         )
         builder = InlineKeyboardBuilder()
-        if guild.owner_id == user_id or user_id in getattr(config, "ADMIN_IDS", []):
-            btn_title = "🚩 View Official Flag" if is_locked else "🚩 Choose Official Flag (💰 100k)"
-            builder.row(InlineKeyboardButton(text=btn_title, callback_data="gflag_menu"))
-            await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
-        else:
-            await message.answer(text, parse_mode="HTML")
+        btn_title = "🚩 View Flag Store" if is_locked else "🚩 Flag Store (💰 100k)"
+        builder.row(InlineKeyboardButton(text=btn_title, callback_data="gflag_store_page_1"))
+        await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
         return
 
     sub = parts[1].lower()
@@ -201,7 +418,6 @@ async def cmd_guild(message: Message, db: AsyncSession):
             await message.answer(f"❌ Founding a Guild costs <b>💰 {GUILD_CREATION_FEE:,} coins</b> (500k)! Your balance: 💰 {user.coins:,} coins.", parse_mode="HTML")
             return
 
-        # Check name availability
         chk_stmt = select(Guild).where(func.lower(Guild.name) == guild_name.lower())
         chk_res = await db.execute(chk_stmt)
         if chk_res.scalar_one_or_none():
@@ -236,47 +452,12 @@ async def cmd_guild(message: Message, db: AsyncSession):
         await message.answer(
             f"🎉 <b>Guild Created Successfully!</b>\n\n"
             f"🏰 Welcome to 🛡️ <b>{html.escape(guild_name)}</b> [{tag}]!\n"
-            f"👉 <i>Use <code>/guild flag</code> to choose an official animated flag (💰 100k, one-time choice)!</i>",
+            f"👉 <i>Visit <code>/flagstore</code> to buy an official animated flag (💰 100k, one-time choice)!</i>",
             parse_mode="HTML"
         )
 
-    elif sub in ["flag", "flags"]:
-        member, guild = await get_user_guild_data(user_id, db)
-        if not guild:
-            await message.answer("❌ You are not in any Guild!", parse_mode="HTML")
-            return
-
-        curr_flag = format_guild_flag(getattr(guild, "flag", "🛡️"))
-        is_locked = getattr(guild, "flag_locked", False)
-
-        if is_locked and user_id not in getattr(config, "ADMIN_IDS", []):
-            text = (
-                f"🚩 <b>OFFICIAL GUILD FLAG</b> 🚩\n"
-                f"◈ ────────────────── ◈\n"
-                f"🏰 Guild: <b>{html.escape(guild.name)}</b> [{guild.tag}]\n"
-                f"🏳️ Official Flag: {curr_flag}\n"
-                f"🔒 Status: <b>Permanently Locked</b>\n"
-                f"◈ ────────────────── ◈\n"
-                f"✨ <i>Your Guild Flag was permanently chosen and autosaved in the database! It cannot be changed.</i>"
-            )
-            markup = await build_flag_picker_keyboard(db, is_leader=False, is_locked=True)
-            await message.answer(text, reply_markup=markup, parse_mode="HTML")
-            return
-
-        text = (
-            f"🚩 <b>CHOOSE OFFICIAL GUILD FLAG</b> 🚩\n"
-            f"◈ ────────────────── ◈\n"
-            f"🏰 Guild: <b>{html.escape(guild.name)}</b> [{guild.tag}]\n"
-            f"🏳️ Current Flag: {curr_flag}\n"
-            f"💰 Cost: <b>100,000 coins (100k)</b>\n"
-            f"⚠️ <b>Note:</b> You can choose your Guild Flag <b>ONLY ONCE</b>! Once chosen, it is permanently locked.\n"
-            f"◈ ────────────────── ◈\n"
-            f"✨ <i>Tap a flag below to choose it, or use your own custom animated emoji:</i>\n\n"
-            f"💡 <b>To use custom animated emojis:</b>\n"
-            f"• Send <code>/guild setflag &lt;emoji&gt;</code>\n"
-            f"• Or reply to any animated emoji with <code>/guild setflag</code>!"
-        )
-        markup = await build_flag_picker_keyboard(db, is_leader=(guild.owner_id == user_id), is_locked=False)
+    elif sub in ["store", "flagstore", "flag", "flags"]:
+        text, markup = await build_flag_store_payload(user_id=user_id, page=1, db=db)
         await message.answer(text, reply_markup=markup, parse_mode="HTML")
 
     elif sub in ["setflag", "changeflag"]:
@@ -304,11 +485,10 @@ async def cmd_guild(message: Message, db: AsyncSession):
 
         if not flag_val:
             await message.answer(
-                "⚠️ <b>How to set a Guild Flag:</b>\n\n"
+                "⚠️ <b>How to get a Guild Flag:</b>\n\n"
                 "💰 <b>Cost:</b> 100,000 coins (One-time choice)\n"
-                "1️⃣ <b>Preset Flag:</b> <code>/guild setflag &lt;flag_name&gt;</code> (e.g. <code>strawhat</code>, <code>phoenix</code>, <code>samurai</code>, <code>dragon</code>)\n"
-                "2️⃣ <b>Custom Animated Emoji:</b> Send <code>/guild setflag 🏴‍☠️</code> with your custom emoji, or reply to an animated emoji with <code>/guild setflag</code>!\n"
-                "3️⃣ <b>Flag Picker:</b> Use <code>/guild flag</code> to browse interactive catalog.",
+                "1️⃣ <b>Browse Store:</b> Open <code>/flagstore</code> to pick and buy directly with buttons (No Telegram Premium needed!)\n"
+                "2️⃣ <b>Direct Emoji:</b> Send <code>/guild setflag 🏴‍☠️</code> or reply to an animated emoji with <code>/guild setflag</code>!",
                 parse_mode="HTML"
             )
             return
@@ -326,11 +506,9 @@ async def cmd_guild(message: Message, db: AsyncSession):
             )
             return
 
-        # Deduct coins
         user.coins -= GUILD_FLAG_COST
         await log_transaction(user_id, -GUILD_FLAG_COST, "GUILD_FLAG", f"Purchased official Flag for Guild {guild.name}", db)
 
-        # Autosave custom animated emoji in DB flag catalog if emoji_id detected
         if emoji_id:
             await auto_save_custom_flag_to_db(emoji_id, "🛡️", db, name=f"{guild.name} Banner")
 
@@ -352,7 +530,6 @@ async def cmd_guild(message: Message, db: AsyncSession):
         )
 
     elif sub == "resetflag":
-        # Admin command to unlock a guild flag if requested
         if user_id not in getattr(config, "ADMIN_IDS", []):
             await message.answer("❌ Owner/Admin only command.")
             return
@@ -376,39 +553,30 @@ async def cmd_guild(message: Message, db: AsyncSession):
         await message.answer(f"✅ Guild <b>{html.escape(t_guild.name)}</b> flag has been unlocked and reset to default.", parse_mode="HTML")
 
     elif sub == "addflag":
-        # Owner/Admin only: register new animated flag into global catalog
         if user_id not in getattr(config, "ADMIN_IDS", []):
             await message.answer("❌ Owner/Admin only command.")
             return
 
-        # Format: /guild addflag <key> <name>
         if len(parts) < 3:
-            await message.answer(
-                "⚠️ Format: Reply to a custom animated emoji with:\n"
-                "<code>/guild addflag &lt;key&gt; &lt;Flag Title&gt;</code>\n"
-                "Example: <code>/guild addflag pirate Straw Hat Flag</code>",
-                parse_mode="HTML"
-            )
+            await message.answer("⚠️ Format: Reply to an animated emoji with <code>/guild addflag &lt;Flag Title&gt;</code>", parse_mode="HTML")
             return
 
-        sub_args = parts[2].split(maxsplit=1)
-        flag_key = sub_args[0].lower().strip()
-        flag_name = sub_args[1].strip() if len(sub_args) > 1 else flag_key.title()
-
+        flag_name = parts[2].strip()
         flag_val, emoji_id, _ = extract_custom_emoji_or_flag(message, "")
         if not emoji_id:
             await message.answer("❌ Please reply to a message containing a Telegram custom animated emoji.")
             return
 
-        success = await register_guild_flag(flag_key, flag_name, emoji_id, "🛡️", db)
+        slug = re.sub(r'[^a-zA-Z0-9]+', '_', flag_name.lower()).strip('_')
+        success = await register_guild_flag(slug, flag_name, emoji_id, "🛡️", db)
         if success:
             tag = f'<tg-emoji emoji-id="{emoji_id}">🛡️</tg-emoji>'
             await message.answer(
-                f"✅ <b>New Guild Flag Registered!</b>\n\n"
-                f"• Key: <code>{flag_key}</code>\n"
+                f"✅ <b>Added to Flag Store!</b>\n\n"
                 f"• Name: <b>{html.escape(flag_name)}</b>\n"
-                f"• Preview: {tag}\n\n"
-                f"Autosaved in database! All Guild Leaders can now choose this flag from <code>/guild flag</code>!",
+                f"• Preview: {tag}\n"
+                f"• Key: <code>{slug}</code>\n\n"
+                f"All Guild Leaders can now buy this from <code>/flagstore</code> for 100k coins!",
                 parse_mode="HTML"
             )
         else:
@@ -470,7 +638,6 @@ async def cmd_guild(message: Message, db: AsyncSession):
         user.coins -= amount
         guild.treasury += amount
         
-        # Check level up (every 50,000 coins in treasury increases level)
         new_lvl = 1 + (guild.treasury // 50000)
         guild.level = max(guild.level, new_lvl)
 
@@ -564,233 +731,12 @@ async def cmd_guild(message: Message, db: AsyncSession):
             return
 
         guild_name = guild.name
-        # Delete all member records & the guild itself
         del_mems = delete(GuildMember).where(GuildMember.guild_id == guild.id)
         await db.execute(del_mems)
         await db.delete(guild)
         await db.commit()
 
         await message.answer(f"🗑️ Guild <b>{html.escape(guild_name)}</b> has been successfully disbanded and deleted!", parse_mode="HTML")
-
-
-@router.message(Command("guildflag", "gflag", "setguildflag", ignore_mention=True))
-async def cmd_guild_flag_shortcut(message: Message, db: AsyncSession):
-    """Shortcut command to view or set guild flag directly."""
-    parts = message.text.split(maxsplit=1)
-    user_id = message.from_user.id
-
-    member, guild = await get_user_guild_data(user_id, db)
-    if not guild:
-        await message.answer("❌ You are not in any Guild!", parse_mode="HTML")
-        return
-
-    is_locked = getattr(guild, "flag_locked", False)
-
-    # If no argument and not replying to emoji: show picker
-    if len(parts) < 2 and not message.reply_to_message:
-        curr_flag = format_guild_flag(getattr(guild, "flag", "🛡️"))
-        if is_locked and user_id not in getattr(config, "ADMIN_IDS", []):
-            text = (
-                f"🚩 <b>OFFICIAL GUILD FLAG</b> 🚩\n"
-                f"◈ ────────────────── ◈\n"
-                f"🏰 Guild: <b>{html.escape(guild.name)}</b> [{guild.tag}]\n"
-                f"🏳️ Official Flag: {curr_flag}\n"
-                f"🔒 Status: <b>Permanently Locked</b>\n"
-                f"◈ ────────────────── ◈\n"
-                f"✨ <i>Your Guild Flag was permanently chosen and autosaved!</i>"
-            )
-            markup = await build_flag_picker_keyboard(db, is_leader=False, is_locked=True)
-            await message.answer(text, reply_markup=markup, parse_mode="HTML")
-            return
-
-        text = (
-            f"🚩 <b>CHOOSE OFFICIAL GUILD FLAG</b> 🚩\n"
-            f"◈ ────────────────── ◈\n"
-            f"🏰 Guild: <b>{html.escape(guild.name)}</b> [{guild.tag}]\n"
-            f"🏳️ Current Flag: {curr_flag}\n"
-            f"💰 Cost: <b>100,000 coins (100k)</b>\n"
-            f"⚠️ <b>Note:</b> You can choose your Guild Flag <b>ONLY ONCE</b>!\n"
-            f"◈ ────────────────── ◈\n"
-            f"✨ <i>Choose a flag below, or reply to any custom animated emoji with <code>/setguildflag</code>!</i>"
-        )
-        markup = await build_flag_picker_keyboard(db, is_leader=(guild.owner_id == user_id), is_locked=False)
-        await message.answer(text, reply_markup=markup, parse_mode="HTML")
-        return
-
-    if guild.owner_id != user_id and user_id not in getattr(config, "ADMIN_IDS", []):
-        await message.answer("❌ Only the Guild Leader can set the Guild Flag!", parse_mode="HTML")
-        return
-
-    if is_locked and user_id not in getattr(config, "ADMIN_IDS", []):
-        curr_flag = format_guild_flag(getattr(guild, "flag", "🛡️"))
-        await message.answer(
-            f"❌ <b>Guild Flag Already Set!</b>\n\n"
-            f"Your Guild is already flying {curr_flag}!\n"
-            f"Guild Flags can only be chosen <b>one time</b> for 100k coins and cannot be changed.",
-            parse_mode="HTML"
-        )
-        return
-
-    param = parts[1] if len(parts) >= 2 else ""
-    flag_val, emoji_id, desc = extract_custom_emoji_or_flag(message, param)
-
-    if not flag_val:
-        await message.answer("⚠️ Could not detect a valid flag or custom emoji.", parse_mode="HTML")
-        return
-
-    u_stmt = select(User).where(User.id == user_id)
-    u_res = await db.execute(u_stmt)
-    user = u_res.scalar_one_or_none()
-
-    if not user or user.coins < GUILD_FLAG_COST:
-        user_coins = user.coins if user else 0
-        await message.answer(
-            f"❌ Choosing a Guild Flag costs <b>💰 {GUILD_FLAG_COST:,} coins</b> (100k)!\n"
-            f"Your current balance: <b>💰 {user_coins:,} coins</b>.",
-            parse_mode="HTML"
-        )
-        return
-
-    # Deduct 100k coins
-    user.coins -= GUILD_FLAG_COST
-    await log_transaction(user_id, -GUILD_FLAG_COST, "GUILD_FLAG", f"Purchased official Flag for {guild.name}", db)
-
-    # Autosave custom animated emoji in DB if present
-    if emoji_id:
-        await auto_save_custom_flag_to_db(emoji_id, "🛡️", db, name=f"{guild.name} Banner")
-
-    guild.flag = flag_val
-    guild.flag_locked = True
-    await db.commit()
-
-    display_flag = format_guild_flag(flag_val)
-    await message.answer(
-        f"🎉 <b>Guild Flag Chosen & Locked!</b>\n\n"
-        f"🏰 <b>{html.escape(guild.name)}</b> [{guild.tag}] is now flying the official flag: {display_flag}\n"
-        f"💰 Fee: <code>-{GUILD_FLAG_COST:,} coins</code> (Autosaved & Permanently Locked)",
-        parse_mode="HTML"
-    )
-
-
-@router.callback_query(F.data == "gflag_menu")
-async def cb_guild_flag_menu(callback: CallbackQuery, db: AsyncSession):
-    """Opens flag picker from Guild profile button."""
-    user_id = callback.from_user.id
-    member, guild = await get_user_guild_data(user_id, db)
-    if not guild:
-        await callback.answer("You are not in a Guild!", show_alert=True)
-        return
-
-    curr_flag = format_guild_flag(getattr(guild, "flag", "🛡️"))
-    is_locked = getattr(guild, "flag_locked", False)
-
-    if is_locked and user_id not in getattr(config, "ADMIN_IDS", []):
-        text = (
-            f"🚩 <b>OFFICIAL GUILD FLAG</b> 🚩\n"
-            f"◈ ────────────────── ◈\n"
-            f"🏰 Guild: <b>{html.escape(guild.name)}</b> [{guild.tag}]\n"
-            f"🏳️ Official Flag: {curr_flag}\n"
-            f"🔒 Status: <b>Permanently Locked</b>\n"
-            f"◈ ────────────────── ◈\n"
-            f"✨ <i>Your Guild Flag was permanently chosen and autosaved! It cannot be changed.</i>"
-        )
-        markup = await build_flag_picker_keyboard(db, is_leader=False, is_locked=True)
-    else:
-        text = (
-            f"🚩 <b>CHOOSE OFFICIAL GUILD FLAG</b> 🚩\n"
-            f"◈ ────────────────── ◈\n"
-            f"🏰 Guild: <b>{html.escape(guild.name)}</b> [{guild.tag}]\n"
-            f"🏳️ Current Flag: {curr_flag}\n"
-            f"💰 Cost: <b>100,000 coins (100k)</b>\n"
-            f"⚠️ <b>Note:</b> You can choose your Guild Flag <b>ONLY ONCE</b>!\n"
-            f"◈ ────────────────── ◈\n"
-            f"Tap any flag below to choose it, or use your own custom animated emoji:\n\n"
-            f"💡 <i>Send <code>/guild setflag &lt;emoji&gt;</code> to use custom animated emoji!</i>"
-        )
-        markup = await build_flag_picker_keyboard(db, is_leader=(guild.owner_id == user_id), is_locked=False)
-
-    try:
-        await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
-    except Exception:
-        await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("gflag_set:"))
-async def cb_guild_flag_apply(callback: CallbackQuery, db: AsyncSession):
-    """Applies selected preset flag to the guild with 100k cost and lock."""
-    user_id = callback.from_user.id
-    member, guild = await get_user_guild_data(user_id, db)
-    if not guild:
-        await callback.answer("You are not in a Guild!", show_alert=True)
-        return
-
-    if guild.owner_id != user_id and user_id not in getattr(config, "ADMIN_IDS", []):
-        await callback.answer("Only the Guild Leader can choose the Flag!", show_alert=True)
-        return
-
-    if getattr(guild, "flag_locked", False) and user_id not in getattr(config, "ADMIN_IDS", []):
-        await callback.answer("❌ Guild Flag is already chosen and permanently locked!", show_alert=True)
-        return
-
-    u_stmt = select(User).where(User.id == user_id)
-    u_res = await db.execute(u_stmt)
-    user = u_res.scalar_one_or_none()
-
-    if not user or user.coins < GUILD_FLAG_COST:
-        user_coins = user.coins if user else 0
-        await callback.answer(f"❌ Choosing a Flag costs 100,000 coins! You have: {user_coins:,}.", show_alert=True)
-        return
-
-    flag_key = callback.data.split(":", 1)[1]
-    all_flags = await get_all_guild_flags(db)
-
-    if flag_key not in all_flags:
-        await callback.answer("Flag not found!", show_alert=True)
-        return
-
-    preset = all_flags[flag_key]
-    flag_val = preset.get("tag", preset.get("fallback", "🛡️"))
-
-    # Deduct 100k coins
-    user.coins -= GUILD_FLAG_COST
-    await log_transaction(user_id, -GUILD_FLAG_COST, "GUILD_FLAG", f"Purchased Flag {preset.get('name')} for {guild.name}", db)
-
-    guild.flag = flag_val
-    guild.flag_locked = True
-    await db.commit()
-
-    display_flag = format_guild_flag(flag_val)
-    await callback.answer(f"Official Flag set to {preset.get('name')} (Paid 100k coins)!", show_alert=True)
-
-    # Return to updated guild screen
-    mem_stmt = select(func.count(GuildMember.id)).where(GuildMember.guild_id == guild.id)
-    mem_res = await db.execute(mem_stmt)
-    total_members = mem_res.scalar() or 0
-
-    owner_stmt = select(User).where(User.id == guild.owner_id)
-    owner_res = await db.execute(owner_stmt)
-    owner = owner_res.scalar_one_or_none()
-    owner_name = html.escape(owner.nickname or owner.username or f"Trainer {owner.id}") if owner else "Unknown"
-
-    text = (
-        f"🏰 {display_flag} <b>GUILD: {html.escape(guild.name).upper()} [{html.escape(guild.tag)}]</b> {display_flag} 🏰\n"
-        f"◈ ────────────────── ◈\n"
-        f"👑 <b>Leader:</b> {owner_name}\n"
-        f"🚩 <b>Guild Flag:</b> {display_flag} • 🔒 <i>Official Flag (Locked)</i>\n"
-        f"👥 <b>Members:</b> <code>{total_members} members</code>\n"
-        f"💎 <b>Guild Level:</b> <code>Lv. {guild.level}</code>\n"
-        f"🏛️ <b>Guild Treasury:</b> <code>💰 {guild.treasury:,} coins</code>\n"
-        f"⚡ <b>Guild Perks:</b> <code>+5% Shiny Chance | +10% Coin Earnings</code>\n"
-        f"◈ ────────────────── ◈\n"
-        f"🎉 <i>Official Guild Flag chosen, autosaved & locked!</i>"
-    )
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="🚩 View Official Flag", callback_data="gflag_menu"))
-    try:
-        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
-    except Exception:
-        await callback.message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 
 @router.callback_query(F.data == "gflag_back")
@@ -812,7 +758,7 @@ async def cb_guild_flag_back(callback: CallbackQuery, db: AsyncSession):
     owner_name = html.escape(owner.nickname or owner.username or f"Trainer {owner.id}") if owner else "Unknown"
     flag = format_guild_flag(getattr(guild, "flag", "🛡️"))
     is_locked = getattr(guild, "flag_locked", False)
-    lock_status_text = "🔒 <i>Official Flag (Locked)</i>" if is_locked else "🔓 <i>Not Set (100k coins to choose)</i>"
+    lock_status_text = "🔒 <i>Official Flag (Locked)</i>" if is_locked else "🔓 <i>Not Set (100k coins to buy)</i>"
 
     text = (
         f"🏰 {flag} <b>GUILD: {html.escape(guild.name).upper()} [{html.escape(guild.tag)}]</b> {flag} 🏰\n"
@@ -826,9 +772,8 @@ async def cb_guild_flag_back(callback: CallbackQuery, db: AsyncSession):
         f"◈ ────────────────── ◈"
     )
     builder = InlineKeyboardBuilder()
-    if guild.owner_id == user_id or user_id in getattr(config, "ADMIN_IDS", []):
-        btn_title = "🚩 View Official Flag" if is_locked else "🚩 Choose Official Flag (💰 100k)"
-        builder.row(InlineKeyboardButton(text=btn_title, callback_data="gflag_menu"))
+    btn_title = "🚩 View Flag Store" if is_locked else "🚩 Flag Store (💰 100k)"
+    builder.row(InlineKeyboardButton(text=btn_title, callback_data="gflag_store_page_1"))
     try:
         await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
     except Exception:
@@ -838,7 +783,6 @@ async def cb_guild_flag_back(callback: CallbackQuery, db: AsyncSession):
 
 @router.message(Command("guildwithdraw", "gwithdraw", ignore_mention=True))
 async def cmd_guild_withdraw_standalone(message: Message, db: AsyncSession):
-    """Direct shortcut command /guildwithdraw <amount> or /gwithdraw <amount>."""
     parts = message.text.split()
     user_id = message.from_user.id
 
@@ -940,8 +884,7 @@ async def cb_dm_guild_info(callback: CallbackQuery, db: AsyncSession):
             f"💡 <b>Guild Commands</b>:\n"
             f"👉 <code>/guild create &lt;name&gt;</code> — Found a new Guild (500k coins)\n"
             f"👉 <code>/guild join &lt;name&gt;</code> — Join an existing Guild\n"
-            f"👉 <code>/guild flag</code> — Choose Guild Flag (💰 100k, One-Time Choice)\n"
-            f"👉 <code>/guild setflag &lt;emoji&gt;</code> — Set custom/animated flag\n"
+            f"👉 <code>/flagstore</code> — Browse & buy animated flags (100k coins)\n"
             f"👉 <code>/guild deposit &lt;amount&gt;</code> — Donate coins to Guild Treasury\n"
             f"👉 <code>/guild withdraw &lt;amount&gt;</code> — Withdraw coins from Treasury (Leader only)\n"
             f"👉 <code>/guild delete</code> — Disband/Delete your Guild (Owner only)\n"
@@ -962,11 +905,11 @@ async def cb_dm_guild_info(callback: CallbackQuery, db: AsyncSession):
 
         flag = format_guild_flag(getattr(guild, "flag", "🛡️"))
         is_locked = getattr(guild, "flag_locked", False)
-        lock_status_text = "🔒 <i>Official Flag (Locked)</i>" if is_locked else "🔓 <i>Not Set (100k coins to choose)</i>"
+        lock_status_text = "🔒 <i>Official Flag (Locked)</i>" if is_locked else "🔓 <i>Not Set (100k coins to buy)</i>"
 
         leader_tip = (
             f"👉 <i>Use <code>/guild withdraw &lt;amount&gt;</code> to withdraw from Treasury!</i>\n"
-            f"👉 <i>Use <code>/guild flag</code> to choose your official Flag (💰 100k, one-time)!</i>"
+            f"👉 <i>Use <code>/flagstore</code> to buy your official Flag (💰 100k, one-time)!</i>"
             if (guild.owner_id == user_id and not is_locked)
             else (
                 f"👉 <i>Use <code>/guild withdraw &lt;amount&gt;</code> to withdraw from Treasury!</i>"
@@ -987,9 +930,8 @@ async def cb_dm_guild_info(callback: CallbackQuery, db: AsyncSession):
             f"◈ ────────────────── ◈\n"
             f"{leader_tip}"
         )
-        if guild.owner_id == user_id or user_id in getattr(config, "ADMIN_IDS", []):
-            btn_title = "🚩 View Official Flag" if is_locked else "🚩 Choose Official Flag (💰 100k)"
-            builder.row(InlineKeyboardButton(text=btn_title, callback_data="gflag_menu"))
+        btn_title = "🚩 View Flag Store" if is_locked else "🚩 Flag Store (💰 100k)"
+        builder.row(InlineKeyboardButton(text=btn_title, callback_data="gflag_store_page_1"))
 
     try:
         await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")

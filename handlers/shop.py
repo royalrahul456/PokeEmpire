@@ -28,6 +28,7 @@ def get_shop_keyboard(user_has_charm: bool) -> InlineKeyboardBuilder:
         builder.row(
             InlineKeyboardButton(text="✨ Shiny Charm (3k)", callback_data="buy_charm")
         )
+    builder.row(InlineKeyboardButton(text="🚩 Guild Flag Store (100k)", callback_data="gflag_store_page_1"))
     builder.row(InlineKeyboardButton(text="🔙 Back to Hub Menu", callback_data="dm_home"))
     return builder
 

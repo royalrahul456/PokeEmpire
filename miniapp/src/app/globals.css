@@ -1,0 +1,236 @@
+@import "tailwindcss";
+
+@variant dark (&:where([data-theme="dark"], [data-theme="dark"] *, .dark, .dark *));
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *, .dark, .dark *));
+
+@layer base {
+  :root {
+    --bg-main: #f6f7fb;
+    --card-bg: #ffffff;
+    --card-bg-subtle: #f0f2f7;
+    --card-bg-accent: #ffffff;
+    --card-border: #e5e8f0;
+    --card-border-highlight: #d8deeb;
+    --card-shadow: 0 4px 16px -2px rgba(15, 23, 42, 0.05), 0 1px 3px 0 rgba(15, 23, 42, 0.03);
+    
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #94a3b8;
+    --nav-dock-bg: rgba(255, 255, 255, 0.94);
+  }
+
+  [data-theme="dark"],
+  .dark {
+    --bg-main: #0c0e14;
+    --card-bg: #141721;
+    --card-bg-subtle: #1a1e2b;
+    --card-bg-accent: #191d2a;
+    --card-border: rgba(255, 255, 255, 0.08);
+    --card-border-highlight: rgba(255, 255, 255, 0.14);
+    --card-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.6), 0 2px 6px 0 rgba(0, 0, 0, 0.4);
+
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --nav-dock-bg: rgba(18, 21, 30, 0.94);
+  }
+
+  body {
+    background-color: var(--bg-main);
+    color: var(--text-primary);
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overflow-x: hidden;
+    min-height: 100vh;
+    padding-bottom: env(safe-area-inset-bottom, 24px);
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+}
+
+/* ============================================================== */
+/* CLEAN MODERN TELEGRAM SURFACE SYSTEM                           */
+/* ============================================================== */
+
+/* 1. Primary Clean Surface Card */
+.liquid-glass,
+.glass-surface {
+  position: relative;
+  background-color: var(--card-bg);
+  border: 1px solid var(--card-border);
+  box-shadow: var(--card-shadow);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* 2. Elevated Accent Card */
+.liquid-glass-accent,
+.glass-accent {
+  position: relative;
+  background-color: var(--card-bg-accent);
+  border: 1px solid var(--card-border-highlight);
+  box-shadow: var(--card-shadow);
+}
+
+/* 3. Surface Pill / Badge */
+.liquid-glass-pill,
+.glass-pill {
+  position: relative;
+  background-color: var(--card-bg-subtle);
+  border: 1px solid var(--card-border);
+}
+
+/* 4. Telegram Bottom Floating Dock */
+.liquid-glass-dock {
+  background-color: var(--nav-dock-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--card-border-highlight);
+  box-shadow: 0 16px 36px -6px rgba(0, 0, 0, 0.4);
+}
+
+/* ============================================================== */
+/* BUTTON STYLES                                                  */
+/* ============================================================== */
+
+.btn-violet {
+  background: #6366f1;
+  color: #ffffff !important;
+  font-weight: 700;
+  border-radius: 14px;
+  box-shadow: 0 4px 14px -2px rgba(99, 102, 241, 0.4);
+  transition: all 0.15s ease;
+}
+.btn-violet:hover {
+  background: #4f46e5;
+}
+.btn-violet:active {
+  transform: scale(0.97);
+}
+
+.btn-gold {
+  background: #f59e0b;
+  color: #000000 !important;
+  font-weight: 800;
+  border-radius: 14px;
+  box-shadow: 0 4px 14px -2px rgba(245, 158, 11, 0.35);
+  transition: all 0.15s ease;
+}
+.btn-gold:hover {
+  background: #d97706;
+}
+.btn-gold:active {
+  transform: scale(0.97);
+}
+
+/* Ensure gold button text stays dark even in dark mode */
+.dark .btn-gold,
+[data-theme="dark"] .btn-gold {
+  color: #000000 !important;
+}
+
+/* ============================================================== */
+/* THEME COLOR CONTRAST RULES                                     */
+/* ============================================================== */
+
+/* Light mode typography defaults */
+.light,
+[data-theme="light"],
+:root:not(.dark) {
+  color: #0f172a;
+}
+
+/* Dark mode text readability */
+.dark,
+[data-theme="dark"] {
+  color: #f8fafc;
+}
+
+.dark h1, .dark h2, .dark h3, .dark h4,
+[data-theme="dark"] h1, [data-theme="dark"] h2, [data-theme="dark"] h3, [data-theme="dark"] h4 {
+  color: #ffffff;
+}
+
+/* Controlled dark text adaptation without breaking colored pills */
+.dark .text-slate-900,
+[data-theme="dark"] .text-slate-900,
+.dark .text-slate-800,
+[data-theme="dark"] .text-slate-800 {
+  color: #f8fafc !important;
+}
+
+.dark .text-slate-700,
+[data-theme="dark"] .text-slate-700,
+.dark .text-slate-600,
+[data-theme="dark"] .text-slate-600 {
+  color: #cbd5e1 !important;
+}
+
+.dark .text-slate-500,
+[data-theme="dark"] .text-slate-500,
+.dark .text-slate-400,
+[data-theme="dark"] .text-slate-400 {
+  color: #94a3b8 !important;
+}
+
+/* Text inputs */
+.dark input,
+[data-theme="dark"] input,
+.dark textarea,
+[data-theme="dark"] textarea {
+  color: #ffffff !important;
+  background-color: #1a1e2b !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+/* Subtle clean scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.45);
+}
+
+/* Clean Animation Utilities */
+@keyframes pokeFloat {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-5px); }
+}
+
+.animate-poke-float {
+  animation: pokeFloat 3s ease-in-out infinite;
+}
+
+@keyframes springPop {
+  0% { transform: scale(0.92); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.animate-spring-pop {
+  animation: springPop 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUpFade {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-slide-up {
+  animation: slideUpFade 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out;
+}

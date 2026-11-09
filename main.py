@@ -140,16 +140,29 @@ async def start_dummy_server():
     async def health_check(request):
         return web.Response(text="OK", content_type="text/plain")
         
-    app.router.add_get("/", health_check)
     app.router.add_get("/healthz", health_check)
     app.router.add_get("/api/health", health_check)
+
+    webapp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webapp")
+    if os.path.isdir(webapp_dir):
+        async def serve_index(request):
+            return web.FileResponse(os.path.join(webapp_dir, "index.html"))
+
+        app.router.add_get("/", serve_index)
+        app.router.add_get("/app", serve_index)
+        app.router.add_get("/webapp", serve_index)
+        app.router.add_get("/webapp/", serve_index)
+        app.router.add_static("/webapp/", path=webapp_dir, name="webapp_static")
+        app.router.add_static("/", path=webapp_dir, name="root_static")
+    else:
+        app.router.add_get("/", health_check)
     
     try:
         runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, "0.0.0.0", port)
         await site.start()
-        logger.info(f"✅ Web health check server active on port {port}")
+        logger.info(f"✅ Web server & Mini App active on port {port}")
     except Exception as e:
         logger.error(f"Failed to start web health check server: {e}")
 

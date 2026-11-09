@@ -516,7 +516,8 @@ def patch_bot_emojis(bot: Bot):
         except TelegramBadRequest as e:
             err_str = str(e).lower()
             if (
-                "custom_emoji" in err_str 
+                "document" in err_str
+                or "custom_emoji" in err_str 
                 or "entity_bounds_invalid" in err_str 
                 or "cannot_use_custom_emoji" in err_str 
                 or "can't use custom emoji" in err_str

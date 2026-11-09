@@ -463,6 +463,13 @@ async def send_safe_media(
                 continue
         except TelegramBadRequest as e:
             err_msg = str(e).lower()
+            if any(k in err_msg for k in ["document", "entity", "caption", "custom_emoji", "tag"]):
+                try:
+                    import re
+                    clean_cap = re.sub(r'</?tg-emoji[^>]*>', '', caption or "")
+                    return await _send_media(mtype, media_value, clean_cap, reply_markup, reply_id)
+                except Exception:
+                    pass
             if any(r in err_msg for r in ["reply", "message to be replied"]):
                 try:
                     return await _send_media(mtype, media_value, caption, reply_markup, None)

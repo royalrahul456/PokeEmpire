@@ -34,7 +34,8 @@ async def check_membership(bot, user_id: int, force_refresh: bool = False) -> bo
             is_member = True
     except Exception as e:
         print(f"Error checking group membership for {user_id}: {e}")
-        is_member = False
+        # Fail open on API lookup errors so users are not trapped
+        is_member = True
 
     # Cache the result
     membership_cache[user_id] = (is_member, now)
@@ -83,6 +84,10 @@ class MembershipMiddleware(BaseMiddleware):
             
         # Bypass for admin
         if user.id in config.ADMIN_IDS:
+            return await handler(event, data)
+
+        # Bypass if interacting directly inside the official group
+        if chat and config.is_official_group(chat_id=chat.id, username=getattr(chat, "username", None)):
             return await handler(event, data)
             
         # Determine if we should check membership:

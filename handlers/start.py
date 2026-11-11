@@ -99,7 +99,8 @@ async def cmd_start(message: Message, db: AsyncSession):
         "🎮 <b>Ready, Trainer? Let’s begin!</b>"
     )
 
-    reply_markup = get_start_welcome_keyboard(bot_username)
+    is_private = bool(message.chat and message.chat.type == "private")
+    reply_markup = get_start_welcome_keyboard(bot_username, is_private=is_private)
 
     try:
         await send_cover_media(

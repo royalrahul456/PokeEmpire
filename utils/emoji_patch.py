@@ -358,11 +358,9 @@ def clean_button_text(text: str) -> str:
 
 def enhance_reply_markup(reply_markup):
     """
-    Enhances an InlineKeyboardMarkup by:
-    1. Attaching custom premium animated emoji icons (icon_custom_emoji_id) to buttons.
-    2. Stripping leading/trailing normal Unicode emojis from button text so only the
-       animated custom emoji icon appears (preventing two duplicate emojis side-by-side).
-    3. Assigning native Telegram button color styles (primary, success, danger).
+    Cleans an InlineKeyboardMarkup by:
+    1. Removing any button color styles (primary, success, danger).
+    2. Stripping any icon_custom_emoji_id so buttons remain clean and standard.
     """
     if not reply_markup or not hasattr(reply_markup, "inline_keyboard"):
         return reply_markup
@@ -370,96 +368,19 @@ def enhance_reply_markup(reply_markup):
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     new_rows = []
     modified = False
-    premium_enabled = is_premium_emojis_enabled()
 
     for row in reply_markup.inline_keyboard:
         new_row = []
         for btn in row:
             btn_dict = btn.model_dump(exclude_none=True)
-            text = btn_dict.get("text", "")
-            btn_style = btn_dict.get("style")
-            cb_data = btn_dict.get("callback_data", "")
-            emoji_id = btn_dict.get("icon_custom_emoji_id")
-
-            # 1. Custom animated emoji icon on button & duplicate normal emoji removal
-            if premium_enabled:
-                if not emoji_id and text:
-                    # Check if button text starts with any registered emoji
-                    for em in SORTED_EMOJI_KEYS:
-                        if text.startswith(em):
-                            emoji_id = str(EMOJI_MAPPING[em])
-                            btn_dict["icon_custom_emoji_id"] = emoji_id
-                            # Remove the normal emoji so only the animated custom icon is shown
-                            cleaned_text = text[len(em):].lstrip("\ufe0f\u200b\u200d \t")
-                            if cleaned_text:
-                                btn_dict["text"] = cleaned_text
-                                text = cleaned_text
-                            modified = True
-                            break
-                    # If not at start, check if it ends with an emoji (e.g. 'Next ➡️')
-                    if not emoji_id:
-                        for em in SORTED_EMOJI_KEYS:
-                            if text.endswith(em):
-                                emoji_id = str(EMOJI_MAPPING[em])
-                                btn_dict["icon_custom_emoji_id"] = emoji_id
-                                cleaned_text = text[:-len(em)].rstrip("\ufe0f\u200b\u200d \t")
-                                if cleaned_text:
-                                    btn_dict["text"] = cleaned_text
-                                    text = cleaned_text
-                                modified = True
-                                break
-                elif emoji_id and text:
-                    # icon_custom_emoji_id already present; strip any leading/trailing normal emoji
-                    for em in SORTED_EMOJI_KEYS:
-                        if text.startswith(em):
-                            cleaned_text = text[len(em):].lstrip("\ufe0f\u200b\u200d \t")
-                            if cleaned_text:
-                                btn_dict["text"] = cleaned_text
-                                text = cleaned_text
-                            modified = True
-                            break
-                        elif text.endswith(em):
-                            cleaned_text = text[:-len(em)].rstrip("\ufe0f\u200b\u200d \t")
-                            if cleaned_text:
-                                btn_dict["text"] = cleaned_text
-                                text = cleaned_text
-                            modified = True
-                            break
-
-            # 2. Assign Telegram button color style if not explicitly set
-            if not btn_style:
-                assigned_style = None
-                low_text = text.lower()
-                low_cb = str(cb_data).lower()
-
-                # Success (Green) actions
-                if any(k in low_text or k in low_cb for k in (
-                    "confirm", "accept", "success", "yes", "pokedex", "dex", "claim", "buy", "purchase", "bag", "redeem", "catch", "maint_toggle_off"
-                )):
-                    assigned_style = "success"
-                # Danger (Red) actions
-                elif any(k in low_text or k in low_cb for k in (
-                    "cancel", "decline", "reject", "stop", "abort", "danger", "delete", "remove", "close", "battle", "arena", "pvp", "maint_toggle_on"
-                )):
-                    assigned_style = "danger"
-                # VIP Plan / Pricing (Danger / Red / Premium accent, unless it's a claim action)
-                elif "vip" in low_text or "vip" in low_cb:
-                    if any(k in low_text or k in low_cb for k in ("claim", "daily", "act")):
-                        assigned_style = "success"
-                    else:
-                        assigned_style = "danger"
-                # Primary (Blue) actions
-                elif any(k in low_text or k in low_cb for k in (
-                    "profile", "trade", "shop", "game", "back", "next", "prev", "refresh", "info", "stat", "leaderboard", "quest", "update", "support", "group", "panel", "tools", "help", "rank"
-                )):
-                    assigned_style = "primary"
-                else:
-                    assigned_style = "primary"
-
-                if assigned_style:
-                    btn_dict["style"] = assigned_style
-                    modified = True
-
+            # Remove button color style if present
+            if "style" in btn_dict:
+                btn_dict.pop("style", None)
+                modified = True
+            # Remove custom emoji icon if present
+            if "icon_custom_emoji_id" in btn_dict:
+                btn_dict.pop("icon_custom_emoji_id", None)
+                modified = True
             new_row.append(InlineKeyboardButton(**btn_dict))
         new_rows.append(new_row)
 
@@ -469,7 +390,7 @@ def enhance_reply_markup(reply_markup):
 
 
 def strip_keyboard_styling(reply_markup):
-    """Fallback helper to strip icon_custom_emoji_id if rejected by Telegram, preserving button color styles."""
+    """Fallback helper to strip icon_custom_emoji_id and style if rejected by Telegram."""
     if not reply_markup or not hasattr(reply_markup, "inline_keyboard"):
         return reply_markup
 
@@ -479,9 +400,8 @@ def strip_keyboard_styling(reply_markup):
         new_row = []
         for btn in row:
             btn_dict = btn.model_dump(exclude_none=True)
-            # Remove custom emoji icon if rejected by Telegram server
             btn_dict.pop("icon_custom_emoji_id", None)
-            # DO NOT pop "style"! Button colors ("primary", "success", "danger") are standard Telegram styles.
+            btn_dict.pop("style", None)
             new_row.append(InlineKeyboardButton(**btn_dict))
         new_rows.append(new_row)
     return InlineKeyboardMarkup(inline_keyboard=new_rows)

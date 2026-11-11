@@ -156,7 +156,7 @@ else:
 UPDATES_CHANNEL = os.getenv("UPDATES_CHANNEL", "@pokeempireupdates")
 DATABASE_CHANNEL = os.getenv("DATABASE_CHANNEL", "@pokeempiredatabase")
 AUCTION_CHANNEL = os.getenv("AUCTION_CHANNEL", "@PokeEmpireAuctions")
-MAIN_GROUP_ID = int(os.getenv("MAIN_GROUP_ID", "-1004226940726"))
+MAIN_GROUP_ID = int(os.getenv("MAIN_GROUP_ID", "-1004441222762"))
 SUPPORT_GROUP = os.getenv("SUPPORT_GROUP", "@PokeEmpire")
 SUPPORT_GROUP_URL = os.getenv("SUPPORT_GROUP_URL", "https://t.me/PokeEmpire")
 
@@ -174,82 +174,8 @@ def is_official_group(chat_id: int = None, username: str = None) -> bool:
     return False
 
 # Telegram Custom Emoji IDs for Native Inline Buttons (configurable)
-CUSTOM_EMOJI_IDS = {
-    "add_to_group": os.getenv("EMOJI_ADD_TO_GROUP", "5372926953978341366"), # 👥 / ➕
-    "updates": os.getenv("EMOJI_UPDATES", "5789428375261023681"),          # 📢
-    "support": os.getenv("EMOJI_SUPPORT", "5377599075237502153"),          # 🎫 / 🎟️
-    "help": os.getenv("EMOJI_HELP", "5436113877181941026"),                # ❓
-    "stats": os.getenv("EMOJI_STATS", "5231200819986047254"),               # 📊
-    "profile": os.getenv("EMOJI_PROFILE", "5280781432824802048"),          # 👤
-    "pokedex": os.getenv("EMOJI_POKEDEX", "5188344996356448758"),          # 🏆
-    "quests": os.getenv("EMOJI_QUESTS", "5453991094435997597"),            # ⚔️
-    "guilds": os.getenv("EMOJI_GUILDS", "5379788323147505344"),            # 🏰
-    "bag": os.getenv("EMOJI_BAG", "5409234219496907243"),                  # 🎒
-    "leaderboard": os.getenv("EMOJI_LEADERBOARD", "5282950412784117735"),  # 📈
-    "battle": os.getenv("EMOJI_BATTLE", "5251203410396458957"),            # 🛡️
-    "trade": os.getenv("EMOJI_TRADE", "6122764622509380932"),              # 🔄
-    "redeem": os.getenv("EMOJI_REDEEM", "5203996991054432397"),            # 🎁
-    "shop": os.getenv("EMOJI_SHOP", "5226656353744862682"),                # 🛒
-    "games": os.getenv("EMOJI_GAMES", "5255765065096774716"),              # 🎰
-    "streak": os.getenv("EMOJI_STREAK", "5424972470023104089"),            # 🔥
-    "panel": os.getenv("EMOJI_PANEL", "5307608734858484532"),              # 👑
-    "tools": os.getenv("EMOJI_TOOLS", "5461047575379466857"),              # 🛠️
-    "back": os.getenv("EMOJI_BACK", "5253997076169115797"),                 # 🔙
-    "catch": os.getenv("EMOJI_CATCH", "5188344996356448758"),              # ⚾ / 🏆
-    "auction": os.getenv("EMOJI_AUCTION", "5203996991054432397"),          # 🔨
-    "confirm": os.getenv("EMOJI_CONFIRM", "6255796213686208481"),          # ✔️
-    "cancel": os.getenv("EMOJI_CANCEL", "5210952531676504517"),            # ❌
-    "refresh": os.getenv("EMOJI_REFRESH", "5461047575379466857"),          # 🔄
-    "claim": os.getenv("EMOJI_CLAIM", "5203996991054432397"),              # 🎁
-    "prev": os.getenv("EMOJI_PREV", "5400169738263352182"),                # ◀️
-    "next": os.getenv("EMOJI_NEXT", "5400169738263352182"),                # ▶️
-    "hint": os.getenv("EMOJI_HINT", "5436113877181941026"),                # 🔍
-    "buy": os.getenv("EMOJI_BUY", "5226656353744862682"),                  # 🛒
-    "info": os.getenv("EMOJI_INFO", "5436113877181941026"),                # ℹ️
-    "daily": os.getenv("EMOJI_DAILY", "5449660075184508972"),             # 📅 / 🎁
-    "vip": os.getenv("EMOJI_VIP", "5307608734858484532"),                 # 👑
-    "gems": os.getenv("EMOJI_GEMS", "5197350061012436657"),              # 💎
-    "history": os.getenv("EMOJI_HISTORY", "5445353829304387411"),         # 💳
-    "transactions": os.getenv("EMOJI_TRANSACTIONS", "5445353829304387411"), # 💳
-}
+CUSTOM_EMOJI_IDS = {}
 
-# Native Telegram Button Color Styles ("primary" = blue, "success" = green, "danger" = red)
-BUTTON_STYLES = {
-    "add_to_group": os.getenv("STYLE_ADD_TO_GROUP", "primary"),
-    "updates": os.getenv("STYLE_UPDATES", "primary"),
-    "support": os.getenv("STYLE_SUPPORT", "primary"),
-    "help": os.getenv("STYLE_HELP", "danger"),
-    "stats": os.getenv("STYLE_STATS", "success"),
-    "profile": "primary",
-    "pokedex": "success",
-    "quests": "danger",
-    "guilds": "primary",
-    "bag": "success",
-    "leaderboard": "primary",
-    "battle": "danger",
-    "trade": "primary",
-    "redeem": "success",
-    "shop": "primary",
-    "games": "primary",
-    "streak": "danger",
-    "panel": "danger",
-    "tools": "primary",
-    "back": "primary",
-    "catch": "success",
-    "auction": "primary",
-    "confirm": "success",
-    "cancel": "danger",
-    "refresh": "primary",
-    "claim": "success",
-    "prev": "primary",
-    "next": "primary",
-    "hint": "primary",
-    "buy": "success",
-    "info": "primary",
-    "daily": "success",
-    "vip": "danger",
-    "gems": "primary",
-    "history": "primary",
-    "transactions": "primary",
-}
+# Button Color Styles disabled (standard uncolored Telegram inline buttons)
+BUTTON_STYLES = {}
 

@@ -12,10 +12,7 @@ def create_styled_button(
     icon_custom_emoji_id: str = None,
     web_app: WebAppInfo = None
 ) -> InlineKeyboardButton:
-    """Helper to construct InlineKeyboardButton with native color style and optional custom emoji icon."""
-    btn_style = style or (getattr(config, "BUTTON_STYLES", {}).get(key) if key else None)
-    btn_emoji_id = icon_custom_emoji_id or (getattr(config, "CUSTOM_EMOJI_IDS", {}).get(key) if key else None)
-
+    """Helper to construct InlineKeyboardButton with standard Telegram styling."""
     kwargs = {"text": text}
     if url:
         kwargs["url"] = url
@@ -23,27 +20,32 @@ def create_styled_button(
         kwargs["callback_data"] = callback_data
     if web_app:
         kwargs["web_app"] = web_app
-    if btn_style:
-        kwargs["style"] = str(btn_style)
-    if btn_emoji_id:
-        kwargs["icon_custom_emoji_id"] = str(btn_emoji_id)
 
     return InlineKeyboardButton(**kwargs)
 
-def get_start_welcome_keyboard(bot_username: str) -> InlineKeyboardMarkup:
+def get_start_welcome_keyboard(bot_username: str, is_private: bool = True) -> InlineKeyboardMarkup:
     """Generates primary start welcome keyboard."""
     builder = InlineKeyboardBuilder()
 
     # WebApp Mini App Row (Full Width)
     miniapp_url = getattr(config, "WEBAPP_URL", "")
     if miniapp_url:
-        builder.row(
-            create_styled_button(
-                text="⚡ Open PokéEmpire App",
-                key="miniapp",
-                web_app=WebAppInfo(url=miniapp_url)
+        if is_private:
+            builder.row(
+                create_styled_button(
+                    text="⚡ Open PokéEmpire App",
+                    key="miniapp",
+                    web_app=WebAppInfo(url=miniapp_url)
+                )
             )
-        )
+        else:
+            builder.row(
+                create_styled_button(
+                    text="⚡ Open PokéEmpire App",
+                    key="miniapp",
+                    url=f"https://t.me/{bot_username}?start=app"
+                )
+            )
 
     # Row 1 (Full Width): Add to Group
     builder.row(
@@ -190,42 +192,34 @@ def get_tx_pagination_keyboard(user_id: int, page: int, max_page: int, is_dm: bo
     return builder.as_markup()
 
 def get_pay_confirm_keyboard(sender_id: int, target_id: int, amount: int) -> InlineKeyboardMarkup:
-    """Generates Green Accept and Red Decline buttons for coin transfer confirmation."""
+    """Generates Accept and Decline buttons for coin transfer confirmation."""
     builder = InlineKeyboardBuilder()
     builder.row(
         create_styled_button(
             text="✔️ Accept",
             key="confirm",
-            style="success",
-            icon_custom_emoji_id="6255796213686208481",
             callback_data=f"pay_cnf_{sender_id}_{target_id}_{amount}"
         ),
         create_styled_button(
             text="❌ Decline",
             key="cancel",
-            style="danger",
-            icon_custom_emoji_id="5210952531676504517",
             callback_data=f"pay_dec_{sender_id}_{target_id}_{amount}"
         )
     )
     return builder.as_markup()
 
 def get_gift_confirm_keyboard(sender_id: int, target_id: int, user_pokemon_id: int) -> InlineKeyboardMarkup:
-    """Generates Green Accept and Red Decline buttons for Pokémon gift confirmation."""
+    """Generates Accept and Decline buttons for Pokémon gift confirmation."""
     builder = InlineKeyboardBuilder()
     builder.row(
         create_styled_button(
             text="✔️ Accept",
             key="confirm",
-            style="success",
-            icon_custom_emoji_id="6255796213686208481",
             callback_data=f"gift_cnf_{sender_id}_{target_id}_{user_pokemon_id}"
         ),
         create_styled_button(
             text="❌ Decline",
             key="cancel",
-            style="danger",
-            icon_custom_emoji_id="5210952531676504517",
             callback_data=f"gift_dec_{sender_id}_{target_id}_{user_pokemon_id}"
         )
     )

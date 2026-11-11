@@ -37,25 +37,6 @@ active_cover_updates = {}
 active_battles = {}
 active_renames = {}
 
-@router.message(Command("app", "miniapp", ignore_mention=True))
-async def cmd_open_miniapp(message: Message):
-    miniapp_url = getattr(config, "WEBAPP_URL", "https://royalrahul456.github.io/PokeEmpire/webapp/")
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(
-            text="⚡ Launch PokéEmpire Mini App",
-            web_app=WebAppInfo(url=miniapp_url)
-        )
-    )
-    text = (
-        "⚡ <b>PokéEmpire V3 Mini App</b> ⚡\n\n"
-        "Tap the button below to launch the interactive Mini App in Telegram! 🎮\n"
-        "• View Pokédex & Rarities\n"
-        "• Explore Items & Daily Shop\n"
-        "• Manage Bag & Quests"
-    )
-    await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
-
 
 @router.message(Command("start", ignore_mention=True))
 @router.message(CommandStart(ignore_mention=True))
@@ -99,8 +80,7 @@ async def cmd_start(message: Message, db: AsyncSession):
         "🎮 <b>Ready, Trainer? Let’s begin!</b>"
     )
 
-    is_private = bool(message.chat and message.chat.type == "private")
-    reply_markup = get_start_welcome_keyboard(bot_username, is_private=is_private)
+    reply_markup = get_start_welcome_keyboard(bot_username)
 
     try:
         await send_cover_media(

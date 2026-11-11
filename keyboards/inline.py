@@ -12,7 +12,9 @@ def create_styled_button(
     icon_custom_emoji_id: str = None,
     web_app: WebAppInfo = None
 ) -> InlineKeyboardButton:
-    """Helper to construct InlineKeyboardButton with standard Telegram styling."""
+    """Helper to construct InlineKeyboardButton with premium emoji icon and clean styling."""
+    btn_emoji_id = icon_custom_emoji_id or (getattr(config, "CUSTOM_EMOJI_IDS", {}).get(key) if key else None)
+
     kwargs = {"text": text}
     if url:
         kwargs["url"] = url
@@ -20,32 +22,14 @@ def create_styled_button(
         kwargs["callback_data"] = callback_data
     if web_app:
         kwargs["web_app"] = web_app
+    if btn_emoji_id:
+        kwargs["icon_custom_emoji_id"] = str(btn_emoji_id)
 
     return InlineKeyboardButton(**kwargs)
 
 def get_start_welcome_keyboard(bot_username: str, is_private: bool = True) -> InlineKeyboardMarkup:
     """Generates primary start welcome keyboard."""
     builder = InlineKeyboardBuilder()
-
-    # WebApp Mini App Row (Full Width)
-    miniapp_url = getattr(config, "WEBAPP_URL", "")
-    if miniapp_url:
-        if is_private:
-            builder.row(
-                create_styled_button(
-                    text="⚡ Open PokéEmpire App",
-                    key="miniapp",
-                    web_app=WebAppInfo(url=miniapp_url)
-                )
-            )
-        else:
-            builder.row(
-                create_styled_button(
-                    text="⚡ Open PokéEmpire App",
-                    key="miniapp",
-                    url=f"https://t.me/{bot_username}?start=app"
-                )
-            )
 
     # Row 1 (Full Width): Add to Group
     builder.row(
@@ -87,16 +71,6 @@ def get_start_welcome_keyboard(bot_username: str, is_private: bool = True) -> In
 def get_dm_menu_keyboard() -> InlineKeyboardMarkup:
     """Generates the primary Hub menu keyboard for DMs."""
     builder = InlineKeyboardBuilder()
-
-    miniapp_url = getattr(config, "WEBAPP_URL", "")
-    if miniapp_url:
-        builder.row(
-            create_styled_button(
-                text="⚡ Open PokéEmpire App",
-                key="miniapp",
-                web_app=WebAppInfo(url=miniapp_url)
-            )
-        )
 
     builder.row(
         create_styled_button(text="👤 Profile", key="profile", callback_data="dm_profile"),

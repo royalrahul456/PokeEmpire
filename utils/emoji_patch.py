@@ -358,9 +358,9 @@ def clean_button_text(text: str) -> str:
 
 def enhance_reply_markup(reply_markup):
     """
-    Cleans an InlineKeyboardMarkup by:
-    1. Removing any button color styles (primary, success, danger).
-    2. Stripping any icon_custom_emoji_id so buttons remain clean and standard.
+    Cleans and enhances an InlineKeyboardMarkup by:
+    1. Attaching custom premium animated emoji icons (icon_custom_emoji_id) to buttons.
+    2. Removing all button color styles (primary, success, danger) so buttons remain uncolored.
     """
     if not reply_markup or not hasattr(reply_markup, "inline_keyboard"):
         return reply_markup
@@ -368,19 +368,40 @@ def enhance_reply_markup(reply_markup):
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     new_rows = []
     modified = False
+    premium_enabled = is_premium_emojis_enabled()
 
     for row in reply_markup.inline_keyboard:
         new_row = []
         for btn in row:
             btn_dict = btn.model_dump(exclude_none=True)
-            # Remove button color style if present
+            # Remove any color style from buttons so buttons stay uncolored
             if "style" in btn_dict:
                 btn_dict.pop("style", None)
                 modified = True
-            # Remove custom emoji icon if present
-            if "icon_custom_emoji_id" in btn_dict:
-                btn_dict.pop("icon_custom_emoji_id", None)
-                modified = True
+
+            text = btn_dict.get("text", "")
+            emoji_id = btn_dict.get("icon_custom_emoji_id")
+
+            # Attach custom premium emoji icon to button if not set
+            if premium_enabled and not emoji_id and text:
+                for em in SORTED_EMOJI_KEYS:
+                    if text.startswith(em):
+                        emoji_id = str(EMOJI_MAPPING[em])
+                        btn_dict["icon_custom_emoji_id"] = emoji_id
+                        cleaned_text = text[len(em):].lstrip("\ufe0f\u200b\u200d \t")
+                        if cleaned_text:
+                            btn_dict["text"] = cleaned_text
+                        modified = True
+                        break
+                    elif text.endswith(em):
+                        emoji_id = str(EMOJI_MAPPING[em])
+                        btn_dict["icon_custom_emoji_id"] = emoji_id
+                        cleaned_text = text[:-len(em)].rstrip("\ufe0f\u200b\u200d \t")
+                        if cleaned_text:
+                            btn_dict["text"] = cleaned_text
+                        modified = True
+                        break
+
             new_row.append(InlineKeyboardButton(**btn_dict))
         new_rows.append(new_row)
 

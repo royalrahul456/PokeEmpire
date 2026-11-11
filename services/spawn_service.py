@@ -72,14 +72,13 @@ class SpawnService:
             is_shiny = False
 
             # 4. Build spawn text & keyboards
-            status_text = "✨ <b>SHINY POKÉMON</b> ✨" if is_shiny else "🌳 <b>Wild Encounter</b>"
+            status_text = "✨ <b>Shiny Pokémon</b>" if is_shiny else "🌳 <b>Wild Encounter</b>"
             caption = (
                 f"⚡ <b>A WILD POKÉMON APPEARED!</b> ⚡\n"
                 f"◈ ────────────────── ◈\n"
-                f"🌿 <i>A wild Pokémon emerged from the tall grass!</i>\n\n"
+                f"<blockquote>🌿 <i>A wild Pokémon emerged from the tall grass!</i>\n\n"
                 f"✨ <b>Status:</b> {status_text}\n"
-                f"💎 <b>Rarity:</b> <code>{selected_rarity}</code>\n"
-                f"◈ ────────────────── ◈\n"
+                f"💎 <b>Rarity:</b> <code>{selected_rarity}</code></blockquote>\n\n"
                 f"👉 <i>Type <code>/catch &lt;name&gt;</code> to catch it!</i>"
             )
 

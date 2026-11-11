@@ -73,11 +73,11 @@ async def cmd_start(message: Message, db: AsyncSession):
     from keyboards.inline import get_start_welcome_keyboard
 
     text = (
-        "🌟 <b>Welcome to PokeEmpire!</b> 🐾\n"
+        "🌟 <b>WELCOME TO POKÉEMPIRE!</b> 🐾\n"
         "◈ ────────────────── ◈\n"
-        "Your adventure starts here. ⚡\n"
-        "Catch • Battle • Trade • Explore\n\n"
-        "🎮 <b>Ready, Trainer? Let’s begin!</b>"
+        "<blockquote>⚡ <i>Your Pokémon adventure starts here!</i>\n\n"
+        "🎮 <b>Catch</b> • <b>Battle</b> • <b>Trade</b> • <b>Explore</b>\n"
+        "🏆 Build your team, rise through rankings, and conquer the empire!</blockquote>"
     )
 
     reply_markup = get_start_welcome_keyboard(bot_username)
@@ -166,7 +166,7 @@ async def cmd_help(message: Message):
     help_text = (
         f"⚡ <b>POKÉEMPIRE OFFICIAL GUIDE</b> ⚡\n"
         f"◈ ────────────────── ◈\n"
-        f"🌲 <b>Trainer Commands:</b>\n"
+        f"<blockquote>🌲 <b>Trainer Commands:</b>\n"
         f"✦ <code>/profile</code> — Check Trainer level, coins & stats\n"
         f"✦ <code>/quests</code> — View Daily & Weekly Bounties\n"
         f"✦ <code>/guild</code> — Manage Trainer Guild & Clans\n"
@@ -176,15 +176,14 @@ async def cmd_help(message: Message):
         f"✦ <code>/rankings</code> — View chat message leaderboards\n"
         f"✦ <code>/catch &lt;name&gt;</code> — Catch a wild Pokémon\n"
         f"✦ <code>/auction</code> — List Pokémon for live auction\n"
-        f"✦ <code>/report &lt;issue&gt;</code> — Report a bug to the Bot Creator\n\n"
-        f"🎮 <b>Games & Economy:</b>\n"
+        f"✦ <code>/report &lt;issue&gt;</code> — Report a bug to the Bot Creator</blockquote>\n\n"
+        f"<blockquote>🎮 <b>Games & Economy:</b>\n"
         f"✦ <code>/daily</code> — Claim daily coin reward\n"
         f"✦ <code>/spin</code> — Spin wheel of fortune\n"
         f"✦ <code>/coinflip</code> • <code>/rps</code> • <code>/mines</code> — Bet coins in minigames\n"
-        f"✦ <code>/trivia</code> • <code>/scribble</code> — Answer quizzes for rewards\n\n"
-        f"🛡️ <b>Bot Security & Management:</b>\n"
-        f"✦ <code>/setspawn</code> • <code>/spawn</code> — Bot Admins & Owner only\n"
-        f"◈ ────────────────── ◈"
+        f"✦ <code>/trivia</code> • <code>/scribble</code> — Answer quizzes for rewards</blockquote>\n\n"
+        f"<blockquote>🛡️ <b>Bot Management:</b>\n"
+        f"✦ <code>/setspawn</code> • <code>/spawn</code> — Bot Admins & Owner only</blockquote>"
     )
     if message.chat.type == "private":
         await message.answer(help_text, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
@@ -236,12 +235,11 @@ async def cmd_report(message: Message, db: AsyncSession):
     report_card = (
         f"🚨 <b>NEW PLAYER BUG REPORT #{bug_rec.id:04d}!</b> 🚨\n"
         f"◈ ────────────────── ◈\n"
-        f"👤 <b>Reporter:</b> {user_name} ({user_handle})\n"
+        f"<blockquote>👤 <b>Reporter:</b> {user_name} ({user_handle})\n"
         f"🆔 <b>User ID:</b> <code>{user_id}</code>\n"
         f"💬 <b>Chat ID:</b> <code>{message.chat.id}</code>\n\n"
         f"📝 <b>Report Message:</b>\n"
-        f"<i>{report_content}</i>\n"
-        f"◈ ────────────────── ◈"
+        f"<i>{report_content}</i></blockquote>"
     )
 
     if owner_id:
@@ -979,26 +977,24 @@ async def cmd_ping(message: Message, db: AsyncSession):
             pass
 
         group_info_text = (
-            f"\n\n╭──「 👥 Group Diagnostics 」\n"
-            f"├─➩ 🏷️ Title: <b>{html.escape(chat.title or 'Group')}</b>\n"
-            f"├─➩ 🆔 Chat ID: <code>{chat_id}</code>\n"
-            f"├─➩ 🤖 Bot Status: <b>{bot_member_status}</b>\n"
-            f"├─➩ ⚡ Spawns: <b>{'🟢 Enabled' if spawns_enabled else '🔴 Disabled'}</b>\n"
-            f"├─➩ 📊 Counter: <code>{current_counter}/{threshold}</code> msgs\n"
-            f"╰───────────────────"
+            f"\n\n👥 <b>GROUP DIAGNOSTICS</b>\n"
+            f"<blockquote>🏷️ <b>Title</b>: <b>{html.escape(chat.title or 'Group')}</b>\n"
+            f"🆔 <b>Chat ID</b>: <code>{chat_id}</code>\n"
+            f"🤖 <b>Bot Status</b>: <b>{bot_member_status}</b>\n"
+            f"⚡ <b>Spawns</b>: <b>{'🟢 Enabled' if spawns_enabled else '🔴 Disabled'}</b>\n"
+            f"📊 <b>Counter</b>: <code>{current_counter}/{threshold}</code> msgs</blockquote>"
         )
 
     text = (
         f"⚡ <b>POKÉEMPIRE SYSTEM STATUS</b> ⚡\n"
         f"◈ ────────────────── ◈\n"
-        f"🚀 <b>Release:</b> <code>v3.0 Mega Update</code>\n"
-        f"📡 <b>API Latency:</b> <code>{api_ms}ms</code>\n"
-        f"⚡ <b>Transit Latency:</b> <code>{transit_ms}ms</code>\n"
-        f"💾 <b>Database:</b> {db_status}\n"
-        f"⚙️ <b>CPU Usage:</b> <code>{cpu_usage}</code>\n"
-        f"🧠 <b>RAM Usage:</b> <code>{ram_usage}</code>\n"
-        f"◈ ────────────────── ◈\n"
-        f"🟢 <b>System Status:</b> <code>Fully Operational</code>"
+        f"<blockquote>🚀 <b>Release</b>: <code>v3.0 Mega Update</code>\n"
+        f"📡 <b>API Latency</b>: <code>{api_ms}ms</code>\n"
+        f"⚡ <b>Transit Latency</b>: <code>{transit_ms}ms</code>\n"
+        f"💾 <b>Database</b>: {db_status}\n"
+        f"⚙️ <b>CPU Usage</b>: <code>{cpu_usage}</code>\n"
+        f"🧠 <b>RAM Usage</b>: <code>{ram_usage}</code>\n"
+        f"🟢 <b>Status</b>: <code>Fully Operational</code></blockquote>"
         f"{group_info_text}"
     )
     

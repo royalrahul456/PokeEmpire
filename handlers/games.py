@@ -3254,13 +3254,12 @@ async def cmd_balance(message: Message, db: AsyncSession):
         
         text = (
             f"💳 <b>TRAINER BALANCE & WALLET</b> 💳\n"
-            f"───────────────\n"
-            f"👤 <b>Trainer</b>: <b>{name}</b> (<code>{user_id}</code>)\n"
+            f"◈ ────────────────── ◈\n"
+            f"<blockquote>👤 <b>Trainer</b>: <b>{name}</b> (<code>{user_id}</code>)\n"
             f"⭐ <b>Level</b>: <b>{level} ({title})</b>\n\n"
-            f"💰 <b>Coins</b>: <code>{user.coins:,}</code> 🪙\n"
-            f"💎 <b>Gems</b>: <code>{getattr(user, 'gems', 0):,}</code> 💎\n"
-            f"───────────────\n"
-            f"<i>All earnings are instantly usable across PokeEmpire & PokeArena!</i>"
+            f"💰 <b>Coins</b>: 🪙 <code>{user.coins:,}</code> coins\n"
+            f"💎 <b>Gems</b>: 💎 <code>{getattr(user, 'gems', 0):,}</code> gems</blockquote>\n\n"
+            f"👉 <i>All earnings are instantly usable across PokeEmpire & PokeArena!</i>"
         )
         builder = InlineKeyboardBuilder()
         builder.row(
@@ -3370,9 +3369,9 @@ async def cmd_streak_leaderboard(message: Message, db: AsyncSession):
         
     leaderboard_card = (
         f"🔥 <b>DAILY STREAK LEADERBOARD</b> 🔥\n"
-        f"───────────────\n\n"
+        f"◈ ────────────────── ◈\n"
         f"<blockquote>{'\n'.join(rows)}</blockquote>\n\n"
-        f"───────────────"
+        f"👉 <i>Compete daily to reach the top of the streak ranks!</i>"
     )
     await message.answer(leaderboard_card, parse_mode="HTML")
 

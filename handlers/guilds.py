@@ -165,15 +165,12 @@ async def build_flag_store_payload(user_id: int, page: int, db: AsyncSession):
     text = (
         f"🏰 <b>GUILD FLAG STORE (EXCLUSIVE)</b> 🏰\n"
         f"◈ ────────────────────────── ◈\n"
-        f"💰 <b>Price:</b> <code>{GUILD_FLAG_COST:,} coins</code> per flag\n"
-        f"👛 <b>Your Balance:</b> <code>💰 {user_coins:,} coins</code>\n"
+        f"<blockquote>💰 <b>Price:</b> <code>{GUILD_FLAG_COST:,} coins</code>\n"
+        f"👛 <b>Your Balance:</b> 💰 <code>{user_coins:,} coins</code>\n"
         f"🚩 <b>Current Flag:</b> {curr_flag} ({status_str})\n"
-        f"👑 <b>Exclusivity:</b> <i>1 Flag = 1 Guild Only (No duplicate flags across guilds!)</i>\n"
-        f"◈ ────────────────────────── ◈\n"
-        f"✨ <i>No Telegram Premium required! Tap any flag button below to buy and claim it exclusively for your Guild!</i>\n\n"
-        f"{body_text}\n\n"
-        f"◈ ────────────────────────── ◈\n"
-        f"⚠️ <b>Note:</b> Once claimed by a Guild, that flag is <b>SOLD OUT</b> and cannot be bought by anyone else!"
+        f"👑 <b>Exclusivity:</b> <i>1 Flag = 1 Guild Only</i></blockquote>\n\n"
+        f"<blockquote>{body_text}</blockquote>\n\n"
+        f"⚠️ <b>Note:</b> <i>Once claimed, flags become <b>SOLD OUT</b> and exclusive to that Guild!</i>"
     )
 
     builder = InlineKeyboardBuilder()
@@ -414,19 +411,18 @@ async def cmd_guild(message: Message, db: AsyncSession):
             text = (
                 f"🏰 <b>TRAINER GUILD CENTER</b> 🏰\n"
                 f"◈ ────────────────── ◈\n"
-                f"You are currently <b>not in any Guild</b>!\n\n"
-                f"💡 <b>Guild Commands</b>:\n"
-                f"👉 <code>/guild create &lt;name&gt;</code> — Found a new Guild (500k coins)\n"
-                f"👉 <code>/guild join &lt;name&gt;</code> — Join an existing Guild\n"
-                f"👉 <code>/flagstore</code> — Browse & buy animated flags (100k coins)\n"
-                f"👉 <code>/guild deposit &lt;amount&gt;</code> — Donate coins to Treasury\n"
-                f"👉 <code>/guild withdraw &lt;amount&gt;</code> — Withdraw coins from Treasury (Leader only)\n"
-                f"👉 <code>/guild transfer &lt;name&gt; &lt;user&gt;</code> — Transfer Guild Ownership\n"
-                f"👉 <code>/guild delete</code> — Disband/Delete your Guild (Owner only)\n"
-                f"👉 <code>/guild leave</code> — Leave your current Guild\n"
-                f"👉 <code>/guildlb</code> — View top Guild Leaderboards\n"
-                f"◈ ────────────────── ◈\n"
-                f"✨ Guild members receive passive +5% Shiny Chance & +10% Coin Boosts!"
+                f"<blockquote>You are currently <b>not in any Guild</b>!\n\n"
+                f"💡 <b>Guild Commands:</b>\n"
+                f"👉 <code>/guild create &lt;name&gt;</code> — Found Guild (500k coins)\n"
+                f"👉 <code>/guild join &lt;name&gt;</code> — Join existing Guild\n"
+                f"👉 <code>/flagstore</code> — Browse & buy animated flags\n"
+                f"👉 <code>/guild deposit &lt;amount&gt;</code> — Donate to Treasury\n"
+                f"👉 <code>/guild withdraw &lt;amount&gt;</code> — Withdraw from Treasury\n"
+                f"👉 <code>/guild transfer &lt;name&gt; &lt;user&gt;</code> — Transfer Ownership\n"
+                f"👉 <code>/guild delete</code> — Disband your Guild\n"
+                f"👉 <code>/guild leave</code> — Leave Guild\n"
+                f"👉 <code>/guildlb</code> — Top Guild Leaderboards</blockquote>\n\n"
+                f"✨ <i>Guild members receive passive +5% Shiny Chance & +10% Coin Boosts!</i>"
             )
             await message.answer(text, parse_mode="HTML")
             return
@@ -458,13 +454,12 @@ async def cmd_guild(message: Message, db: AsyncSession):
         text = (
             f"🏰 {flag} <b>GUILD: {html.escape(guild.name).upper()} [{html.escape(guild.tag)}]</b> {flag} 🏰\n"
             f"◈ ────────────────── ◈\n"
-            f"👑 <b>Leader:</b> {owner_name}\n"
+            f"<blockquote>👑 <b>Leader:</b> <b>{owner_name}</b>\n"
             f"🚩 <b>Guild Flag:</b> {flag} • {lock_status_text}\n"
             f"👥 <b>Members:</b> <code>{total_members} members</code>\n"
             f"💎 <b>Guild Level:</b> <code>Lv. {guild.level}</code>\n"
-            f"🏛️ <b>Guild Treasury:</b> <code>💰 {guild.treasury:,} coins</code>\n"
-            f"⚡ <b>Guild Perks:</b> <code>+5% Shiny Chance | +10% Coin Earnings</code>\n"
-            f"◈ ────────────────── ◈\n"
+            f"🏛️ <b>Guild Treasury:</b> 💰 <code>{guild.treasury:,}</code> coins\n"
+            f"⚡ <b>Guild Perks:</b> <code>+5% Shiny Chance | +10% Coin Boosts</code></blockquote>\n\n"
             f"{leader_tip}"
         )
         builder = InlineKeyboardBuilder()
@@ -959,8 +954,7 @@ async def cmd_guild_lb(message: Message, db: AsyncSession):
     text = (
         f"⚡ <b>TOP GUILDS LEADERBOARD</b> ⚡\n"
         f"◈ ────────────────── ◈\n"
-        f"{ranks_body}\n"
-        f"◈ ────────────────── ◈\n"
+        f"<blockquote>{ranks_body}</blockquote>\n\n"
         f"👉 <i>Found your own Guild with <code>/guild create &lt;name&gt;</code>!</i>"
     )
     await message.answer(text, parse_mode="HTML")

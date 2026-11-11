@@ -157,6 +157,7 @@ AUCTION_CHANNEL = os.getenv("AUCTION_CHANNEL", "@PokeEmpireAuctions")
 MAIN_GROUP_ID = int(os.getenv("MAIN_GROUP_ID", "-1004441222762"))
 SUPPORT_GROUP = os.getenv("SUPPORT_GROUP", "@PokeEmpire")
 SUPPORT_GROUP_URL = os.getenv("SUPPORT_GROUP_URL", "https://t.me/PokeEmpire")
+CARD_PREVIEW_BASE_URL = os.getenv("CARD_PREVIEW_BASE_URL", "")
 
 def is_official_group(chat_id: int = None, username: str = None) -> bool:
     """Helper to check if a chat is the official PokeEmpire main group."""

@@ -315,12 +315,33 @@ async def send_player_cover(chat_id: int, user_id: int, caption: str, reply_mark
         caption=caption,
         reply_markup=reply_markup,
         parse_mode="HTML",
-        message_to_reply=message_to_reply
+        message_to_reply=message_to_reply,
+        card_title="PokéEmpire Trainer 🐾"
     )
 
 async def edit_player_cover_message(callback: CallbackQuery, user_id: int, caption: str, reply_markup, db: AsyncSession, parse_mode="HTML"):
     media_type, media_value = await get_player_cover_media(user_id, db)
-    from aiogram.types import InputMediaPhoto, InputMediaVideo
+    from utils.settings import get_card_preview_url
+    from aiogram.types import InputMediaPhoto, InputMediaVideo, LinkPreviewOptions
+
+    preview_url = get_card_preview_url(media_value, title="PokéEmpire Trainer 🐾")
+    if preview_url:
+        try:
+            link_opts = LinkPreviewOptions(
+                url=preview_url,
+                prefer_large_media=True,
+                show_above_text=True
+            )
+            await callback.message.edit_text(
+                text=caption,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode,
+                link_preview_options=link_opts
+            )
+            return
+        except Exception:
+            pass
+
     try:
         if media_type == "video":
             new_media = InputMediaVideo(media=media_value, caption=caption, parse_mode=parse_mode)
@@ -338,15 +359,9 @@ async def edit_player_cover_message(callback: CallbackQuery, user_id: int, capti
             except Exception:
                 pass
 
-@router.message(Command("pokemon", ignore_mention=True))
-async def cmd_pokemon_list(message: Message):
-    await message.answer(
-        "🎒 <b>The Pokémon Bag is now integrated!</b>\n"
-        "All collections are managed directly via your Pokédex.\n\n"
-        "👉 Use <code>/pokedex</code> to view your collection checklist and progress!\n"
-        "👉 Use <code>/fav &lt;pokedex_id&gt;</code> to set a Pokédex cover favorite.",
-        parse_mode="HTML"
-    )
+@router.message(Command("pokemon", "bag", "collection", "harem", ignore_mention=True))
+async def cmd_pokemon_list(message: Message, db: AsyncSession):
+    return await cmd_pokedex(message, db)
 
 async def get_pokedex_data(user_id: int, nickname: str, page: int, rarity_filter: str, db: AsyncSession):
     from database.models import PokemonFormMedia
@@ -1414,7 +1429,8 @@ async def cmd_check_pokemon(message: Message, db: AsyncSession):
             reply_markup=reply_markup,
             parse_mode="HTML",
             message_to_reply=message,
-            message_thread_id=getattr(message, "message_thread_id", None)
+            message_thread_id=getattr(message, "message_thread_id", None),
+            card_title=f"{pokemon.name.title()} Info 🐾"
         )
     except Exception as e:
         logger.error(f"Error in cmd_check_pokemon: {e}", exc_info=True)
@@ -1596,9 +1612,29 @@ async def cb_check_form(callback: CallbackQuery, db: AsyncSession):
             await callback.answer("❌ Pokémon not found.", show_alert=True)
             return
 
-        from aiogram.types import InputMediaPhoto, InputMediaVideo, InputMediaAnimation
+        from aiogram.types import InputMediaPhoto, InputMediaVideo, InputMediaAnimation, LinkPreviewOptions
+        from utils.settings import get_card_preview_url
         edited = False
-        if media_value and callback.message:
+
+        preview_url = get_card_preview_url(media_value, title="PokéEmpire Info 🐾")
+        if preview_url and callback.message:
+            try:
+                link_opts = LinkPreviewOptions(
+                    url=preview_url,
+                    prefer_large_media=True,
+                    show_above_text=True
+                )
+                await callback.message.edit_text(
+                    text=caption,
+                    reply_markup=reply_markup,
+                    parse_mode="HTML",
+                    link_preview_options=link_opts
+                )
+                edited = True
+            except Exception:
+                pass
+
+        if not edited and media_value and callback.message:
             try:
                 if media_type == "video":
                     input_media = InputMediaVideo(media=media_value, caption=caption, parse_mode="HTML")

@@ -85,36 +85,16 @@ def normalize_command_text(raw_text: str) -> str:
     if lraw.startswith("/"):
         return _apply_aliases(lraw)
 
-    # 4. Direct command words without prefix (e.g. 'check 1', 'c 1', 'profile', 'bal', 'daily', 'shop')
+    # 4. Direct command words without prefix (e.g. 'check 1', 'c 1', 'check pikachu')
     parts = lraw.split(maxsplit=1)
     if parts:
         first_word = parts[0].lower()
-        direct_commands = {
-            "check": "check", "c": "check", "ch": "check",
-            "pokedex": "pokedex", "dex": "pokedex", "pd": "pokedex",
-            "profile": "profile", "pf": "profile", "pr": "profile",
-            "bal": "balance", "balance": "balance", "coins": "balance", "wallet": "balance",
-            "start": "start", "menu": "menu", "hub": "hub", "help": "help",
-            "shop": "shop", "sh": "shop",
-            "trade": "trade", "tr": "trade",
-            "catch": "catch", "hunt": "catch",
-            "daily": "daily", "claim": "claim", "cl": "claim",
-            "streak": "streak", "streaks": "streak",
-            "quests": "quests", "quest": "quests",
-            "guild": "guild", "guilds": "guild",
-            "lb": "leaderboard", "leaderboard": "leaderboard",
-            "bag": "bag", "inv": "bag", "inventory": "bag",
-            "flags": "flagstore", "flagstore": "flagstore",
-            "ping": "ping",
-            "vip": "vip", "vipplan": "vipplan", "vipdaily": "vipdaily", "vipclaim": "vipclaim",
-            "fav": "fav", "unfav": "unfav",
-            "search": "search", "s": "search",
-            "sync": "sync"
-        }
-        if first_word in direct_commands:
-            target = direct_commands[first_word]
-            converted = f"/{target}" + (f" {parts[1]}" if len(parts) > 1 else "")
+        if first_word in ("check", "pokedex"):
+            converted = f"/{first_word}" + (f" {parts[1]}" if len(parts) > 1 else "")
             return _apply_aliases(converted)
+        if first_word in ("c", "ch"):
+            converted = "/check" + (f" {parts[1]}" if len(parts) > 1 else "")
+            return converted
 
     return raw_text
 

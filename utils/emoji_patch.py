@@ -321,7 +321,7 @@ def process_text_or_caption(text: str, parse_mode, bot_instance, max_len: int = 
 
 # Pure standard library regex matching all standard Unicode emoji ranges without requiring external packages
 _BUTTON_EMOJI_REGEX = re.compile(
-    r'[\U00010000-\U0010ffff\u200d\u200b\ufe0e\ufe0f\u2190-\u21ff\u2300-\u23ff\u2500-\u25ff\u2600-\u27bf\u2b00-\u2bff]'
+    r'[\U00010000-\U0010ffff\u200d\u200b\ufe0e\ufe0f\u00a9\u00ae\u203c\u2049\u2122\u2139\u2190-\u21ff\u2300-\u23ff\u24c2\u2500-\u25ff\u2600-\u27bf\u2934\u2935\u2b00-\u2bff]'
 )
 
 def clean_button_text(text: str) -> str:
@@ -360,7 +360,8 @@ def enhance_reply_markup(reply_markup):
     """
     Cleans and enhances an InlineKeyboardMarkup by:
     1. Attaching custom premium animated emoji icons (icon_custom_emoji_id) to buttons.
-    2. Removing all button color styles (primary, success, danger) so buttons remain uncolored.
+    2. Stripping duplicate normal emojis from button text so only the animated custom icon appears.
+    3. Removing all button color styles (primary, success, danger) so buttons remain uncolored.
     """
     if not reply_markup or not hasattr(reply_markup, "inline_keyboard"):
         return reply_markup
@@ -382,23 +383,22 @@ def enhance_reply_markup(reply_markup):
             text = btn_dict.get("text", "")
             emoji_id = btn_dict.get("icon_custom_emoji_id")
 
-            # Attach custom premium emoji icon to button if not set
+            # 1. If button already has an icon_custom_emoji_id, strip normal emoji to prevent double emoji
+            if emoji_id and text:
+                cleaned = clean_button_text(text)
+                if cleaned != text:
+                    btn_dict["text"] = cleaned
+                    text = cleaned
+                    modified = True
+
+            # 2. Attach custom premium emoji icon to button if not set and clean normal emoji from text
             if premium_enabled and not emoji_id and text:
                 for em in SORTED_EMOJI_KEYS:
-                    if text.startswith(em):
+                    if text.startswith(em) or text.endswith(em):
                         emoji_id = str(EMOJI_MAPPING[em])
                         btn_dict["icon_custom_emoji_id"] = emoji_id
-                        cleaned_text = text[len(em):].lstrip("\ufe0f\u200b\u200d \t")
-                        if cleaned_text:
-                            btn_dict["text"] = cleaned_text
-                        modified = True
-                        break
-                    elif text.endswith(em):
-                        emoji_id = str(EMOJI_MAPPING[em])
-                        btn_dict["icon_custom_emoji_id"] = emoji_id
-                        cleaned_text = text[:-len(em)].rstrip("\ufe0f\u200b\u200d \t")
-                        if cleaned_text:
-                            btn_dict["text"] = cleaned_text
+                        cleaned = clean_button_text(text)
+                        btn_dict["text"] = cleaned
                         modified = True
                         break
 

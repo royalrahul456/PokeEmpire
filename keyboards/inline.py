@@ -15,7 +15,12 @@ def create_styled_button(
     """Helper to construct InlineKeyboardButton with premium emoji icon and clean styling."""
     btn_emoji_id = icon_custom_emoji_id or (getattr(config, "CUSTOM_EMOJI_IDS", {}).get(key) if key else None)
 
-    kwargs = {"text": text}
+    button_text = text
+    if btn_emoji_id:
+        from utils.emoji_patch import clean_button_text
+        button_text = clean_button_text(text)
+
+    kwargs = {"text": button_text}
     if url:
         kwargs["url"] = url
     if callback_data:

@@ -224,11 +224,7 @@ async def cmd_catch(message: Message, db: AsyncSession):
         import asyncio
         asyncio.create_task(_safe_react())
 
-        # 2. Send quick coins victory reply (Message 1)
-        msg1_text = f"🎉 +{coins_won} coins | ⚡ +100 EXP! Balance: {user_coins}"
-        await message.answer(msg1_text)
-
-        # 3. Calculate time taken
+        # 2. Calculate time taken
         import datetime
         time_taken = 1
         if spawn.spawned_at:
@@ -238,7 +234,7 @@ async def cmd_catch(message: Message, db: AsyncSession):
             now_time = datetime.datetime.now()
             time_taken = max(1, int((now_time - spawn_time).total_seconds()))
 
-        # 4. Format and send detailed card message (Message 2)
+        # 3. Format unified rich catch card (Article format with blockquote)
         import html
         shiny_badge = "✨ Shiny " if is_shiny else ""
         poke_display = pokemon.name.title()
@@ -248,28 +244,26 @@ async def cmd_catch(message: Message, db: AsyncSession):
         if shiny_upgraded:
             shiny_upgrade_text = "\n🍀 ✨ <b>Shiny Charm Activated!</b> catch upgraded to <b>Shiny</b>! ✨"
 
-        msg2_text = (
+        fires = "🔥" * min(max(1, streak_days), 5)
+        streak_line = f"{fires} {streak_days}-Day Streak"
+        achievement_section = f"\n\n{achievement_unlocked_msg}" if achievement_unlocked_msg else ""
+
+        catch_card = (
             f"💥 🌟 <b>{html.escape(user_nickname)}</b> caught!{shiny_upgrade_text}\n\n"
-            f"<blockquote>⛔ <b>NAME:</b> {poke_display}\n"
+            f"<blockquote>⛔ <b>NAME:</b> {shiny_badge}<b>{poke_display}</b>\n"
             f"🎦 <b>ANIME:</b> Gen {pokemon.generation}\n"
             f"{r_emoji} <b>RARITY:</b> {r_emoji} {pokemon.rarity}\n"
-            f"⏱️ <b>TIME:</b> {time_taken}s</blockquote>"
+            f"⏱️ <b>TIME:</b> {time_taken}s\n"
+            f"💰 <b>REWARD:</b> +{coins_won} coins | ⚡ +100 EXP (Bal: <code>{user_coins:,}</code>)\n"
+            f"🔥 <b>STREAK:</b> {streak_line}</blockquote>"
+            f"{achievement_section}"
         )
         
         from keyboards.inline import create_styled_button
         kb_builder = InlineKeyboardBuilder()
         kb_builder.add(create_styled_button(text="📖 View Pokedex", key="pokedex", callback_data=f"pd_page_{user_id}_1_All"))
         
-        await message.answer(msg2_text, reply_markup=kb_builder.as_markup(), parse_mode="HTML")
-
-        # 5. Send separate streak status message (Message 3)
-        fires = "🔥" * min(max(1, streak_days), 5)
-        msg3_text = f"{fires} {streak_days}-Day Streak! Keep going! 🎯"
-        await message.answer(msg3_text)
-
-        # 6. Send achievement announcement if unlocked
-        if achievement_unlocked_msg:
-            await message.answer(achievement_unlocked_msg, parse_mode="HTML")
+        await message.answer(catch_card, reply_markup=kb_builder.as_markup(), parse_mode="HTML")
 
     except Exception as e:
         # Rollback broken transaction before any further DB operations

@@ -97,8 +97,22 @@ def remove_chat_game(chat_id: int, game_type: str):
         else:
             active_games.pop(chat_id, None)
 
+def _should_games_bot_respond_to_rpg(message: Message) -> bool:
+    """
+    In group chats (where PokeEmpire is also active), standard RPG commands
+    (/balance, /streak, /daily, /streaklb) are handled by PokeEmpire.
+    Games Bot only answers them in private DMs or if explicitly mentioned (@PokeXArenaBot).
+    """
+    if message.chat.type == "private":
+        return True
+    text = (message.text or message.caption or "").strip()
+    games_uname = getattr(config, "GAMES_BOT_USERNAME", "@PokeXArenaBot").lstrip("@").lower()
+    return f"@{games_uname}" in text.lower()
+
 @router.message(Command("daily", ignore_mention=True))
 async def cmd_daily(message: Message, db: AsyncSession):
+    if not _should_games_bot_respond_to_rpg(message):
+        return
     import html
     user_id = message.from_user.id
     nickname = message.from_user.first_name
@@ -3230,6 +3244,8 @@ async def cb_trivia_answer(callback: CallbackQuery, db: AsyncSession):
 
 @router.message(Command("balance", "bal", "coins", "wallet", ignore_mention=True))
 async def cmd_balance(message: Message, db: AsyncSession):
+    if not _should_games_bot_respond_to_rpg(message):
+        return
     try:
         user_id = message.from_user.id
         u_stmt = select(User).where(User.id == user_id)
@@ -3273,6 +3289,8 @@ async def cmd_balance(message: Message, db: AsyncSession):
 
 @router.message(Command("streak", "streaks", ignore_mention=True))
 async def cmd_streak(message: Message, db: AsyncSession):
+    if not _should_games_bot_respond_to_rpg(message):
+        return
     user_id = message.from_user.id
     
     # Check registration
@@ -3325,6 +3343,8 @@ async def cmd_streak(message: Message, db: AsyncSession):
 
 @router.message(Command("streaklb", "slb", "streakslb", "streaksleaderboard", ignore_mention=True))
 async def cmd_streak_leaderboard(message: Message, db: AsyncSession):
+    if not _should_games_bot_respond_to_rpg(message):
+        return
     from utils.streak import get_top_streaks
     from utils.formatters import escape_md
     

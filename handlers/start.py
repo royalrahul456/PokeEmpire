@@ -1100,6 +1100,7 @@ async def cb_owner_tools(callback: CallbackQuery):
         f"• <code>/removeadmin @user</code> — Revoke admin\n"
         f"• <code>/adminlist</code> — List all admins\n"
         f"• <code>/transferguild &lt;guild&gt; @user</code> — Transfer Guild ownership\n"
+f"• <code>/tempbans</code> — View temporary anti-spam bans\n"
     )
     builder = InlineKeyboardBuilder()
     builder.row(

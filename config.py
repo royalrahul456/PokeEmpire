@@ -132,6 +132,11 @@ DAILY_REWARD_COINS = int(os.getenv("DAILY_REWARD_COINS", "250"))
 DAILY_REWARD_GEMS = int(os.getenv("DAILY_REWARD_GEMS", "5"))
 ENABLE_PREMIUM_EMOJIS = os.getenv("ENABLE_PREMIUM_EMOJIS", "true").lower() == "true"
 
+# Anti-Spam & Temporary Ban Settings
+TEMP_BAN_DEFAULT_MINUTES = int(os.getenv("TEMP_BAN_DEFAULT_MINUTES", "30"))
+SPAM_COMMAND_WINDOW = float(os.getenv("SPAM_COMMAND_WINDOW", "5.0"))
+SPAM_COMMAND_MAX_ATTEMPTS = int(os.getenv("SPAM_COMMAND_MAX_ATTEMPTS", "3"))
+
 # Optional Telegram proxy (e.g. http://proxy.server:3128)
 _raw_proxy = os.getenv("TELEGRAM_PROXY", None)
 if _raw_proxy:

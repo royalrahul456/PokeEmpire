@@ -4078,6 +4078,18 @@ async def cmd_unban_user(message: Message, db: AsyncSession):
     record = res.scalar_one_or_none()
 
     if not record:
+        from utils.temp_ban import is_temp_banned, remove_temp_ban
+        is_tb, _, _ = is_temp_banned(target_id)
+        if is_tb:
+            remove_temp_ban(target_id)
+            await message.answer(
+                f"✅ <b>TEMP BAN LIFTED</b>\n"
+                f"◈ ────────────────────────── ◈\n"
+                f"🆔 <b>User ID:</b> <code>{target_id}</code>\n"
+                f"<i>The temporary ban on this user has been removed.</i>",
+                parse_mode="HTML"
+            )
+            return
         await message.answer(f"ℹ️ User <code>{target_id}</code> is not currently banned.", parse_mode="HTML")
         return
 
@@ -4127,6 +4139,148 @@ async def cmd_banned_list(message: Message, db: AsyncSession):
         + "\n".join(lines) +
         f"\n◈ ────────────────────────── ◈\n"
         f"<i>Use <code>/unbanuser &lt;user_id&gt;</code> to lift a ban.</i>"
+    )
+    if len(text) > 4000:
+        text = text[:4000] + "\n...<i>(truncated)</i>"
+    await message.answer(text, parse_mode="HTML")
+
+
+# ======================================================
+#  TEMPORARY BOT BAN COMMANDS (Owner / Admin)
+# ======================================================
+
+@router.message(Command("tempban", ignore_mention=True))
+async def cmd_tempban(message: Message, db: AsyncSession):
+    """Owner/Admin: /tempban <user_id> [minutes] [reason] -- temporarily bans a user from using the bot."""
+    caller_id = message.from_user.id if message.from_user else 0
+    is_admin = bool(
+        caller_id in getattr(config, "OWNER_IDS", [])
+        or caller_id in getattr(config, "CO_OWNER_IDS", [])
+        or (getattr(config, "ADMIN_IDS", None) and caller_id in config.ADMIN_IDS)
+    )
+    if not is_admin:
+        await message.answer("❌ <b>Access Denied.</b> Only Bot Admins & Owners can issue temporary bans.", parse_mode="HTML")
+        return
+
+    parts = (message.text or "").split(maxsplit=3)
+    if len(parts) < 2 or not parts[1].lstrip("-").isdigit():
+        await message.answer(
+            "<b>Usage:</b> <code>/tempban &lt;user_id&gt; [minutes] [reason]</code>\n"
+            "<i>Example: /tempban 123456789 30 Spamming in group</i>",
+            parse_mode="HTML"
+        )
+        return
+
+    target_id = int(parts[1])
+    if target_id in getattr(config, "OWNER_IDS", []):
+        await message.answer("❌ You cannot ban a Bot Owner.", parse_mode="HTML")
+        return
+
+    minutes = 30
+    reason = "Temporarily banned by admin"
+    if len(parts) >= 3:
+        if parts[2].isdigit():
+            minutes = max(1, int(parts[2]))
+            if len(parts) == 4:
+                reason = parts[3].strip()
+        else:
+            reason = " ".join(parts[2:]).strip()
+
+    duration_secs = minutes * 60
+    from utils.temp_ban import apply_temp_ban, format_duration
+    rec = apply_temp_ban(
+        user_id=target_id,
+        duration_seconds=duration_secs,
+        reason=reason,
+        chat_id=message.chat.id,
+        chat_title=message.chat.title or "Admin Action"
+    )
+
+    dur_str = format_duration(duration_secs)
+    await message.answer(
+        f"⏳ <b>USER TEMPORARILY BANNED</b>\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"🆔 <b>Target ID:</b> <code>{target_id}</code>\n"
+        f"⏱️ <b>Duration:</b> <b>{dur_str}</b> ({minutes} minutes)\n"
+        f"📋 <b>Reason:</b> <i>{html.escape(reason)}</i>\n"
+        f"◈ ────────────────────────── ◈\n"
+        f"<i>This user cannot use any bot commands until the timer expires. Use <code>/untempban {target_id}</code> to lift early.</i>",
+        parse_mode="HTML"
+    )
+
+
+@router.message(Command("untempban", "unban_temp", ignore_mention=True))
+async def cmd_untempban(message: Message):
+    """Owner/Admin: /untempban <user_id> -- lifts a temporary bot ban."""
+    caller_id = message.from_user.id if message.from_user else 0
+    is_admin = bool(
+        caller_id in getattr(config, "OWNER_IDS", [])
+        or caller_id in getattr(config, "CO_OWNER_IDS", [])
+        or (getattr(config, "ADMIN_IDS", None) and caller_id in config.ADMIN_IDS)
+    )
+    if not is_admin:
+        await message.answer("❌ <b>Access Denied.</b> Only Bot Admins & Owners can lift temporary bans.", parse_mode="HTML")
+        return
+
+    parts = (message.text or "").split()
+    if len(parts) < 2 or not parts[1].lstrip("-").isdigit():
+        await message.answer("<b>Usage:</b> <code>/untempban &lt;user_id&gt;</code>", parse_mode="HTML")
+        return
+
+    target_id = int(parts[1])
+    from utils.temp_ban import remove_temp_ban
+    removed = remove_temp_ban(target_id)
+    if removed:
+        await message.answer(
+            f"✅ <b>TEMP BAN LIFTED</b>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"🆔 <b>User ID:</b> <code>{target_id}</code>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"<i>The temporary ban has been removed. User can now use the bot.</i>",
+            parse_mode="HTML"
+        )
+    else:
+        await message.answer(f"ℹ️ User <code>{target_id}</code> does not have an active temporary ban.", parse_mode="HTML")
+
+
+@router.message(Command("tempbans", "tempbanned", "tempbanlist", ignore_mention=True))
+async def cmd_tempbans_list(message: Message):
+    """Owner/Admin: /tempbans -- view all users currently on a temporary ban."""
+    caller_id = message.from_user.id if message.from_user else 0
+    is_admin = bool(
+        caller_id in getattr(config, "OWNER_IDS", [])
+        or caller_id in getattr(config, "CO_OWNER_IDS", [])
+        or (getattr(config, "ADMIN_IDS", None) and caller_id in config.ADMIN_IDS)
+    )
+    if not is_admin:
+        await message.answer("❌ <b>Access Denied.</b> Only Bot Admins & Owners can view the temporary ban list.", parse_mode="HTML")
+        return
+
+    from utils.temp_ban import get_all_temp_bans, format_duration
+    active = get_all_temp_bans()
+    if not active:
+        await message.answer(
+            "✅ <b>ACTIVE TEMPORARY BANS</b>\n"
+            f"◈ ────────────────────────── ◈\n"
+            f"<i>No users are currently temporarily banned.</i>",
+            parse_mode="HTML"
+        )
+        return
+
+    lines = []
+    for r in active:
+        uid = r["user_id"]
+        uname = f"@{r['username']}" if r.get("username") else f"ID {uid}"
+        rem_str = format_duration(r.get("remaining_seconds", 0))
+        reason = r.get("reason", "Spamming")
+        lines.append(f"• <code>{uid}</code> ({html.escape(uname)}) — ⏱️ <b>{rem_str} left</b>\n  └ <i>{html.escape(reason)}</i>")
+
+    text = (
+        f"⏳ <b>ACTIVE TEMPORARY BANS ({len(active)} total)</b>\n"
+        f"◈ ────────────────────────── ◈\n"
+        + "\n".join(lines) +
+        f"\n◈ ────────────────────────── ◈\n"
+        f"<i>Use <code>/untempban &lt;user_id&gt;</code> to lift any ban early.</i>"
     )
     if len(text) > 4000:
         text = text[:4000] + "\n...<i>(truncated)</i>"

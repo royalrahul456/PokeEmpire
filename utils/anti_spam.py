@@ -13,6 +13,7 @@ from utils.temp_ban import (
     record_and_check_reward_spam,
     should_notify_temp_ban,
     notify_owners_temp_ban,
+    revoke_spammer_rewards,
     SPAM_TRIGGER_COMMANDS,
 )
 from utils.maintenance import (
@@ -45,8 +46,8 @@ def _extract_command_name(text: Optional[str]) -> str:
 class AntiSpamMiddleware(BaseMiddleware):
     """aiogram Middleware that:
     1. Blocks globally banned users from all commands / callbacks.
-    2. Enforces temporary bot bans for users caught spamming reward commands (claim, daily, spin).
-    3. Detects and intercepts reward command spamming, automatically issuing temporary bot bans.
+    2. Enforces temporary bot bans for users caught spamming reward commands (claim, daily, spin, vipclaim, vipdaily).
+    3. Intercepts reward command spamming, automatically issuing temporary bot bans AND revoking rewards.
     4. Enforces bot maintenance mode for non-exempt users.
     5. Throttles rapid button clicks (CallbackQuery) per bot instance without dropping human commands.
     """
@@ -56,7 +57,6 @@ class AntiSpamMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: Dict[str, Any]
     ) -> Any:
-        # Extract the user from the update
         user = data.get("event_from_user")
         if not user:
             return await handler(event, data)
@@ -82,7 +82,6 @@ class AntiSpamMiddleware(BaseMiddleware):
                         await event.answer(_BAN_MSG, parse_mode="HTML")
                     except Exception:
                         pass
-                # Silently drop non-command messages from banned users
                 return
             elif isinstance(event, CallbackQuery):
                 try:
@@ -131,9 +130,10 @@ class AntiSpamMiddleware(BaseMiddleware):
                     pass
                 return
 
-        # ── 1.2. Anti-Spam Detection for claim / daily / spin ─────────────────
+        # ── 1.2. Anti-Spam Detection for claim / daily / spin / vipclaim / vipdaily ──
         if not is_exempt:
             bot_obj = getattr(event, "bot", None) or data.get("bot")
+            db = data.get("db")
 
             # A) Check Message commands
             if isinstance(event, Message):
@@ -151,14 +151,26 @@ class AntiSpamMiddleware(BaseMiddleware):
                         )
                         duration = tb_record.get("duration_seconds", 1800)
                         dur_str = format_duration(duration)
+
+                        # Revoke rewards from database immediately
+                        revoked = await revoke_spammer_rewards(user_id, cmd_name, db=db)
+
+                        revoked_section = ""
+                        if revoked.get("details"):
+                            revoked_section = (
+                                "\n\n⚠️ <b>REWARDS REVOKED & PENALTIES:</b>\n"
+                                + "\n".join(revoked["details"])
+                            )
+
                         ban_alert = (
                             f"🚨 <b>ANTI-SPAM TEMPORARY BAN ISSUED</b> 🚨\n"
                             f"◈ ────────────────────────── ◈\n"
                             f"👤 <b>Trainer:</b> {html.escape(user.full_name or 'Trainer')} (<code>{user_id}</code>)\n"
                             f"⏱️ <b>Ban Duration:</b> <b>{dur_str}</b>\n"
-                            f"📋 <b>Reason:</b> Excessive spamming of <code>/{cmd_name}</code>\n"
+                            f"📋 <b>Reason:</b> Excessive spamming of <code>/{cmd_name}</code>"
+                            f"{revoked_section}\n"
                             f"◈ ────────────────────────── ◈\n"
-                            f"<i>You have been temporarily blocked from using PokéEmpire. All commands and buttons are disabled until the timer expires.</i>"
+                            f"<i>You have been temporarily blocked from using PokéEmpire. All commands and buttons are disabled until the timer expires. Continued spamming will result in a permanent ban.</i>"
                         )
                         try:
                             await event.answer(ban_alert, parse_mode="HTML")
@@ -166,13 +178,13 @@ class AntiSpamMiddleware(BaseMiddleware):
                             pass
                         if bot_obj:
                             asyncio.create_task(notify_owners_temp_ban(
-                                bot_obj, user, cmd_name, count, duration, event.chat
+                                bot_obj, user, cmd_name, count, duration, event.chat, revoked_info=revoked
                             ))
                         return
                     elif action == "WARN":
                         warn_msg = (
                             f"⚠️ <b>ANTI-SPAM WARNING!</b>\n"
-                            f"<blockquote>Trainer {html.escape(user.first_name)}, slow down! Continuing to spam <code>/{cmd_name}</code> will result in an <b>immediate temporary ban from using the bot</b>.</blockquote>"
+                            f"<blockquote>Trainer {html.escape(user.first_name)}, slow down! Continuing to spam <code>/{cmd_name}</code> will result in an <b>immediate temporary ban from using the bot and revocation of all rewards</b>.</blockquote>"
                         )
                         try:
                             await event.answer(warn_msg, parse_mode="HTML")
@@ -180,38 +192,50 @@ class AntiSpamMiddleware(BaseMiddleware):
                             pass
                         return
 
-            # B) Check CallbackQuery buttons (play_daily, play_spin, btn_launch_spin)
+            # B) Check CallbackQuery buttons (play_daily, play_spin, btn_launch_spin, vip_act_daily, vip_act_claim)
             elif isinstance(event, CallbackQuery):
                 cb_data = (event.data or "").strip()
-                if cb_data in {"play_daily", "play_spin", "btn_launch_spin"}:
-                    action_key = "daily" if "daily" in cb_data else "spin"
+                monitored_callbacks = {
+                    "play_daily": "daily",
+                    "play_spin": "spin",
+                    "btn_launch_spin": "spin",
+                    "vip_act_daily": "vipdaily",
+                    "vip_act_claim": "vipclaim",
+                }
+                if cb_data in monitored_callbacks:
+                    action_key = monitored_callbacks[cb_data]
                     action, count = record_and_check_reward_spam(user_id, action_key)
                     if action == "BAN":
+                        chat_obj = getattr(event.message, "chat", None) if getattr(event, "message", None) else None
                         tb_record = apply_temp_ban(
                             user_id=user_id,
                             reason=f"Spamming {action_key} button ({count} clicks in 5s)",
                             username=user.username,
-                            chat_id=getattr(event.message, "chat", None).id if getattr(event, "message", None) and event.message.chat else None,
-                            chat_title=getattr(event.message, "chat", None).title if getattr(event, "message", None) and event.message.chat else "Private DM",
+                            chat_id=chat_obj.id if chat_obj else None,
+                            chat_title=chat_obj.title if chat_obj else "Private DM",
                         )
                         duration = tb_record.get("duration_seconds", 1800)
                         dur_str = format_duration(duration)
+
+                        # Revoke rewards
+                        revoked = await revoke_spammer_rewards(user_id, action_key, db=db)
+
                         try:
                             await event.answer(
-                                f"🚨 Temp-Banned! Spammed {action_key}. Bot access locked for {dur_str}.",
+                                f"🚨 Temp-Banned! Spammed {action_key}. Bot locked for {dur_str} & rewards revoked.",
                                 show_alert=True
                             )
                         except Exception:
                             pass
                         if bot_obj:
                             asyncio.create_task(notify_owners_temp_ban(
-                                bot_obj, user, action_key, count, duration, getattr(event.message, "chat", None)
+                                bot_obj, user, action_key, count, duration, chat_obj, revoked_info=revoked
                             ))
                         return
                     elif action == "WARN":
                         try:
                             await event.answer(
-                                f"⚠️ Slow down! Continuing to spam {action_key} will result in a temporary ban.",
+                                f"⚠️ Slow down! Continuing to spam {action_key} will result in a temporary ban and reward revocation.",
                                 show_alert=True
                             )
                         except Exception:
@@ -246,7 +270,6 @@ class AntiSpamMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         # ── 3. Anti-Spam throttle (CallbackQuery buttons only) ────────────────
-        # Human Message commands are NEVER silently dropped!
         if isinstance(event, CallbackQuery):
             bot_obj = getattr(event, "bot", None) or data.get("bot")
             bot_id = getattr(bot_obj, "id", "default")

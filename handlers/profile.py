@@ -948,6 +948,88 @@ async def cmd_balance(message: Message, db: AsyncSession):
         print(f"Error in cmd_balance: {e}")
         await message.answer("❌ An error occurred while retrieving your balance.")
 
+async def build_streak_view(user_id: int, display_name: str, db: AsyncSession):
+    """Generates formatted HTML card and interactive InlineKeyboardMarkup for streak view."""
+    from utils.streak import get_streak_data, get_streak_rank
+    from datetime import datetime, timedelta
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    s_data = await get_streak_data(user_id, db=db)
+    today = datetime.utcnow().date().isoformat()
+    yesterday = (datetime.utcnow() - timedelta(days=1)).date().isoformat()
+
+    last_sec = s_data.get("last_secured_date", "")
+    is_frozen = s_data.get("is_frozen", False)
+    freezes_available = s_data.get("freezes_available", 1)
+
+    if is_frozen:
+        status_str = "❄️ Frozen (1-Day Grace Active!)"
+        status_header = "❄️"
+        capped_count = min(s_data.get("catches_today", 0), 3)
+    elif last_sec == today:
+        status_str = "Active! (Secured Today 🔥)"
+        status_header = "🔥"
+        capped_count = 3
+    elif last_sec == yesterday:
+        status_str = "Active! (Keep streak today)"
+        status_header = "🔥"
+        capped_count = min(s_data.get("catches_today", 0), 3)
+    else:
+        status_str = "Streak broken!"
+        status_header = "💔"
+        capped_count = min(s_data.get("catches_today", 0), 3)
+
+    current_days = s_data.get("current_streak", 0)
+    best_days = s_data.get("best_streak", 0)
+    rank_str = get_streak_rank(current_days)
+
+    bar_chars = "█" * (capped_count * 3) + "░" * (10 - (capped_count * 3))
+    if capped_count == 3:
+        bar_chars = "█" * 10
+
+    shield_str = f"Ready ❄️ ({freezes_available} stored)" if freezes_available > 0 else "Used (3d streak / shop)"
+    if is_frozen:
+        shield_str = "Active for yesterday ❄️"
+
+    text = (
+        f"{status_header} <b>Daily Streak — {html.escape(display_name)}</b>\n\n"
+        f"<blockquote>💧 <b>Status</b>: <code>{status_str}</code>\n"
+        f"🎁 <b>Current</b>: <code>{current_days} days</code>\n"
+        f"🏆 <b>Best</b>: <code>{best_days} days</code>\n"
+        f"🏆 <b>Rank</b>: <code>{rank_str}</code>\n"
+        f"🎁 <b>Progress</b>: <code>[{bar_chars}] {capped_count}/3</code>\n"
+        f"🛡️ <b>Freeze Shield</b>: <code>{shield_str}</code></blockquote>\n\n"
+    )
+
+    if is_frozen:
+        text += (
+            f"❄️ <b>1-Day Freeze Protected!</b> You missed yesterday, but your streak is safe.\n"
+            f"👉 <i>Catch 3 Pokémon today to unfreeze and keep your {current_days}-day streak!</i>"
+        )
+    elif status_str == "Streak broken!" and best_days > 0:
+        text += (
+            f"💔 <i>Your streak was broken!</i>\n"
+            f"👉 <b>Restore your highest streak ({best_days} days)</b> with <code>/restorestreak</code> or tap below!"
+        )
+    else:
+        text += f"👉 <i>Catch 3 Pokémon every day to keep your streak!</i>"
+
+    builder = InlineKeyboardBuilder()
+    if current_days < best_days and best_days > 0:
+        builder.row(
+            InlineKeyboardButton(
+                text=f"🔄 Restore Highest Streak ({best_days}d)",
+                callback_data="streak_restore_btn"
+            )
+        )
+    builder.row(
+        InlineKeyboardButton(text="❄️ Freeze Shield Info", callback_data="streak_freeze_info"),
+        InlineKeyboardButton(text="🏆 Leaderboard", callback_data="lb_type_streak")
+    )
+    return text, builder.as_markup()
+
+
 @router.message(Command("streak", "streaks", ignore_mention=True))
 async def cmd_streak(message: Message, db: AsyncSession):
     user = message.from_user
@@ -971,44 +1053,235 @@ async def cmd_streak(message: Message, db: AsyncSession):
         user_db = User(id=user_id, username=username, nickname=nickname, coins=500)
         db.add(user_db)
         await db.commit()
-        
-    from utils.streak import get_streak_data, get_streak_rank
-    from datetime import datetime, timedelta
-    
-    s_data = await get_streak_data(user_id)
-    
-    today = datetime.utcnow().date().isoformat()
-    yesterday = (datetime.utcnow() - timedelta(days=1)).date().isoformat()
-    
-    last_sec = s_data.get("last_secured_date", "")
-    if last_sec == today:
-        status_str = "Active!"
-        capped_count = 3
-    elif last_sec == yesterday:
-        status_str = "Active!"
-        capped_count = min(s_data.get("catches_today", 0), 3)
-    else:
-        status_str = "Streak broken!"
-        capped_count = min(s_data.get("catches_today", 0), 3)
-        
-    current_days = s_data.get("current_streak", 0)
-    best_days = s_data.get("best_streak", 0)
-    rank_str = get_streak_rank(current_days)
-    
-    bar_chars = "█" * (capped_count * 3) + "░" * (10 - (capped_count * 3))
-    if capped_count == 3:
-        bar_chars = "█" * 10
-        
-    text = (
-        f"🔥 <b>Daily Streak — {html.escape(user_db.profile_name or user_db.nickname or user_db.username or nickname)}</b>\n\n"
-        f"<blockquote>💧 <b>Status</b>: <code>{status_str}</code>\n"
-        f"🎁 <b>Current</b>: <code>{current_days} days</code>\n"
-        f"🏆 <b>Best</b>: <code>{best_days} days</code>\n"
-        f"🏆 <b>Rank</b>: <code>{rank_str}</code>\n"
-        f"🎁 <b>Progress</b>: <code>[{bar_chars}] {capped_count}/3</code></blockquote>\n\n"
-        f"👉 <i>Catch 3 Pokémon every day to keep your streak!</i>"
+
+    disp_name = user_db.profile_name or user_db.nickname or user_db.username or nickname
+    text, markup = await build_streak_view(user_id, disp_name, db)
+    await message.answer(text, reply_markup=markup, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "streak_restore_btn")
+async def cb_streak_restore_btn(callback: CallbackQuery, db: AsyncSession):
+    user_id = callback.from_user.id
+    from utils.streak import restore_highest_streak
+    import config
+
+    is_admin = bool(
+        user_id in getattr(config, "OWNER_IDS", [])
+        or user_id in getattr(config, "CO_OWNER_IDS", [])
+        or (getattr(config, "ADMIN_IDS", None) and user_id in config.ADMIN_IDS)
     )
-    await message.answer(text, parse_mode="HTML")
+
+    success, msg, new_streak = await restore_highest_streak(user_id, is_admin=is_admin, db=db)
+    if not success:
+        await callback.answer(msg, show_alert=True)
+        return
+
+    await callback.answer(f"🎉 Streak restored to {new_streak} days!", show_alert=True)
+    stmt = select(User).where(User.id == user_id)
+    res = await db.execute(stmt)
+    user_db = res.scalar_one_or_none()
+    disp_name = (user_db.profile_name or user_db.nickname or user_db.username or callback.from_user.first_name) if user_db else callback.from_user.first_name
+    text, markup = await build_streak_view(user_id, disp_name, db)
+    try:
+        await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+    except Exception:
+        pass
+
+
+@router.callback_query(F.data == "streak_freeze_info")
+async def cb_streak_freeze_info(callback: CallbackQuery, db: AsyncSession):
+    user_id = callback.from_user.id
+    from utils.streak import get_streak_data, get_freeze_info
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    s_data = await get_streak_data(user_id, db=db)
+    frz_info = get_freeze_info(user_id)
+    available = frz_info.get("freezes_available", 1)
+    is_frozen = s_data.get("is_frozen", False)
+
+    status_line = "❄️ <b>Active for Yesterday!</b> (Catch 3 today to defrost)" if is_frozen else (
+        "🛡️ <b>Ready & Armed!</b> (1-Day auto protection)" if available > 0 else "❌ <b>Depleted</b> (Recharges after 3-day streak maintenance or buy below)"
+    )
+
+    text = (
+        f"❄️ <b>STREAK FREEZE SHIELD</b> ❄️\n───────────────\n"
+        f"• <b>Shield Status:</b> {status_line}\n"
+        f"• <b>Shields Stored:</b> <code>{available}/2</code>\n\n"
+        f"<blockquote>📖 <b>How 1-Day Frozen Streak Works:</b>\n"
+        f"• If you ever forget to catch 3 Pokémon in a day, your Streak Freeze triggers automatically!\n"
+        f"• It freezes your streak for <b>1 day</b> so it doesn't reset to 0.\n"
+        f"• Catch 3 Pokémon the next day to unfreeze and keep your streak progressing!\n"
+        f"• Maintaining your streak for 3 consecutive days recharges your shield for free!</blockquote>\n\n"
+        f"🛒 <i>Need an extra shield? Buy one for 1,500 Coins below or use <code>/streakfreeze buy</code></i>"
+    )
+
+    builder = InlineKeyboardBuilder()
+    if available < 2:
+        builder.row(InlineKeyboardButton(text="🛒 Buy Freeze Shield (1.5k Coins)", callback_data="streak_freeze_buy"))
+    builder.row(InlineKeyboardButton(text="🔙 Back to Streak", callback_data="cb_back_to_streak"))
+    try:
+        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    except Exception:
+        pass
+
+
+@router.callback_query(F.data == "streak_freeze_buy")
+async def cb_streak_freeze_buy(callback: CallbackQuery, db: AsyncSession):
+    user_id = callback.from_user.id
+    from utils.streak import buy_streak_freeze, get_streak_data, get_freeze_info
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    success, msg, count = await buy_streak_freeze(user_id, db=db)
+    if not success:
+        await callback.answer(msg, show_alert=True)
+        return
+
+    await callback.answer(f"✅ Freeze Shield purchased! Total: {count}", show_alert=True)
+    s_data = await get_streak_data(user_id, db=db)
+    frz_info = get_freeze_info(user_id)
+    available = frz_info.get("freezes_available", 1)
+    is_frozen = s_data.get("is_frozen", False)
+
+    status_line = "❄️ <b>Active for Yesterday!</b> (Catch 3 today to defrost)" if is_frozen else (
+        "🛡️ <b>Ready & Armed!</b> (1-Day auto protection)" if available > 0 else "❌ <b>Depleted</b>"
+    )
+
+    text = (
+        f"❄️ <b>STREAK FREEZE SHIELD</b> ❄️\n───────────────\n"
+        f"• <b>Shield Status:</b> {status_line}\n"
+        f"• <b>Shields Stored:</b> <code>{available}/2</code>\n\n"
+        f"<blockquote>📖 <b>How 1-Day Frozen Streak Works:</b>\n"
+        f"• If you ever forget to catch 3 Pokémon in a day, your Streak Freeze triggers automatically!\n"
+        f"• It freezes your streak for <b>1 day</b> so it doesn't reset to 0.\n"
+        f"• Catch 3 Pokémon the next day to unfreeze and keep your streak progressing!\n"
+        f"• Maintaining your streak for 3 consecutive days recharges your shield for free!</blockquote>\n\n"
+        f"✅ <i>Freeze Shield active and ready!</i>"
+    )
+
+    builder = InlineKeyboardBuilder()
+    if available < 2:
+        builder.row(InlineKeyboardButton(text="🛒 Buy Freeze Shield (1.5k Coins)", callback_data="streak_freeze_buy"))
+    builder.row(InlineKeyboardButton(text="🔙 Back to Streak", callback_data="cb_back_to_streak"))
+    try:
+        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    except Exception:
+        pass
+
+
+@router.callback_query(F.data == "cb_back_to_streak")
+async def cb_back_to_streak(callback: CallbackQuery, db: AsyncSession):
+    user_id = callback.from_user.id
+    stmt = select(User).where(User.id == user_id)
+    res = await db.execute(stmt)
+    user_db = res.scalar_one_or_none()
+    disp_name = (user_db.profile_name or user_db.nickname or user_db.username or callback.from_user.first_name) if user_db else callback.from_user.first_name
+    text, markup = await build_streak_view(user_id, disp_name, db)
+    try:
+        await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+    except Exception:
+        pass
+
+
+@router.message(Command("restorestreak", "streakrestore", "fixstreak", ignore_mention=True))
+async def cmd_restore_streak(message: Message, db: AsyncSession):
+    caller_id = message.from_user.id if message.from_user else 0
+    if not caller_id:
+        return
+
+    import config
+    is_admin = bool(
+        caller_id in getattr(config, "OWNER_IDS", [])
+        or caller_id in getattr(config, "CO_OWNER_IDS", [])
+        or (getattr(config, "ADMIN_IDS", None) and caller_id in config.ADMIN_IDS)
+    )
+
+    parts = (message.text or "").split()
+    target_id = caller_id
+    target_days = None
+    admin_override = False
+
+    if len(parts) >= 2 and is_admin:
+        if parts[1].isdigit():
+            target_id = int(parts[1])
+            admin_override = True
+            if len(parts) >= 3 and parts[2].isdigit():
+                target_days = int(parts[2])
+
+    from utils.streak import restore_highest_streak
+    success, msg, restored_streak = await restore_highest_streak(
+        target_id,
+        is_admin=(is_admin and (admin_override or target_id == caller_id)),
+        target_streak=target_days,
+        db=db
+    )
+
+    if not success:
+        await message.answer(f"❌ {msg}", parse_mode="HTML")
+        return
+
+    reply_text = (
+        f"🎉 <b>STREAK RESTORED!</b> 🔥\n───────────────\n"
+        f"Daily streak has been restored to: <b>{restored_streak} Days</b>!\n\n"
+        f"• 💧 <b>Current Streak:</b> <code>{restored_streak} days</code>\n"
+        f"• 🛡️ <b>Freeze Shield:</b> <code>Active & Ready ❄️</code>\n"
+    )
+    if not is_admin or not admin_override:
+        reply_text += f"• 💰 <b>Cost:</b> <code>5,000 Coins (or 25 Gems)</code>\n\n"
+    else:
+        reply_text += f"• 👑 <i>Admin Restoration Applied for user {target_id}</i>\n\n"
+
+    reply_text += f"👉 <i>Catch 3 Pokémon today to keep increasing your streak!</i>"
+    await message.answer(reply_text, parse_mode="HTML")
+
+
+@router.message(Command("streakfreeze", "freeze", "freezestreak", ignore_mention=True))
+async def cmd_streak_freeze(message: Message, db: AsyncSession):
+    user_id = message.from_user.id if message.from_user else 0
+    if not user_id:
+        return
+
+    parts = (message.text or "").split()
+    from utils.streak import get_streak_data, get_freeze_info, buy_streak_freeze
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    if len(parts) >= 2 and parts[1].lower() in ("buy", "purchase", "get"):
+        success, msg, count = await buy_streak_freeze(user_id, db=db)
+        if success:
+            await message.answer(f"✅ <b>{msg}</b>\n❄️ Your streak is now shielded!", parse_mode="HTML")
+        else:
+            await message.answer(f"❌ <b>{msg}</b>", parse_mode="HTML")
+        return
+
+    s_data = await get_streak_data(user_id, db=db)
+    frz_info = get_freeze_info(user_id)
+    available = frz_info.get("freezes_available", 1)
+    is_frozen = s_data.get("is_frozen", False)
+
+    status_line = "❄️ <b>Active for Yesterday!</b> (Catch 3 today to defrost)" if is_frozen else (
+        "🛡️ <b>Ready & Armed!</b> (1-Day auto protection)" if available > 0 else "❌ <b>Depleted</b> (Recharges after 3 active streak days or buy below)"
+    )
+
+    text = (
+        f"❄️ <b>STREAK FREEZE SHIELD</b> ❄️\n───────────────\n"
+        f"• <b>Shield Status:</b> {status_line}\n"
+        f"• <b>Shields Stored:</b> <code>{available}/2</code>\n\n"
+        f"<blockquote>📖 <b>How 1-Day Frozen Streak Works:</b>\n"
+        f"• If you ever forget to catch 3 Pokémon in a day, your Streak Freeze triggers automatically!\n"
+        f"• It freezes your streak for <b>1 day</b> so it doesn't reset to 0.\n"
+        f"• Catch 3 Pokémon the next day to unfreeze and keep your streak progressing!\n"
+        f"• Maintaining your streak for 3 consecutive days recharges your shield for free!</blockquote>\n\n"
+        f"🛒 <i>Need an extra shield? Buy one for 1,500 Coins below or use <code>/streakfreeze buy</code></i>"
+    )
+
+    builder = InlineKeyboardBuilder()
+    if available < 2:
+        builder.row(InlineKeyboardButton(text="🛒 Buy Freeze Shield (1.5k Coins)", callback_data="streak_freeze_buy"))
+    builder.row(InlineKeyboardButton(text="🔥 Check Streak (/streak)", callback_data="cb_back_to_streak"))
+
+    await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 @router.message(Command("streaklb", "slb", "streakslb", "streaksleaderboard", ignore_mention=True))
 async def cmd_streak_leaderboard(message: Message, db: AsyncSession):

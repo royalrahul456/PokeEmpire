@@ -506,6 +506,8 @@ async def cb_dm_help(callback: CallbackQuery):
         f"• <code>/help</code> — Show this guide</blockquote>\n"
         f"🔥 <b>Streak Commands</b>:\n"
         f"<blockquote>• <code>/streak</code> — Check your current/best daily catch streak\n"
+        f"• <code>/restorestreak</code> — Restore streak to highest record (5,000 coins)\n"
+        f"• <code>/streakfreeze</code> — Check or manage your 1-day streak freeze shield\n"
         f"• <code>/streaklb</code> (or <code>/slb</code>) — View streak leaderboards</blockquote>\n"
         f"🎮 <b>Earning Coins (Games)</b>:\n"
         f"<blockquote>• <code>/daily</code> — Claim daily reward (24h cooldown)\n"

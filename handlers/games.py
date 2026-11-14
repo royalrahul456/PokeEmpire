@@ -3301,45 +3301,10 @@ async def cmd_streak(message: Message, db: AsyncSession):
         await message.answer("⚠️ You must register first with /start or catch a Pokémon!")
         return
         
-    from utils.streak import get_streak_data, get_streak_rank
-    import html
-    
-    s_data = await get_streak_data(user_id)
-    
-    today = datetime.utcnow().date().isoformat()
-    yesterday = (datetime.utcnow() - timedelta(days=1)).date().isoformat()
-    
-    # Determine status
-    last_sec = s_data.get("last_secured_date", "")
-    if last_sec == today:
-        status_str = "Active!"
-        capped_count = 3
-    elif last_sec == yesterday:
-        status_str = "Active!"
-        capped_count = min(s_data.get("catches_today", 0), 3)
-    else:
-        status_str = "Streak broken!"
-        capped_count = min(s_data.get("catches_today", 0), 3)
-        
-    current_days = s_data.get("current_streak", 0)
-    best_days = s_data.get("best_streak", 0)
-    rank_str = get_streak_rank(current_days)
-    
-    # Progress bar
-    bar_chars = "█" * (capped_count * 3) + "░" * (10 - (capped_count * 3))
-    if capped_count == 3:
-        bar_chars = "█" * 10
-        
-    text = (
-        f" 🔥 <b>Daily Streak — {html.escape(user.nickname or 'Trainer')}</b>\n\n"
-        f"<blockquote>💧 <b>Status</b>: <code>{status_str}</code>\n"
-        f"🎁 <b>Current</b>: <code>{current_days} days</code>\n"
-        f"🏆 <b>Best</b>: <code>{best_days} days</code>\n"
-        f"🏆 <b>Rank</b>: <code>{rank_str}</code>\n"
-        f"🎁 <b>Progress</b>: <code>[{bar_chars}] {capped_count}/3</code></blockquote>\n\n"
-        f"👉 <i>Catch 3 Pokémon every day to keep your streak!</i>"
-    )
-    await message.answer(text, parse_mode="HTML")
+    from handlers.profile import build_streak_view
+    disp_name = user.profile_name or user.nickname or user.username or message.from_user.first_name
+    text, markup = await build_streak_view(user_id, disp_name, db)
+    await message.answer(text, reply_markup=markup, parse_mode="HTML")
 
 @router.message(Command("streaklb", "slb", "streakslb", "streaksleaderboard", ignore_mention=True))
 async def cmd_streak_leaderboard(message: Message, db: AsyncSession):
@@ -3407,50 +3372,15 @@ async def cb_dm_streak(callback: CallbackQuery, db: AsyncSession):
         await callback.answer("⚠️ You must register first by catching a Pokémon!", show_alert=True)
         return
         
-    from utils.streak import get_streak_data, get_streak_rank
+    from handlers.profile import build_streak_view
     from keyboards.inline import get_back_to_hub_keyboard
-    import html
-    
-    s_data = await get_streak_data(user_id)
-    
-    today = datetime.utcnow().date().isoformat()
-    yesterday = (datetime.utcnow() - timedelta(days=1)).date().isoformat()
-    
-    # Determine status
-    last_sec = s_data.get("last_secured_date", "")
-    if last_sec == today:
-        status_str = "Active!"
-        capped_count = 3
-    elif last_sec == yesterday:
-        status_str = "Active!"
-        capped_count = min(s_data.get("catches_today", 0), 3)
-    else:
-        status_str = "Streak broken!"
-        capped_count = min(s_data.get("catches_today", 0), 3)
-        
-    current_days = s_data.get("current_streak", 0)
-    best_days = s_data.get("best_streak", 0)
-    rank_str = get_streak_rank(current_days)
-    
-    # Progress bar
-    bar_chars = "█" * (capped_count * 3) + "░" * (10 - (capped_count * 3))
-    if capped_count == 3:
-        bar_chars = "█" * 10
-        
-    text = (
-        f" 🔥 <b>Daily Streak — {html.escape(user.nickname)}</b>\n\n"
-        f"<blockquote>💧 <b>Status</b>: <code>{status_str}</code>\n"
-        f"🎁 <b>Current</b>: <code>{current_days} days</code>\n"
-        f"🏆 <b>Best</b>: <code>{best_days} days</code>\n"
-        f"🏆 <b>Rank</b>: <code>{rank_str}</code>\n"
-        f"🎁 <b>Progress</b>: <code>[{bar_chars}] {capped_count}/3</code></blockquote>\n\n"
-        f"👉 <i>Catch 3 Pokémon every day to keep your streak!</i>"
-    )
+    disp_name = user.profile_name or user.nickname or user.username or callback.from_user.first_name
+    text, markup = await build_streak_view(user_id, disp_name, db)
     try:
-        await callback.message.edit_caption(caption=text, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
+        await callback.message.edit_caption(caption=text, reply_markup=markup, parse_mode="HTML")
     except Exception:
         try:
-            await callback.message.edit_text(text, reply_markup=get_back_to_hub_keyboard(), parse_mode="HTML")
+            await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
         except Exception:
             pass
     await callback.answer()

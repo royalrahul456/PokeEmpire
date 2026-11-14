@@ -202,7 +202,10 @@ async def cmd_catch(message: Message, db: AsyncSession):
 
         # Increment daily catch streak (atomic per user)
         from utils.streak import increment_streak_catch
-        secured, current_count, streak_days = await increment_streak_catch(user_id, db)
+        streak_res = await increment_streak_catch(user_id, db)
+        secured, current_count, streak_days = streak_res[0], streak_res[1], streak_res[2]
+        was_defrosted = getattr(streak_res, "was_defrosted", False)
+        was_frozen_saved = getattr(streak_res, "was_frozen_saved", False)
 
         # Hook EXP leveling, transaction history, and quest progress in a single batched commit
         from utils.trainer_level import add_trainer_xp, log_transaction
@@ -246,6 +249,15 @@ async def cmd_catch(message: Message, db: AsyncSession):
 
         fires = "🔥" * min(max(1, streak_days), 5)
         streak_line = f"{fires} {streak_days}-Day Streak"
+        if was_defrosted:
+            streak_line += " (❄️ Defrosted!)"
+        elif was_frozen_saved:
+            streak_line += " (❄️ 1-Day Freeze Active)"
+
+        if was_defrosted and secured:
+            freeze_note = "\n❄️ <i>Your streak was preserved by 1-Day Freeze and is now active!</i>"
+            achievement_unlocked_msg = (achievement_unlocked_msg or "") + freeze_note
+
         achievement_section = f"\n\n{achievement_unlocked_msg}" if achievement_unlocked_msg else ""
 
         catch_card = (

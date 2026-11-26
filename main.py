@@ -175,9 +175,8 @@ async def register_bot_commands(bot: Bot):
         BotCommand(command="games", description="🎮 Play Mini-Games on PokeArena"),
         BotCommand(command="streak", description="🔥 View Catch Streak stats"),
 
-        BotCommand(command="restorestreak", description="🔄 Restore streak to highest record"),
 
-        BotCommand(command="streakfreeze", description="❄️ Check or activate streak freeze shield"),
+
         BotCommand(command="fine", description="🚨 Issue a 20% fine penalty (Bot Admin only)"),
         BotCommand(command="adminlist", description="👑 View Bot Admin Roster"),
         BotCommand(command="admins", description="🛡️ View Bot Admin Roster"),
@@ -237,9 +236,8 @@ async def register_games_bot_commands(bot: Bot):
         BotCommand(command="bal", description="💳 Wallet Quick Balance"),
         BotCommand(command="streak", description="🔥 View Daily Catch Streak"),
 
-        BotCommand(command="restorestreak", description="🔄 Restore streak to highest record"),
 
-        BotCommand(command="streakfreeze", description="❄️ Check or activate streak freeze shield"),
+
         BotCommand(command="whothat", description="👤 The Silhouette Trial"),
         BotCommand(command="blitz", description="⚡ Type Matchup Blitz"),
         BotCommand(command="voltorb", description="⚡ The Voltorb Lock (Num Guess)"),
